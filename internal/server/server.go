@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"time"
 
@@ -27,6 +28,10 @@ type Config struct {
 	// DevWebDir, when set, serves the client from disk instead of the
 	// binary-embedded build (useful with `vite build --watch`).
 	DevWebDir string
+	// PublicOrigin optionally pins the externally reachable origin
+	// (e.g. https://stream.example.com) used for companion capture links.
+	// When empty it is derived from each request's Host header.
+	PublicOrigin string
 }
 
 // Server is the root http.Handler.
@@ -48,20 +53,43 @@ func New(cfg Config, log *slog.Logger) *Server {
 
 	s.mux.HandleFunc("POST /api/token", s.handleToken)
 	s.mux.HandleFunc("GET /api/health", s.handleHealth)
+	s.mux.HandleFunc("GET /api/config", s.handleConfig)
 	s.mux.HandleFunc("GET /ws", s.handleWS)
 
-	var static http.Handler
+	var dist fs.FS
 	if cfg.DevWebDir != "" {
-		static = http.FileServer(http.Dir(cfg.DevWebDir))
+		dist = os.DirFS(cfg.DevWebDir)
 	} else {
-		dist, err := fs.Sub(web.Dist, "dist")
+		sub, err := fs.Sub(web.Dist, "dist")
 		if err != nil {
 			panic(err)
 		}
-		static = http.FileServer(http.FS(dist))
+		dist = sub
 	}
-	s.mux.Handle("/", static)
+	s.mux.Handle("/", http.FileServer(http.FS(dist)))
+	// SPA route: the companion capture page is client-side routed.
+	s.mux.HandleFunc("GET /share", func(w http.ResponseWriter, r *http.Request) {
+		http.ServeFileFS(w, r, dist, "index.html")
+	})
 	return s
+}
+
+// handleConfig tells the client where the server is publicly reachable —
+// the Activity iframe only knows Discord's proxy origin, but the companion
+// capture tab must open against the real origin. GOLIVE_PUBLIC_ORIGIN
+// overrides; otherwise the request's Host header is a good default because
+// both the tunnel and direct access preserve it.
+func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
+	origin := s.cfg.PublicOrigin
+	if origin == "" {
+		scheme := "https"
+		if host, _, _ := strings.Cut(r.Host, ":"); host == "localhost" || host == "127.0.0.1" {
+			scheme = "http"
+		}
+		origin = scheme + "://" + r.Host
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]string{"publicOrigin": origin})
 }
 
 // ServeHTTP implements http.Handler.

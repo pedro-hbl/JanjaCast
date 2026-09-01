@@ -1,5 +1,7 @@
 /* @refresh reload */
 import { render } from "solid-js/web";
 import App from "./App";
+import SharePage from "./SharePage";
 
-render(() => <App />, document.getElementById("root")!);
+const Root = location.pathname === "/share" ? SharePage : App;
+render(() => <Root />, document.getElementById("root")!);

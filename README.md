@@ -22,8 +22,10 @@ environment than you'd think:
   relay, targeting sub-second glass-to-glass latency.
 - All traffic is forced through Discord's `*.discordsays.com` proxy with a
   strict CSP.
-- Screen capture from inside the Activity iframe is permission-gated by
-  Discord; when unavailable, golive falls back to a companion capture tab.
+- **Screen capture inside the Activity iframe is blocked** — Discord's iframe
+  denies the `display-capture` feature by permissions policy (verified
+  empirically). golive therefore opens a **companion capture tab** in the
+  sharer's real browser; the Activity stays the viewing surface for everyone.
 
 ## Architecture
 
@@ -88,8 +90,8 @@ docker compose up --build
 ## Roadmap
 
 - [x] M0 — scaffold: Go relay + Solid client, local end-to-end pipeline
-- [ ] M1 — Activity boots inside Discord; **capture spike** (is
-      `getDisplayMedia` allowed in the Activity iframe? fallback: companion tab)
+- [x] M1 — Activity boots inside Discord; capture spike **answered: iframe
+      denies `display-capture`** → companion capture tab implemented
 - [ ] M2 — hardened video pipeline (adaptive bitrate, reconnect, late-join fast sync)
 - [ ] M3 — audio polish, take-the-stage UX, stats overlay, worker-based decode
 - [ ] M4 — Docker image publishing, docs, v0.1

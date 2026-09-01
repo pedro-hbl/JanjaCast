@@ -7,7 +7,13 @@ import {
   For,
   type Component,
 } from "solid-js";
-import { setupIdentity, type Identity } from "./discord";
+import {
+  captureAllowed,
+  fetchPublicOrigin,
+  openExternal,
+  setupIdentity,
+  type Identity,
+} from "./discord";
 import { Session } from "./session";
 import { startCapture, type CaptureHandle } from "./capture";
 import { Player } from "./player";
@@ -60,9 +66,33 @@ const App: Component = () => {
     session()?.close();
   });
 
+  const [companionOpened, setCompanionOpened] = createSignal(false);
+
+  /** Discord's iframe denies display-capture, so sharing happens in a
+   *  companion tab in the user's real browser (same room, direct origin). */
+  const openCompanion = async (id: Identity) => {
+    const origin = await fetchPublicOrigin();
+    const url = new URL("/share", origin);
+    url.searchParams.set("room", id.room);
+    // Distinct id: the Activity stays a viewer of its own companion stream.
+    url.searchParams.set("user", `${id.userId}:tab`);
+    url.searchParams.set("name", id.username);
+    url.searchParams.set("fps", String(fps()));
+    await openExternal(url.toString());
+    setCompanionOpened(true);
+  };
+
   const share = async () => {
     const s = session();
-    if (!s) return;
+    const id = identity();
+    if (!s || !id) return;
+    setError(null);
+    if (!captureAllowed()) {
+      await openCompanion(id).catch((e) =>
+        setError(e instanceof Error ? e.message : String(e)),
+      );
+      return;
+    }
     try {
       const handle = await startCapture(fps(), (buf) => s.sendMedia(buf));
       handle.onended = stopSharing;
@@ -132,7 +162,11 @@ const App: Component = () => {
             </p>
           </Show>
           <Show when={!live()}>
-            <p style={{ color: "#949ba4" }}>Nobody is live. Take the stage!</p>
+            <p style={{ color: "#949ba4", "text-align": "center" }}>
+              {companionOpened()
+                ? "Sharing tab opened in your browser — click Start sharing there. The stream will appear here."
+                : "Nobody is live. Take the stage!"}
+            </p>
           </Show>
         </div>
 

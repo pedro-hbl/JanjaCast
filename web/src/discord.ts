@@ -14,8 +14,42 @@ export interface Identity {
 
 const CLIENT_ID = import.meta.env.GOLIVE_DISCORD_CLIENT_ID as string | undefined;
 
+let sdkInstance: DiscordSDK | null = null;
+
 export function inDiscordFrame(): boolean {
   return new URLSearchParams(location.search).has("frame_id");
+}
+
+/** Whether this document may call getDisplayMedia. Discord's Activity iframe
+ *  denies the "display-capture" feature by permissions policy — the M1 spike
+ *  confirmed this empirically — in which case capture must happen in a
+ *  companion browser tab. */
+export function captureAllowed(): boolean {
+  const doc = document as Document & {
+    featurePolicy?: { allowsFeature(f: string): boolean };
+    permissionsPolicy?: { allowsFeature(f: string): boolean };
+  };
+  const policy = doc.permissionsPolicy ?? doc.featurePolicy;
+  return policy ? policy.allowsFeature("display-capture") : true;
+}
+
+/** Open a URL in the user's real browser. Inside Discord this must go
+ *  through the SDK (the iframe cannot window.open). */
+export async function openExternal(url: string): Promise<void> {
+  if (sdkInstance) {
+    await sdkInstance.commands.openExternalLink({ url });
+  } else {
+    window.open(url, "_blank", "noopener");
+  }
+}
+
+/** The server's externally reachable origin — where the companion capture
+ *  tab must point, since the Activity itself lives on Discord's proxy. */
+export async function fetchPublicOrigin(): Promise<string> {
+  const resp = await fetch(apiPath("/api/config"));
+  if (!resp.ok) throw new Error(`config fetch failed: ${resp.status}`);
+  const { publicOrigin } = (await resp.json()) as { publicOrigin: string };
+  return publicOrigin;
 }
 
 /** Prefix for same-origin API/WS paths: Discord routes activity traffic
@@ -44,6 +78,7 @@ export async function setupIdentity(): Promise<Identity> {
   }
 
   const sdk = new DiscordSDK(CLIENT_ID);
+  sdkInstance = sdk;
   await sdk.ready();
 
   const { code } = await sdk.commands.authorize({

@@ -59,9 +59,10 @@ its API and WebSocket paths with `/.proxy/` as Discord requires.
 
 - **No WebRTC** — Activities only get WebSockets/HTTPS through Discord's
   proxy. golive is built around that (WebCodecs over WebSocket).
-- **Screen capture from the iframe is being validated (M1 spike).** If
-  Discord's iframe does not grant the `display-capture` permission, the Share
-  button will open a small companion tab on the sharer's machine that owns the
-  capture; viewers are unaffected.
+- **Screen capture from the iframe is blocked** (confirmed: `Access to the
+  feature "display-capture" is disallowed by permissions policy`). The Share
+  button therefore opens a companion tab in the sharer's real browser
+  (`/share?room=...`) that owns the capture; viewers are unaffected and watch
+  inside the Activity.
 - **Tab/system audio capture** is Chromium-specific: tab audio works broadly,
   full system audio only on Windows.
