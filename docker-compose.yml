@@ -1,0 +1,12 @@
+services:
+  golive:
+    build:
+      context: .
+      args:
+        GOLIVE_DISCORD_CLIENT_ID: ${DISCORD_CLIENT_ID}
+    ports:
+      - "8080:8080"
+    environment:
+      DISCORD_CLIENT_ID: ${DISCORD_CLIENT_ID}
+      DISCORD_CLIENT_SECRET: ${DISCORD_CLIENT_SECRET}
+    restart: unless-stopped

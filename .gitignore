@@ -1,0 +1,12 @@
+# binaries
+golive
+golive.exe
+
+# web
+web/node_modules/
+web/dist/*
+!web/dist/index.html
+
+# env
+.env
+.env.local

@@ -1,0 +1,85 @@
+// Wire protocol shared with the Go server (see internal/protocol/protocol.go).
+// Text WebSocket messages carry JSON control envelopes; binary messages carry
+// one encoded media chunk behind a fixed 13-byte header.
+
+export const KIND_VIDEO = 1;
+export const KIND_AUDIO = 2;
+export const FLAG_KEYFRAME = 1 << 0;
+export const HEADER_SIZE = 13;
+
+export type ControlType =
+  | "join"
+  | "take_stage"
+  | "leave_stage"
+  | "config"
+  | "welcome"
+  | "stage_state"
+  | "room_state"
+  | "error";
+
+export interface Control<T = unknown> {
+  type: ControlType;
+  data?: T;
+}
+
+export interface ConfigData {
+  videoCodec: string;
+  width: number;
+  height: number;
+  framerate: number;
+  audioCodec?: string;
+  sampleRate?: number;
+  channels?: number;
+}
+
+export interface StageStateData {
+  publisherId?: string;
+  publisherName?: string;
+  config?: ConfigData | null;
+}
+
+export interface Participant {
+  userId: string;
+  username: string;
+}
+
+export interface RoomStateData {
+  participants: Participant[];
+}
+
+export interface MediaChunk {
+  kind: number;
+  keyframe: boolean;
+  sequence: number;
+  timestamp: number; // microseconds
+  payload: Uint8Array;
+}
+
+export function packMedia(
+  kind: number,
+  keyframe: boolean,
+  sequence: number,
+  timestamp: number,
+  payload: Uint8Array,
+): ArrayBuffer {
+  const buf = new ArrayBuffer(HEADER_SIZE + payload.byteLength);
+  const view = new DataView(buf);
+  view.setUint8(0, kind);
+  view.setUint8(1, keyframe ? FLAG_KEYFRAME : 0);
+  view.setUint16(3, sequence & 0xffff, false);
+  view.setBigUint64(5, BigInt(Math.round(timestamp)), false);
+  new Uint8Array(buf, HEADER_SIZE).set(payload);
+  return buf;
+}
+
+export function unpackMedia(buf: ArrayBuffer): MediaChunk | null {
+  if (buf.byteLength < HEADER_SIZE) return null;
+  const view = new DataView(buf);
+  return {
+    kind: view.getUint8(0),
+    keyframe: (view.getUint8(1) & FLAG_KEYFRAME) !== 0,
+    sequence: view.getUint16(3, false),
+    timestamp: Number(view.getBigUint64(5, false)),
+    payload: new Uint8Array(buf, HEADER_SIZE),
+  };
+}
