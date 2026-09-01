@@ -65,6 +65,7 @@ func (h *Hub) Join(roomID, userID, username string) (*Room, *Client, iter.Seq[Ou
 		out:          make(chan outMsg, sendBuffer),
 		done:         make(chan struct{}),
 		needKeyframe: true, // must not decode deltas before a keyframe
+		maxTL:        maxTemporalLayer,
 	}
 
 	c.enqueueControl(protocol.CtrlWelcome, protocol.WelcomeData{
@@ -173,7 +174,19 @@ type Room struct {
 
 	// lastKFReq debounces keyframe requests to the publisher. Guarded by mu.
 	lastKFReq time.Time
+	// lastHint paces rate-hint feedback to the publisher. Guarded by mu.
+	lastHint time.Time
 }
+
+// maxTemporalLayer is the highest SVC temporal layer id (L1T3 → 0,1,2).
+const maxTemporalLayer = 2
+
+// tlRecoverAfter is how long a viewer must go without overflowing before the
+// relay restores one temporal layer.
+const tlRecoverAfter = 8 * time.Second
+
+// rateHintInterval paces congestion feedback to the publisher.
+const rateHintInterval = 2 * time.Second
 
 // kfDebounce is the minimum gap between keyframe requests forwarded to a
 // publisher — coalesces a burst of struggling viewers into one request.
@@ -193,6 +206,11 @@ type Client struct {
 	// needKeyframe marks that video was dropped and delta frames must be
 	// suppressed until the next keyframe arrives. Guarded by Room.mu.
 	needKeyframe bool
+	// maxTL is the highest SVC temporal layer this viewer currently
+	// receives. Congestion sheds layers (halving then quartering framerate)
+	// before resorting to the needKeyframe freeze. Guarded by Room.mu.
+	maxTL      uint8
+	lastTLDrop time.Time
 }
 
 type outMsg struct {
@@ -316,6 +334,7 @@ func (r *Room) ForwardMedia(from *Client, msg []byte) {
 		}
 	}
 
+	now := time.Now()
 	for c := range r.clients {
 		if c == from {
 			continue
@@ -324,12 +343,32 @@ func (r *Room) ForwardMedia(from *Client, msg []byte) {
 			if c.needKeyframe && !hdr.Keyframe() {
 				continue
 			}
+			// Temporal shedding: a degraded viewer skips higher SVC layers
+			// (smoothly lower framerate) and recovers one layer at a time
+			// after a clean stretch.
+			if hdr.TemporalID > c.maxTL {
+				continue
+			}
+			if c.maxTL < maxTemporalLayer && now.Sub(c.lastTLDrop) > tlRecoverAfter {
+				c.maxTL++
+				c.lastTLDrop = now
+			}
 			select {
 			case c.out <- outMsg{binary: true, payload: msg}:
 				c.needKeyframe = false
 			default:
-				if !c.needKeyframe {
-					c.needKeyframe = true // overflow: drop until next keyframe
+				c.lastTLDrop = now
+				if hdr.TemporalID > 0 {
+					// A higher temporal layer is non-reference: dropping it
+					// is safe, and shedding the layer lowers this viewer's
+					// framerate smoothly instead of freezing them.
+					if c.maxTL >= hdr.TemporalID {
+						c.maxTL = hdr.TemporalID - 1
+					}
+				} else if !c.needKeyframe {
+					// Base-layer chunks are reference frames — a gap here
+					// corrupts decode, so freeze until the next keyframe.
+					c.needKeyframe = true
 					r.requestKeyframeLocked()
 				}
 			}
@@ -340,6 +379,30 @@ func (r *Room) ForwardMedia(from *Client, msg []byte) {
 			}
 		}
 	}
+	r.maybeSendRateHintLocked(now)
+}
+
+// maybeSendRateHintLocked tells the publisher how many viewers the relay is
+// degrading, paced to rateHintInterval. Caller must hold r.mu.
+func (r *Room) maybeSendRateHintLocked(now time.Time) {
+	if r.publisher == nil || now.Sub(r.lastHint) < rateHintInterval {
+		return
+	}
+	r.lastHint = now
+	degraded, viewers := 0, 0
+	for c := range r.clients {
+		if c == r.publisher {
+			continue
+		}
+		viewers++
+		if c.needKeyframe || c.maxTL < maxTemporalLayer {
+			degraded++
+		}
+	}
+	r.publisher.enqueueControl(protocol.CtrlRateHint, protocol.RateHintData{
+		Degraded: degraded,
+		Viewers:  viewers,
+	})
 }
 
 // stageStateLocked snapshots the stage. Caller must hold r.mu.

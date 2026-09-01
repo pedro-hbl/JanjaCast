@@ -44,6 +44,9 @@ const SharePage: Component = () => {
 
   // Keyframe-on-demand: the relay asks when a viewer joins or falls behind.
   session.onKeyframeRequest = () => capture()?.forceKeyframe();
+  // Fan-out congestion feedback feeds the encoder's rate controller.
+  session.onRateHint = (degraded, viewers) =>
+    capture()?.applyRateHint(degraded, viewers);
   // If someone takes the stage, say so instead of silently reverting.
   session.onStageTaken = (byName) => setTakenBy(byName);
 

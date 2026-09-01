@@ -182,3 +182,69 @@ func TestConcurrentJoinLeave(t *testing.T) {
 		t.Fatalf("%d rooms leaked after all clients left (split-brain)", n)
 	}
 }
+
+func mediaMsgTL(keyframe bool, tid uint8) []byte {
+	msg := mediaMsg(keyframe)
+	msg[2] = tid
+	return msg
+}
+
+// TestTemporalSheddingBeforeFreeze: an overflow on a higher temporal layer
+// sheds that layer (safe: non-reference frames), keeping the viewer
+// continuously decodable at a lower framerate; an overflow on the base layer
+// is the freeze point (a T0 gap would corrupt decode).
+func TestTemporalSheddingBeforeFreeze(t *testing.T) {
+	hub := NewHub(discard())
+	room, alice, _ := hub.Join("r1", "a", "alice")
+	room.TakeStage(alice)
+	_, bob, _ := hub.Join("r1", "b", "bob")
+
+	// Prime bob past needKeyframe, then fill his queue to exactly capacity
+	// with base-layer traffic (no overflow yet). His queue already holds two
+	// control messages from joining: welcome + room_state.
+	room.ForwardMedia(alice, mediaMsgTL(true, 0))
+	for i := 0; i < sendBuffer-3; i++ {
+		room.ForwardMedia(alice, mediaMsgTL(false, 0))
+	}
+
+	tl := func() uint8 {
+		room.mu.Lock()
+		defer room.mu.Unlock()
+		return bob.maxTL
+	}
+	frozen := func() bool {
+		room.mu.Lock()
+		defer room.mu.Unlock()
+		return bob.needKeyframe
+	}
+
+	// Overflow with a T2 chunk: shed to maxTL 1, no freeze.
+	room.ForwardMedia(alice, mediaMsgTL(false, 2))
+	if got := tl(); got != 1 {
+		t.Fatalf("maxTL = %d after T2 overflow, want 1", got)
+	}
+	if frozen() {
+		t.Fatal("viewer froze on a sheddable layer overflow")
+	}
+
+	// A further T2 chunk is now above the viewer's layer: skipped silently.
+	room.ForwardMedia(alice, mediaMsgTL(false, 2))
+	if got := tl(); got != 1 {
+		t.Fatalf("maxTL = %d after skipping high layer, want unchanged 1", got)
+	}
+
+	// Overflow with T1: shed to 0.
+	room.ForwardMedia(alice, mediaMsgTL(false, 1))
+	if got := tl(); got != 0 {
+		t.Fatalf("maxTL = %d after T1 overflow, want 0", got)
+	}
+	if frozen() {
+		t.Fatal("viewer froze before a base-layer overflow")
+	}
+
+	// Overflow with T0: the freeze point.
+	room.ForwardMedia(alice, mediaMsgTL(false, 0))
+	if !frozen() {
+		t.Fatal("viewer not frozen after base-layer overflow")
+	}
+}

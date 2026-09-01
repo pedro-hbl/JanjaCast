@@ -55,6 +55,8 @@ export class Session {
   onKeyframeRequest: (() => void) | null = null;
   /** Publisher side: someone took the stage from us (their display name). */
   onStageTaken: ((byName: string) => void) | null = null;
+  /** Publisher side: relay congestion feedback (degraded/total viewers). */
+  onRateHint: ((degraded: number, viewers: number) => void) | null = null;
 
   constructor(
     private identity: Identity,
@@ -242,6 +244,14 @@ export class Session {
       case "keyframe_request":
         this.onKeyframeRequest?.();
         break;
+      case "rate_hint": {
+        const { degraded, viewers } = ctrl.data as {
+          degraded: number;
+          viewers: number;
+        };
+        this.onRateHint?.(degraded ?? 0, viewers ?? 0);
+        break;
+      }
       case "stage_taken": {
         const { byName } = ctrl.data as { byName: string };
         this.onStageTaken?.(byName ?? "someone");

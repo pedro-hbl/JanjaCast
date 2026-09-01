@@ -9,7 +9,7 @@
 //
 //     offset 0  uint8   kind      (1 = video, 2 = audio)
 //     offset 1  uint8   flags     (bit 0: keyframe)
-//     offset 2  uint8   reserved
+//     offset 2  uint8   temporal layer id (0 = base; SVC L1T2/L1T3)
 //     offset 3  uint16  sequence  (big endian, wraps)
 //     offset 5  uint64  timestamp (big endian, microseconds)
 //     offset 13 ...     encoded chunk payload (H.264/VP8/Opus bitstream)
@@ -40,10 +40,11 @@ const HeaderSize = 13
 
 // MediaHeader is the parsed fixed header of a binary media message.
 type MediaHeader struct {
-	Kind      uint8
-	Flags     uint8
-	Sequence  uint16
-	Timestamp uint64 // microseconds
+	Kind       uint8
+	Flags      uint8
+	TemporalID uint8 // SVC temporal layer; 0 = base layer (always kept)
+	Sequence   uint16
+	Timestamp  uint64 // microseconds
 }
 
 // Keyframe reports whether the chunk is decodable without prior chunks.
@@ -60,10 +61,11 @@ func ParseMediaHeader(msg []byte) (MediaHeader, error) {
 		return MediaHeader{}, fmt.Errorf("unknown media kind %d", msg[0])
 	}
 	return MediaHeader{
-		Kind:      msg[0],
-		Flags:     msg[1],
-		Sequence:  binary.BigEndian.Uint16(msg[3:5]),
-		Timestamp: binary.BigEndian.Uint64(msg[5:13]),
+		Kind:       msg[0],
+		Flags:      msg[1],
+		TemporalID: msg[2],
+		Sequence:   binary.BigEndian.Uint16(msg[3:5]),
+		Timestamp:  binary.BigEndian.Uint64(msg[5:13]),
 	}, nil
 }
 
@@ -96,6 +98,11 @@ const (
 
 	// Server -> displaced publisher.
 	CtrlStageTaken ControlType = "stage_taken" // someone took your stage
+
+	// Server -> publisher: congestion feedback from the fan-out side. The
+	// publisher's uplink signal (bufferedAmount) cannot see relay->viewer
+	// pressure; this closes that loop.
+	CtrlRateHint ControlType = "rate_hint"
 )
 
 // Control is the JSON envelope for text messages.
@@ -191,6 +198,14 @@ type TokenRefreshData struct {
 // reverting).
 type StageTakenData struct {
 	ByName string `json:"byName"`
+}
+
+// RateHintData is the payload of CtrlRateHint: how many viewers the relay is
+// currently degrading (temporal-layer drops or keyframe waits) out of how
+// many total. The publisher's ABR treats degraded>0 as congestion.
+type RateHintData struct {
+	Degraded int `json:"degraded"`
+	Viewers  int `json:"viewers"`
 }
 
 // MarshalControl encodes a control envelope with its payload.

@@ -49,6 +49,8 @@ export interface CaptureHandle {
   lastSample(): CaptureSample | null;
   /** Encode the next frame as a keyframe (keyframe-on-demand). */
   forceKeyframe(): void;
+  /** Relay congestion feedback: degraded viewers out of total. */
+  applyRateHint(degraded: number, viewers: number): void;
   /** Fires when the user ends capture via the browser's own UI. */
   onended: (() => void) | null;
   /** Fires when the source resized and config changed — re-announce it. */
@@ -66,31 +68,32 @@ async function pickVideoCodec(
   framerate: number,
 ): Promise<VideoCodecChoice> {
   const bitrate = framerate >= 60 ? 6_000_000 : 4_000_000;
+  const h264 = (codec: string, extra: Partial<VideoEncoderConfig>): VideoCodecChoice => ({
+    wire: codec,
+    config: {
+      codec,
+      avc: { format: "annexb" },
+      width,
+      height,
+      framerate,
+      bitrate,
+      latencyMode: "realtime",
+      ...extra,
+    } as VideoEncoderConfig,
+  });
+  // SVC (L1T3) first: temporal layers let the relay smoothly lower a slow
+  // viewer's framerate instead of freezing them. Non-SVC fallbacks follow
+  // for encoders that don't support scalabilityMode.
   const candidates: VideoCodecChoice[] = [
+    h264("avc1.640c34", { hardwareAcceleration: "prefer-hardware", scalabilityMode: "L1T3" }),
+    h264("avc1.640c34", { hardwareAcceleration: "prefer-hardware" }),
+    h264("avc1.42e034", {}),
     {
-      wire: "avc1.640c34", // H.264 High, level 5.2 — covers 4K60
+      wire: "vp8",
       config: {
-        codec: "avc1.640c34",
-        avc: { format: "annexb" },
-        width,
-        height,
-        framerate,
-        bitrate,
-        latencyMode: "realtime",
-        hardwareAcceleration: "prefer-hardware",
-      },
-    },
-    {
-      wire: "avc1.42e034", // H.264 Baseline, level 5.2
-      config: {
-        codec: "avc1.42e034",
-        avc: { format: "annexb" },
-        width,
-        height,
-        framerate,
-        bitrate,
-        latencyMode: "realtime",
-      },
+        codec: "vp8", width, height, framerate, bitrate,
+        latencyMode: "realtime", scalabilityMode: "L1T3",
+      } as VideoEncoderConfig,
     },
     {
       wire: "vp8",
@@ -157,13 +160,16 @@ export async function startCapture(
   // --- video pipeline -------------------------------------------------------
   let videoSeq = 0;
   const videoEncoder = new VideoEncoder({
-    output: (chunk) => {
+    output: (chunk, metadata) => {
       const payload = new Uint8Array(chunk.byteLength);
       chunk.copyTo(payload);
       frameCount++;
       byteCount += payload.byteLength;
+      const tid =
+        (metadata as { svc?: { temporalLayerId?: number } } | undefined)?.svc
+          ?.temporalLayerId ?? 0;
       sendChunk(
-        packMedia(KIND_VIDEO, chunk.type === "key", videoSeq++, chunk.timestamp, payload),
+        packMedia(KIND_VIDEO, chunk.type === "key", tid, videoSeq++, chunk.timestamp, payload),
       );
     },
     error: (e) => console.error("video encoder:", e),
@@ -225,11 +231,20 @@ export async function startCapture(
   });
 
   // --- adaptive bitrate -----------------------------------------------------
+  // Two congestion signals: our own uplink (ws.bufferedAmount) and the
+  // relay's fan-out side (rate hints reporting degraded viewers) — the
+  // uplink signal alone cannot see relay->viewer pressure.
   let clearSeconds = 0;
+  let hintDegraded = 0;
+  let hintViewers = 0;
   const abrTimer = setInterval(() => {
     if (!opts.backpressure || videoEncoder.state !== "configured") return;
     const backlog = opts.backpressure();
-    if (backlog > ABR_HIGH_WATER) {
+    // Congested when our uplink backs up, or when a meaningful share of
+    // viewers (>30%) is being degraded by the relay.
+    const fanoutPressure =
+      hintViewers > 0 && hintDegraded / hintViewers > 0.3;
+    if (backlog > ABR_HIGH_WATER || fanoutPressure) {
       const next = Math.max(ABR_MIN_BITRATE, Math.round(bitrate * 0.7));
       clearSeconds = 0;
       if (next < bitrate) {
@@ -270,7 +285,7 @@ export async function startCapture(
         const payload = new Uint8Array(chunk.byteLength);
         chunk.copyTo(payload);
         byteCount += payload.byteLength;
-        sendChunk(packMedia(KIND_AUDIO, true, audioSeq++, chunk.timestamp, payload));
+        sendChunk(packMedia(KIND_AUDIO, true, 0, audioSeq++, chunk.timestamp, payload));
       },
       error: (e) => console.error("audio encoder:", e),
     });
@@ -298,6 +313,10 @@ export async function startCapture(
   }
 
   const handle: CaptureHandle = {
+    applyRateHint(degraded, viewers) {
+      hintDegraded = degraded;
+      hintViewers = viewers;
+    },
     config: {
       videoCodec: chosen.wire,
       width,
