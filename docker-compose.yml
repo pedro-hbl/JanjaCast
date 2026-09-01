@@ -1,7 +1,7 @@
 services:
-  golive:
+  janjacast:
     # Use the published image, or `docker compose up --build` to build locally.
-    image: ghcr.io/pedro-hbl/golive:latest
+    image: ghcr.io/pedro-hbl/janjacast:latest
     build:
       context: .
     ports:
@@ -9,9 +9,9 @@ services:
     environment:
       DISCORD_CLIENT_ID: ${DISCORD_CLIENT_ID}
       DISCORD_CLIENT_SECRET: ${DISCORD_CLIENT_SECRET}
-      # GOLIVE_PUBLIC_ORIGIN: https://stream.example.com  # optional pin
+      # JANJACAST_PUBLIC_ORIGIN: https://stream.example.com  # optional pin
     healthcheck:
-      test: ["CMD", "/golive", "healthcheck"]
+      test: ["CMD", "/janjacast", "healthcheck"]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -25,8 +25,8 @@ services:
   # named tunnel for anything long-lived.)
   tunnel:
     image: cloudflare/cloudflared:latest
-    command: tunnel --url http://golive:8080
+    command: tunnel --url http://janjacast:8080
     depends_on:
-      - golive
+      - janjacast
     profiles: [tunnel]
     restart: unless-stopped

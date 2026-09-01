@@ -16,7 +16,7 @@ import (
 )
 
 // authn verifies who a WebSocket join is: either a Discord OAuth access
-// token (checked against Discord's API, cached) or a golive share token
+// token (checked against Discord's API, cached) or a janjacast share token
 // (HMAC-signed, minted by this process for companion capture tabs).
 type authn struct {
 	secret []byte // HMAC key, random per process — share tokens are short-lived anyway

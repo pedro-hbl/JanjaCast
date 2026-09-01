@@ -123,7 +123,7 @@ const SharePage: Component = () => {
       <SunDoodle class="share-sun" />
 
       <div class="share-card">
-        <h1 class="share-title">golive — screen sharing</h1>
+        <h1 class="share-title">JanjaCast — screen sharing</h1>
         <p class="share-room">
           Room <code>{room}</code> · connection: {session.status()}
         </p>

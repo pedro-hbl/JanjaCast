@@ -1,7 +1,7 @@
-# Running golive as a Discord Activity
+# Running JanjaCast as a Discord Activity
 
 Discord Activities are web apps embedded in an iframe inside voice calls.
-Getting golive running inside Discord takes four steps.
+Getting JanjaCast running inside Discord takes four steps.
 
 ## 1. Create the Discord application
 
@@ -12,7 +12,7 @@ Getting golive running inside Discord takes four steps.
 4. Under **Activities → Settings** (the portal shows this section once your
    app has the Activities feature), enable Activities for the app.
 
-## 2. Serve golive over HTTPS
+## 2. Serve JanjaCast over HTTPS
 
 Discord only loads Activities over HTTPS. For local development the simplest
 path is a [Cloudflare Tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/):
@@ -21,7 +21,7 @@ path is a [Cloudflare Tunnel](https://developers.cloudflare.com/cloudflare-one/c
 # terminal 1 — the server (client id/secret from step 1)
 export DISCORD_CLIENT_ID=<app id>
 export DISCORD_CLIENT_SECRET=<client secret>
-make all && ./golive
+make all && ./janjacast
 
 # terminal 2 — public HTTPS tunnel to it
 cloudflared tunnel --url http://localhost:8080
@@ -31,7 +31,7 @@ cloudflared tunnel --url http://localhost:8080
 activity origin for the next step.
 
 > The client bundle needs the application id baked in at build time:
-> `cd web && GOLIVE_DISCORD_CLIENT_ID=<app id> npm run build` (or pass it as a
+> `cd web && JANJACAST_DISCORD_CLIENT_ID=<app id> npm run build` (or pass it as a
 > build arg to `docker compose`, see the repo README).
 
 ## 3. Configure URL mappings
@@ -44,7 +44,7 @@ mapping:
 | `/`    | `<random>.trycloudflare.com`    |
 
 All requests from the Activity iframe are proxied by Discord through
-`https://<app id>.discordsays.com` to this target. golive's client prefixes
+`https://<app id>.discordsays.com` to this target. JanjaCast's client prefixes
 its API and WebSocket paths with `/.proxy/` as Discord requires.
 
 ## 4. Launch it
@@ -58,7 +58,7 @@ its API and WebSocket paths with `/.proxy/` as Discord requires.
 ## Known constraints inside Discord
 
 - **No WebRTC** — Activities only get WebSockets/HTTPS through Discord's
-  proxy. golive is built around that (WebCodecs over WebSocket).
+  proxy. JanjaCast is built around that (WebCodecs over WebSocket).
 - **Screen capture from the iframe is blocked** (confirmed: `Access to the
   feature "display-capture" is disallowed by permissions policy`). The Share
   button therefore opens a companion tab in the sharer's real browser

@@ -1,4 +1,4 @@
-// Command golive runs the golive relay server: a single binary that serves
+// Command janjacast runs the janjacast relay server: a single binary that serves
 // the embedded Discord Activity client and relays screen-stream media from
 // one publisher to every viewer in a call over WebSockets.
 package main
@@ -14,12 +14,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/pedro-hbl/golive/internal/server"
+	"github.com/pedro-hbl/janjacast/internal/server"
 )
 
 // healthcheck probes the local server's health endpoint.
 func healthcheck() int {
-	addr := cmp.Or(os.Getenv("GOLIVE_ADDR"), ":8080")
+	addr := cmp.Or(os.Getenv("JANJACAST_ADDR"), ":8080")
 	if strings.HasPrefix(addr, ":") {
 		addr = "localhost" + addr
 	}
@@ -33,7 +33,7 @@ func healthcheck() int {
 }
 
 func main() {
-	// `golive healthcheck` probes the running server and exits 0/1 — the
+	// `janjacast healthcheck` probes the running server and exits 0/1 — the
 	// container healthcheck for a FROM-scratch image with no shell.
 	if len(os.Args) > 1 && os.Args[1] == "healthcheck" {
 		os.Exit(healthcheck())
@@ -45,12 +45,12 @@ func main() {
 	slog.SetDefault(logger)
 
 	cfg := server.Config{
-		Addr:                cmp.Or(os.Getenv("GOLIVE_ADDR"), ":8080"),
+		Addr:                cmp.Or(os.Getenv("JANJACAST_ADDR"), ":8080"),
 		DiscordClientID:     os.Getenv("DISCORD_CLIENT_ID"),
 		DiscordClientSecret: os.Getenv("DISCORD_CLIENT_SECRET"),
-		DevWebDir:           os.Getenv("GOLIVE_DEV_WEB_DIR"), // serve client from disk instead of embed
-		PublicOrigin:        os.Getenv("GOLIVE_PUBLIC_ORIGIN"),
-		AllowAnon:           os.Getenv("GOLIVE_ALLOW_ANON") == "1",
+		DevWebDir:           os.Getenv("JANJACAST_DEV_WEB_DIR"), // serve client from disk instead of embed
+		PublicOrigin:        os.Getenv("JANJACAST_PUBLIC_ORIGIN"),
+		AllowAnon:           os.Getenv("JANJACAST_ALLOW_ANON") == "1",
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
@@ -66,7 +66,7 @@ func main() {
 
 	errCh := make(chan error, 1)
 	go func() {
-		logger.Info("golive listening", "addr", cfg.Addr)
+		logger.Info("janjacast listening", "addr", cfg.Addr)
 		errCh <- httpServer.ListenAndServe()
 	}()
 

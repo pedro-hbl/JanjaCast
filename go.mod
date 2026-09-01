@@ -1,4 +1,4 @@
-module github.com/pedro-hbl/golive
+module github.com/pedro-hbl/janjacast
 
 go 1.26.4
 

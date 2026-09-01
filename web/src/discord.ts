@@ -10,11 +10,11 @@ export interface Identity {
   username: string;
   /** Room id — the activity instance id inside Discord. */
   room: string;
-  /** Discord OAuth access token; proves identity to the golive server. */
+  /** Discord OAuth access token; proves identity to the janjacast server. */
   accessToken?: string;
 }
 
-const CLIENT_ID = import.meta.env.GOLIVE_DISCORD_CLIENT_ID as string | undefined;
+const CLIENT_ID = import.meta.env.JANJACAST_DISCORD_CLIENT_ID as string | undefined;
 
 let sdkInstance: DiscordSDK | null = null;
 
@@ -86,7 +86,7 @@ export async function setupIdentity(): Promise<Identity> {
   const clientId = CLIENT_ID ?? (await fetchConfig()).clientId;
   if (!clientId) {
     throw new Error(
-      "no Discord client id: set DISCORD_CLIENT_ID on the server (or GOLIVE_DISCORD_CLIENT_ID at build time)",
+      "no Discord client id: set DISCORD_CLIENT_ID on the server (or JANJACAST_DISCORD_CLIENT_ID at build time)",
     );
   }
 

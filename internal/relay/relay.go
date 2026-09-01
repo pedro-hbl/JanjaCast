@@ -1,4 +1,4 @@
-// Package relay implements the fan-out core of golive: rooms keyed by
+// Package relay implements the fan-out core of janjacast: rooms keyed by
 // Discord activity instance, each with at most one publisher whose media
 // chunks are forwarded to every other participant.
 package relay
@@ -10,7 +10,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/pedro-hbl/golive/internal/protocol"
+	"github.com/pedro-hbl/janjacast/internal/protocol"
 )
 
 // sendBuffer is the per-viewer outgoing queue length. When a viewer's queue

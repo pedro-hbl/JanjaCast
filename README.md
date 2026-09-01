@@ -1,8 +1,8 @@
-# golive
+# JanjaCast
 
-[![ci](https://github.com/pedro-hbl/golive/actions/workflows/ci.yml/badge.svg)](https://github.com/pedro-hbl/golive/actions/workflows/ci.yml)
-[![release](https://github.com/pedro-hbl/golive/actions/workflows/release.yml/badge.svg)](https://github.com/pedro-hbl/golive/actions/workflows/release.yml)
-[![container](https://img.shields.io/badge/ghcr.io-pedro--hbl%2Fgolive-1D63ED?logo=docker&logoColor=white)](https://github.com/pedro-hbl/golive/pkgs/container/golive)
+[![ci](https://github.com/pedro-hbl/janjacast/actions/workflows/ci.yml/badge.svg)](https://github.com/pedro-hbl/janjacast/actions/workflows/ci.yml)
+[![release](https://github.com/pedro-hbl/janjacast/actions/workflows/release.yml/badge.svg)](https://github.com/pedro-hbl/janjacast/actions/workflows/release.yml)
+[![container](https://img.shields.io/badge/ghcr.io-pedro--hbl%2Fjanjacast-1D63ED?logo=docker&logoColor=white)](https://github.com/pedro-hbl/janjacast/pkgs/container/janjacast)
 [![license](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
 **Screen livestreaming as a Discord Activity.** One person shares their
@@ -10,7 +10,7 @@ screen; everyone in the voice call watches live inside the Activity —
 sub-second latency, tab/system audio, 30/60 fps, and a one-click
 "take the stage" model. Open source, self-hosted, one binary.
 
-![golive architecture — capture in a companion Chrome tab, WebCodecs over WSS through a Cloudflare Tunnel into a Go relay in Docker, fanned out through Discord's Activities proxy to every viewer in the call](docs/architecture.svg)
+![JanjaCast architecture — capture in a companion Chrome tab, WebCodecs over WSS through a Cloudflare Tunnel into a Go relay in Docker, fanned out through Discord's Activities proxy to every viewer in the call](docs/architecture.svg)
 
 ## Features
 
@@ -35,7 +35,7 @@ available**, all traffic must flow through Discord's
 `<app-id>.discordsays.com` proxy, and the iframe **denies screen capture**
 (`display-capture` permissions policy — verified empirically).
 
-So golive does it the hard way, on the open web stack that *is* allowed:
+So JanjaCast does it the hard way, on the open web stack that *is* allowed:
 
 - Capture happens in a **companion tab** in the sharer's real browser (one
   click from the Activity, authenticated by a short-lived token).
@@ -71,8 +71,8 @@ URL mapping in the portal). Full portal walkthrough:
 Requires Go 1.26+ and Node 24+.
 
 ```sh
-make all                      # web client → embed → ./golive
-GOLIVE_ALLOW_ANON=1 ./golive  # local dev: auth off, http://localhost:8080
+make all                      # web client → embed → ./janjacast
+JANJACAST_ALLOW_ANON=1 ./janjacast  # local dev: auth off, http://localhost:8080
 ```
 
 Open `http://localhost:8080/?room=demo` in two Chromium windows, hit
@@ -85,10 +85,10 @@ development.
 | --- | --- |
 | `DISCORD_CLIENT_ID` | Discord application id (portal → General Information) |
 | `DISCORD_CLIENT_SECRET` | OAuth secret (portal → OAuth2); server-side only |
-| `GOLIVE_ADDR` | Listen address, default `:8080` |
-| `GOLIVE_PUBLIC_ORIGIN` | Pin the public origin for companion links (default: derived per request) |
-| `GOLIVE_ALLOW_ANON` | `1` disables join auth — local development only |
-| `GOLIVE_DEV_WEB_DIR` | Serve the client from disk instead of the embedded build |
+| `JANJACAST_ADDR` | Listen address, default `:8080` |
+| `JANJACAST_PUBLIC_ORIGIN` | Pin the public origin for companion links (default: derived per request) |
+| `JANJACAST_ALLOW_ANON` | `1` disables join auth — local development only |
+| `JANJACAST_DEV_WEB_DIR` | Serve the client from disk instead of the embedded build |
 
 ## Self-hosting notes
 
@@ -97,13 +97,13 @@ development.
 - Discord requires HTTPS — any TLS reverse proxy or a Cloudflare Tunnel in
   front of `:8080` works. Quick-tunnel URLs rotate on restart; use a named
   tunnel (free) for anything long-lived, or the portal mapping goes stale.
-- The container ships a built-in healthcheck (`/golive healthcheck`), already
+- The container ships a built-in healthcheck (`/janjacast healthcheck`), already
   wired in the compose file.
 
 ## Development
 
 ```sh
-go run ./cmd/golive           # API + relay on :8080
+go run ./cmd/janjacast           # API + relay on :8080
 cd web && npm run dev         # Vite on :5173, proxies /api and /ws
 go test ./...                 # relay + auth tests
 ```

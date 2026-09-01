@@ -25,7 +25,7 @@
   <rect x="0.5" y="0.5" width="1279" height="719" rx="20" fill="none" stroke="#232a38"/>
 
   <!-- title -->
-  <text x="48" y="58" fill="#f2f4f8" font-size="28" font-weight="700">golive — how a stream travels</text>
+  <text x="48" y="58" fill="#f2f4f8" font-size="28" font-weight="700">JanjaCast — how a stream travels</text>
   <text x="48" y="84" fill="#8b94a6" font-size="15">screen livestreaming as a Discord Activity · WebCodecs over WebSockets (Activities forbid WebRTC)</text>
 
   <!-- ============ SHARER: companion tab ============ -->
@@ -78,7 +78,7 @@
 
     <rect x="908" y="168" width="300" height="352" rx="14" fill="url(#cardG)" stroke="#155e70"/>
     <use href="#iGo" transform="translate(928,190) scale(2.1)" fill="#00ADD8"/>
-    <text x="994" y="208" fill="#f2f4f8" font-size="18" font-weight="700">golive server</text>
+    <text x="994" y="208" fill="#f2f4f8" font-size="18" font-weight="700">JanjaCast server</text>
     <text x="994" y="228" fill="#8b94a6" font-size="13">single static binary</text>
     <g fill="#aeb7c6" font-size="13.5">
       <text x="932" y="268">WebSocket relay — 1 ingest → N viewers</text>

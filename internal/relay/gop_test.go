@@ -3,7 +3,7 @@ package relay
 import (
 	"testing"
 
-	"github.com/pedro-hbl/golive/internal/protocol"
+	"github.com/pedro-hbl/janjacast/internal/protocol"
 )
 
 func TestLateJoinerGetsGOPReplay(t *testing.T) {

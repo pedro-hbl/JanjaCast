@@ -5,8 +5,8 @@ COPY web/package.json web/package-lock.json ./
 RUN npm ci
 COPY web/ ./
 # Bake the Discord application id into the client bundle.
-ARG GOLIVE_DISCORD_CLIENT_ID
-ENV GOLIVE_DISCORD_CLIENT_ID=$GOLIVE_DISCORD_CLIENT_ID
+ARG JANJACAST_DISCORD_CLIENT_ID
+ENV JANJACAST_DISCORD_CLIENT_ID=$JANJACAST_DISCORD_CLIENT_ID
 RUN npm run build
 
 # --- server build ---
@@ -16,11 +16,11 @@ COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
 COPY --from=web /src/web/dist ./web/dist
-RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /golive ./cmd/golive
+RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /janjacast ./cmd/janjacast
 
 # --- runtime ---
 FROM scratch
 COPY --from=server /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
-COPY --from=server /golive /golive
+COPY --from=server /janjacast /janjacast
 EXPOSE 8080
-ENTRYPOINT ["/golive"]
+ENTRYPOINT ["/janjacast"]

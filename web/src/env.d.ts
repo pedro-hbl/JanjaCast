@@ -1,7 +1,7 @@
 /// <reference types="vite/client" />
 
 interface ImportMetaEnv {
-  readonly GOLIVE_DISCORD_CLIENT_ID?: string;
+  readonly JANJACAST_DISCORD_CLIENT_ID?: string;
 }
 
 interface ImportMeta {

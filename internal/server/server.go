@@ -1,4 +1,4 @@
-// Package server wires golive's HTTP surface: the embedded Activity client,
+// Package server wires janjacast's HTTP surface: the embedded Activity client,
 // the Discord OAuth token exchange, and the WebSocket relay endpoint.
 package server
 
@@ -16,9 +16,9 @@ import (
 
 	"github.com/coder/websocket"
 
-	"github.com/pedro-hbl/golive/internal/protocol"
-	"github.com/pedro-hbl/golive/internal/relay"
-	"github.com/pedro-hbl/golive/web"
+	"github.com/pedro-hbl/janjacast/internal/protocol"
+	"github.com/pedro-hbl/janjacast/internal/relay"
+	"github.com/pedro-hbl/janjacast/web"
 )
 
 // Config holds server configuration, populated from the environment.
@@ -34,8 +34,8 @@ type Config struct {
 	// When empty it is derived from each request's Host header.
 	PublicOrigin string
 	// AllowAnon skips join authentication entirely — local development
-	// only (GOLIVE_ALLOW_ANON=1). In normal operation every join must
-	// present a Discord access token or a golive share token.
+	// only (JANJACAST_ALLOW_ANON=1). In normal operation every join must
+	// present a Discord access token or a janjacast share token.
 	AllowAnon bool
 }
 
@@ -93,7 +93,7 @@ func New(cfg Config, log *slog.Logger) *Server {
 
 // handleConfig tells the client where the server is publicly reachable —
 // the Activity iframe only knows Discord's proxy origin, but the companion
-// capture tab must open against the real origin. GOLIVE_PUBLIC_ORIGIN
+// capture tab must open against the real origin. JANJACAST_PUBLIC_ORIGIN
 // overrides; otherwise the request's Host header is a good default because
 // both the tunnel and direct access preserve it.
 func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {

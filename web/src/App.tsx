@@ -134,7 +134,7 @@ const App: Component = () => {
   return (
     <div class="app">
       <header class="app-header">
-        <strong class="logo">golive</strong>
+        <strong class="logo">JanjaCast</strong>
         <Show when={live()}>
           <span class="live-badge">
             <ScribbleDot class="live-dot" /> LIVE — {stage().publisherName}

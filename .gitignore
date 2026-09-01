@@ -1,6 +1,6 @@
-# binaries (root only — cmd/golive/ is source!)
-/golive
-/golive.exe
+# binaries (root only — cmd/janjacast/ is source!)
+/janjacast
+/janjacast.exe
 
 # web
 web/node_modules/

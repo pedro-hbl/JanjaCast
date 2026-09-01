@@ -5,7 +5,7 @@ import (
 	"log/slog"
 	"testing"
 
-	"github.com/pedro-hbl/golive/internal/protocol"
+	"github.com/pedro-hbl/janjacast/internal/protocol"
 )
 
 func discard() *slog.Logger {

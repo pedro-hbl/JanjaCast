@@ -1,4 +1,4 @@
-// Package protocol defines the wire format spoken between the golive client
+// Package protocol defines the wire format spoken between the janjacast client
 // and the relay server over a single WebSocket connection.
 //
 // Every WebSocket message is either:
@@ -92,7 +92,7 @@ type Control struct {
 
 // JoinData is the payload of CtrlJoin. Exactly one credential is expected
 // unless the server runs with anonymous access (local dev): AccessToken is a
-// Discord OAuth token (verified against Discord), ShareToken is a golive
+// Discord OAuth token (verified against Discord), ShareToken is a janjacast
 // HMAC token minted for a companion capture tab.
 type JoinData struct {
 	Room        string `json:"room"`     // Discord activity instance id
