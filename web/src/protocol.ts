@@ -18,6 +18,7 @@ export type ControlType =
   | "welcome"
   | "stage_state"
   | "room_state"
+  | "token_refresh"
   | "error";
 
 /** Publisher clock-sync mark: capture timestamp (µs) ↔ server wall clock

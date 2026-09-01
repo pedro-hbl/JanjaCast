@@ -14,7 +14,12 @@ import type {
   WelcomeData,
 } from "./protocol";
 
-export type SessionStatus = "connecting" | "open" | "reconnecting" | "closed";
+export type SessionStatus =
+  | "connecting"
+  | "open"
+  | "reconnecting"
+  | "closed"
+  | "unauthorized"; // fatal: the server refused our credentials — no retry
 
 export interface Credentials {
   accessToken?: string;
@@ -84,7 +89,7 @@ export class Session {
       this.startPinging();
       if (reconnected) this.onReconnected?.();
     };
-    ws.onclose = () => this.handleClose();
+    ws.onclose = (ev) => this.handleClose(ev);
     ws.onmessage = (ev) => {
       if (typeof ev.data === "string") {
         this.handleControl(JSON.parse(ev.data) as Control);
@@ -94,10 +99,16 @@ export class Session {
     };
   }
 
-  private handleClose(): void {
+  private handleClose(ev?: CloseEvent): void {
     this.stopPinging();
     if (this.closedByUser) {
       this.setStatus("closed");
+      return;
+    }
+    // 1008 (policy violation) is the server refusing our credentials.
+    // Retrying with the same credentials would loop forever.
+    if (ev?.code === 1008) {
+      this.setStatus("unauthorized");
       return;
     }
     this.setStatus("reconnecting");
@@ -220,6 +231,12 @@ export class Session {
       case "sync":
         this.onSync?.(ctrl.data as SyncData);
         break;
+      case "token_refresh": {
+        // Fresh share token so reconnects keep working past token expiry.
+        const { shareToken } = ctrl.data as { shareToken: string };
+        if (shareToken) this.creds.shareToken = shareToken;
+        break;
+      }
       case "error":
         console.error("server error:", ctrl.data);
         break;

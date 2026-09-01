@@ -52,12 +52,14 @@ const App: Component = () => {
   });
 
   // Rebuild viewer decoders whenever the stage config changes and we're not
-  // the one streaming.
+  // the one streaming — including via our own companion tab: decoding and
+  // *playing* your own stream while your tab captures system audio is a
+  // feedback loop (and doubles the sharer's bandwidth).
   createEffect(() => {
     const s = session();
     if (!s) return;
     const st = s.stage();
-    if (st.config && !s.isPublisher()) {
+    if (st.config && !s.ownsStage()) {
       player?.configure(st.config);
     }
   });
@@ -154,11 +156,17 @@ const App: Component = () => {
           <canvas
             ref={canvasRef}
             class="stage-canvas"
-            style={{ display: live() && !capture() ? "block" : "none" }}
+            style={{
+              display:
+                live() && !capture() && !session()?.ownsStage()
+                  ? "block"
+                  : "none",
+            }}
           />
-          <Show when={capture()}>
+          <Show when={capture() || session()?.ownsStage()}>
             <p class="stage-msg">
-              You are sharing your screen at {fps()} fps.
+              🎥 You are live at {fps()} fps
+              {capture() ? "." : " from your browser tab."}
             </p>
           </Show>
           <Show when={!live()}>
@@ -213,7 +221,7 @@ const App: Component = () => {
           </button>
         </Show>
 
-        <Show when={live()}>
+        <Show when={live() && !session()?.ownsStage()}>
           <label class="fps-label">
             Volume{" "}
             <input
@@ -238,7 +246,7 @@ const App: Component = () => {
           <select
             class="crayon-select"
             value={fps()}
-            disabled={Boolean(capture())}
+            disabled={Boolean(capture()) || session()?.ownsStage()}
             onChange={(e) => setFps(Number(e.currentTarget.value) as 30 | 60)}
           >
             <option value={30}>30 fps</option>

@@ -4,9 +4,8 @@ WORKDIR /src/web
 COPY web/package.json web/package-lock.json ./
 RUN npm ci
 COPY web/ ./
-# Bake the Discord application id into the client bundle.
-ARG JANJACAST_DISCORD_CLIENT_ID
-ENV JANJACAST_DISCORD_CLIENT_ID=$JANJACAST_DISCORD_CLIENT_ID
+# No client id is baked in: the server provides it at runtime via
+# /api/config, so one image works for any Discord application.
 RUN npm run build
 
 # --- server build ---
@@ -22,5 +21,6 @@ RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /janjacast ./cmd/janjac
 FROM scratch
 COPY --from=server /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 COPY --from=server /janjacast /janjacast
+USER 65534:65534
 EXPOSE 8080
 ENTRYPOINT ["/janjacast"]

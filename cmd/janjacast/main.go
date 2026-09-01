@@ -1,17 +1,19 @@
-// Command janjacast runs the janjacast relay server: a single binary that serves
-// the embedded Discord Activity client and relays screen-stream media from
-// one publisher to every viewer in a call over WebSockets.
+// Command janjacast runs the JanjaCast relay server: a single binary that
+// serves the embedded Discord Activity client and relays screen-stream media
+// from one publisher to every viewer in a call over WebSockets.
 package main
 
 import (
 	"cmp"
 	"context"
+	"encoding/base64"
 	"errors"
 	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/pedro-hbl/janjacast/internal/server"
@@ -25,11 +27,27 @@ func healthcheck() int {
 	}
 	client := &http.Client{Timeout: 5 * time.Second}
 	resp, err := client.Get("http://" + addr + "/api/health")
-	if err != nil || resp.StatusCode != http.StatusOK {
+	if err != nil {
 		return 1
 	}
-	resp.Body.Close()
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return 1
+	}
 	return 0
+}
+
+func logLevel() slog.Level {
+	switch strings.ToLower(os.Getenv("JANJACAST_LOG_LEVEL")) {
+	case "debug":
+		return slog.LevelDebug
+	case "warn":
+		return slog.LevelWarn
+	case "error":
+		return slog.LevelError
+	default:
+		return slog.LevelInfo
+	}
 }
 
 func main() {
@@ -40,9 +58,19 @@ func main() {
 	}
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
-		Level: slog.LevelDebug,
+		Level: logLevel(),
 	}))
 	slog.SetDefault(logger)
+
+	var tokenSecret []byte
+	if raw := os.Getenv("JANJACAST_TOKEN_SECRET"); raw != "" {
+		secret, err := base64.StdEncoding.DecodeString(raw)
+		if err != nil || len(secret) < 32 {
+			logger.Error("JANJACAST_TOKEN_SECRET must be base64 of at least 32 bytes")
+			os.Exit(1)
+		}
+		tokenSecret = secret
+	}
 
 	cfg := server.Config{
 		Addr:                cmp.Or(os.Getenv("JANJACAST_ADDR"), ":8080"),
@@ -51,9 +79,11 @@ func main() {
 		DevWebDir:           os.Getenv("JANJACAST_DEV_WEB_DIR"), // serve client from disk instead of embed
 		PublicOrigin:        os.Getenv("JANJACAST_PUBLIC_ORIGIN"),
 		AllowAnon:           os.Getenv("JANJACAST_ALLOW_ANON") == "1",
+		TokenSecret:         tokenSecret,
 	}
 
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	// SIGTERM matters: it is what `docker stop` and orchestrators send.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
 	srv := server.New(cfg, logger)
@@ -62,6 +92,7 @@ func main() {
 		Addr:              cfg.Addr,
 		Handler:           srv,
 		ReadHeaderTimeout: 10 * time.Second,
+		IdleTimeout:       120 * time.Second,
 	}
 
 	errCh := make(chan error, 1)
@@ -73,6 +104,9 @@ func main() {
 	select {
 	case <-ctx.Done():
 		logger.Info("shutting down")
+		// http.Server.Shutdown never touches hijacked WebSockets — drain
+		// them explicitly with proper close frames first.
+		srv.Drain()
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		if err := httpServer.Shutdown(shutdownCtx); err != nil {

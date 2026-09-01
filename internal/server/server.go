@@ -6,12 +6,15 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"io/fs"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/coder/websocket"
@@ -35,8 +38,12 @@ type Config struct {
 	PublicOrigin string
 	// AllowAnon skips join authentication entirely — local development
 	// only (JANJACAST_ALLOW_ANON=1). In normal operation every join must
-	// present a Discord access token or a janjacast share token.
+	// present a Discord access token or a JanjaCast share token.
 	AllowAnon bool
+	// TokenSecret signs share tokens (JANJACAST_TOKEN_SECRET, base64).
+	// When empty a random per-process key is used and share tokens die on
+	// restart.
+	TokenSecret []byte
 }
 
 // Server is the root http.Handler.
@@ -46,16 +53,28 @@ type Server struct {
 	hub  *relay.Hub
 	mux  *http.ServeMux
 	auth *authn
+	rl   *rateLimiter
+
+	connMu sync.Mutex
+	conns  map[*websocket.Conn]struct{}
 }
 
 // New builds the handler.
 func New(cfg Config, log *slog.Logger) *Server {
 	s := &Server{
-		cfg:  cfg,
-		log:  log,
-		hub:  relay.NewHub(log),
-		mux:  http.NewServeMux(),
-		auth: newAuthn(),
+		cfg:   cfg,
+		log:   log,
+		hub:   relay.NewHub(log),
+		mux:   http.NewServeMux(),
+		auth:  newAuthn(cfg.TokenSecret, cfg.DiscordClientID),
+		rl:    newRateLimiter(20, time.Minute), // per-IP budget for auth endpoints
+		conns: make(map[*websocket.Conn]struct{}),
+	}
+	if !cfg.AllowAnon && (cfg.DiscordClientID == "" || cfg.DiscordClientSecret == "") {
+		log.Warn("DISCORD_CLIENT_ID/SECRET unset and anonymous access disabled — every join will be refused")
+	}
+	if len(cfg.TokenSecret) == 0 {
+		log.Warn("JANJACAST_TOKEN_SECRET unset — share tokens will not survive a server restart")
 	}
 
 	s.mux.HandleFunc("POST /api/token", s.handleToken)
@@ -128,13 +147,18 @@ func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 // from discordSdk.commands.authorize() for an access token. The client
 // secret never leaves the server.
 func (s *Server) handleToken(w http.ResponseWriter, r *http.Request) {
+	if !s.rl.allow(clientIP(r)) {
+		http.Error(w, "rate limited", http.StatusTooManyRequests)
+		return
+	}
 	if s.cfg.DiscordClientID == "" || s.cfg.DiscordClientSecret == "" {
-		http.Error(w, "server missing DISCORD_CLIENT_ID/DISCORD_CLIENT_SECRET", http.StatusInternalServerError)
+		http.Error(w, "server not configured", http.StatusInternalServerError)
 		return
 	}
 	var body struct {
 		Code string `json:"code"`
 	}
+	r.Body = http.MaxBytesReader(w, r.Body, 8<<10)
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Code == "" {
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
@@ -162,7 +186,7 @@ func (s *Server) handleToken(w http.ResponseWriter, r *http.Request) {
 	var token struct {
 		AccessToken string `json:"access_token"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&token); err != nil || token.AccessToken == "" {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 64<<10)).Decode(&token); err != nil || token.AccessToken == "" {
 		http.Error(w, "token exchange failed", http.StatusBadGateway)
 		return
 	}
@@ -174,10 +198,15 @@ func (s *Server) handleToken(w http.ResponseWriter, r *http.Request) {
 // capture tab join a room. The caller must prove who they are with their
 // Discord access token; anonymous servers (dev) skip verification.
 func (s *Server) handleShareToken(w http.ResponseWriter, r *http.Request) {
+	if !s.rl.allow(clientIP(r)) {
+		http.Error(w, "rate limited", http.StatusTooManyRequests)
+		return
+	}
 	var body struct {
 		AccessToken string `json:"accessToken"`
 		Room        string `json:"room"`
 	}
+	r.Body = http.MaxBytesReader(w, r.Body, 8<<10)
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Room == "" {
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
@@ -234,14 +263,68 @@ func (s *Server) authenticateJoin(ctx context.Context, join protocol.JoinData) (
 
 var errAuthRequired = errors.New("authentication required")
 
+// rateLimiter is a small fixed-window per-key counter — enough to stop
+// unauthenticated endpoint abuse without pulling in a dependency.
+type rateLimiter struct {
+	mu     sync.Mutex
+	window time.Duration
+	limit  int
+	epoch  time.Time
+	counts map[string]int
+}
+
+func newRateLimiter(limit int, window time.Duration) *rateLimiter {
+	return &rateLimiter{window: window, limit: limit, epoch: time.Now(), counts: make(map[string]int)}
+}
+
+func (l *rateLimiter) allow(key string) bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if time.Since(l.epoch) > l.window {
+		l.epoch = time.Now()
+		clear(l.counts)
+	}
+	l.counts[key]++
+	return l.counts[key] <= l.limit
+}
+
+func clientIP(r *http.Request) string {
+	// Behind the tunnel/proxy chain the peer address is the proxy; prefer
+	// the standard forwarding headers when present.
+	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+		ip, _, _ := strings.Cut(xff, ",")
+		return strings.TrimSpace(ip)
+	}
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return r.RemoteAddr
+	}
+	return host
+}
+
+// wsOriginPatterns lists origins allowed to open relay WebSockets: Discord's
+// Activities proxy, the quick-tunnel domain, and local development hosts.
+// The configured public origin's host is appended at accept time.
+var wsOriginPatterns = []string{
+	"*.discordsays.com",
+	"*.trycloudflare.com",
+	"localhost:*",
+	"127.0.0.1:*",
+}
+
 // handleWS upgrades the connection and runs the relay session: the first
 // message must be a CtrlJoin, after which text messages are control and
 // binary messages are media chunks forwarded to the room.
 func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
+	patterns := wsOriginPatterns
+	if s.cfg.PublicOrigin != "" {
+		if u, err := url.Parse(s.cfg.PublicOrigin); err == nil && u.Host != "" {
+			patterns = append(patterns, u.Host)
+		}
+	}
 	conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{
-		// The Activity is served same-origin through Discord's proxy, but
-		// during local dev the origin is the vite server.
-		InsecureSkipVerify: true,
+		OriginPatterns:     patterns,
+		InsecureSkipVerify: s.cfg.AllowAnon, // dev mode: any origin
 		CompressionMode:    websocket.CompressionDisabled, // media is already compressed
 	})
 	if err != nil {
@@ -251,10 +334,18 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 	defer conn.CloseNow()
 	conn.SetReadLimit(4 << 20) // 4 MiB: comfortably above any keyframe
 
-	ctx := r.Context()
+	s.trackConn(conn, true)
+	defer s.trackConn(conn, false)
 
-	// First message: join.
-	typ, data, err := conn.Read(ctx)
+	// The connection context outlives the HTTP handler's request context
+	// semantics we need: cancel it explicitly when either loop dies.
+	ctx, cancel := context.WithCancel(r.Context())
+	defer cancel()
+
+	// First message: join (bounded wait).
+	joinCtx, cancelJoin := context.WithTimeout(ctx, 15*time.Second)
+	typ, data, err := conn.Read(joinCtx)
+	cancelJoin()
 	if err != nil || typ != websocket.MessageText {
 		return
 	}
@@ -266,29 +357,78 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 	if err := json.Unmarshal(ctrl.Data, &join); err != nil || (join.Room == "" && join.ShareToken == "") {
 		return
 	}
+	viaShareToken := join.ShareToken != ""
 	join, err = s.authenticateJoin(ctx, join)
 	if err != nil {
-		payload, _ := protocol.MarshalControl(protocol.CtrlError,
-			protocol.ErrorData{Message: "unauthorized: " + err.Error()})
-		_ = conn.Write(ctx, websocket.MessageText, payload)
+		// A close frame with a policy code lets the client distinguish
+		// "unauthorized, stop retrying" from a network blip.
+		_ = conn.Close(websocket.StatusPolicyViolation, "unauthorized")
 		return
 	}
 
-	room := s.hub.Room(join.Room)
-	client, outbox := room.Join(join.UserID, join.Username)
-	defer room.Leave(client)
+	room, client, outbox := s.hub.Join(join.Room, join.UserID, join.Username)
+	defer s.hub.Leave(room, client)
+
+	// Companion tabs joined with a share token get periodic fresh tokens so
+	// reconnects keep working past the token's short expiry.
+	if viaShareToken {
+		refresh := func() {
+			client.SendControl(protocol.CtrlTokenRefresh, protocol.TokenRefreshData{
+				ShareToken: s.auth.mintShareToken(shareClaims{
+					Room:     join.Room,
+					UserID:   join.UserID,
+					Username: join.Username,
+					Exp:      time.Now().Add(10 * time.Minute).Unix(),
+				}),
+			})
+		}
+		refresh()
+		go func() {
+			t := time.NewTicker(4 * time.Minute)
+			defer t.Stop()
+			for {
+				select {
+				case <-t.C:
+					refresh()
+				case <-ctx.Done():
+					return
+				}
+			}
+		}()
+	}
+
+	// Liveness: protocol-level pings detect half-open connections (slept
+	// laptops, dropped NAT mappings) that would otherwise hold the stage
+	// forever, since the server rarely writes to an idle publisher.
+	go func() {
+		t := time.NewTicker(20 * time.Second)
+		defer t.Stop()
+		for {
+			select {
+			case <-t.C:
+				pingCtx, cancelPing := context.WithTimeout(ctx, 10*time.Second)
+				err := conn.Ping(pingCtx)
+				cancelPing()
+				if err != nil {
+					cancel()
+					conn.CloseNow()
+					return
+				}
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
 
 	// Write loop.
 	go func() {
+		defer cancel()
 		for msg := range outbox {
 			kind := websocket.MessageText
 			if msg.Binary() {
 				kind = websocket.MessageBinary
 			}
-			writeCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
-			err := conn.Write(writeCtx, kind, msg.Payload())
-			cancel()
-			if err != nil {
+			if err := conn.Write(ctx, kind, msg.Payload()); err != nil {
 				conn.CloseNow()
 				return
 			}
@@ -305,8 +445,37 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 		case websocket.MessageBinary:
 			room.ForwardMedia(client, data)
 		case websocket.MessageText:
+			if len(data) > 64<<10 {
+				continue // control frames have no business being this large
+			}
 			s.handleControl(room, client, data)
 		}
+	}
+}
+
+func (s *Server) trackConn(c *websocket.Conn, add bool) {
+	s.connMu.Lock()
+	defer s.connMu.Unlock()
+	if add {
+		s.conns[c] = struct{}{}
+	} else {
+		delete(s.conns, c)
+	}
+}
+
+// Drain tells every connected client the server is going away (a proper
+// close frame, so clients back off instead of thundering back) and closes
+// the connections. Called on SIGTERM/SIGINT before HTTP shutdown, which
+// cannot see hijacked WebSockets.
+func (s *Server) Drain() {
+	s.connMu.Lock()
+	conns := make([]*websocket.Conn, 0, len(s.conns))
+	for c := range s.conns {
+		conns = append(conns, c)
+	}
+	s.connMu.Unlock()
+	for _, c := range conns {
+		_ = c.Close(websocket.StatusGoingAway, "server restarting")
 	}
 }
 

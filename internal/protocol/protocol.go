@@ -50,9 +50,14 @@ type MediaHeader struct {
 func (h MediaHeader) Keyframe() bool { return h.Flags&FlagKeyframe != 0 }
 
 // ParseMediaHeader reads the fixed header from a binary media message.
+// Unknown media kinds are rejected so the relay never amplifies arbitrary
+// payloads.
 func ParseMediaHeader(msg []byte) (MediaHeader, error) {
 	if len(msg) < HeaderSize {
 		return MediaHeader{}, fmt.Errorf("media message too short: %d bytes", len(msg))
+	}
+	if msg[0] != KindVideo && msg[0] != KindAudio {
+		return MediaHeader{}, fmt.Errorf("unknown media kind %d", msg[0])
 	}
 	return MediaHeader{
 		Kind:      msg[0],
@@ -74,11 +79,12 @@ const (
 	CtrlPing       ControlType = "ping"        // clock sync probe
 
 	// Server -> client.
-	CtrlWelcome    ControlType = "welcome"     // join accepted, current room state
-	CtrlStageState ControlType = "stage_state" // publisher changed / config changed
-	CtrlRoomState  ControlType = "room_state"  // participant list changed
-	CtrlPong       ControlType = "pong"        // ping reply with server time
-	CtrlError      ControlType = "error"
+	CtrlWelcome      ControlType = "welcome"       // join accepted, current room state
+	CtrlStageState   ControlType = "stage_state"   // publisher changed / config changed
+	CtrlRoomState    ControlType = "room_state"    // participant list changed
+	CtrlPong         ControlType = "pong"          // ping reply with server time
+	CtrlTokenRefresh ControlType = "token_refresh" // fresh share token for reconnects
+	CtrlError        ControlType = "error"
 
 	// Publisher -> server -> viewers (forwarded verbatim).
 	CtrlSync ControlType = "sync" // maps capture timestamps to wall clock
@@ -163,6 +169,13 @@ type Participant struct {
 // ErrorData is the payload of CtrlError.
 type ErrorData struct {
 	Message string `json:"message"`
+}
+
+// TokenRefreshData is the payload of CtrlTokenRefresh: a fresh share token
+// the companion tab must use on its next reconnect, so long streams outlive
+// the short token expiry.
+type TokenRefreshData struct {
+	ShareToken string `json:"shareToken"`
 }
 
 // MarshalControl encodes a control envelope with its payload.

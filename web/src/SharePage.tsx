@@ -128,6 +128,14 @@ const SharePage: Component = () => {
           Room <code>{room}</code> · connection: {session.status()}
         </p>
 
+        <Show when={capture() && session.status() !== "open"}>
+          <p class="error-text">
+            {session.status() === "unauthorized"
+              ? "⛔ Session expired — go back to Discord and click Share screen again."
+              : "⚠ Not connected — nobody can see your screen right now. Reconnecting…"}
+          </p>
+        </Show>
+
         <Show
           when={capture()}
           fallback={

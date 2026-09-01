@@ -2,7 +2,9 @@ package relay
 
 import (
 	"encoding/json"
+	"fmt"
 	"log/slog"
+	"sync"
 	"testing"
 
 	"github.com/pedro-hbl/janjacast/internal/protocol"
@@ -12,15 +14,12 @@ func discard() *slog.Logger {
 	return slog.New(slog.DiscardHandler)
 }
 
-// drain collects everything currently queued for a client.
-func drain(seq func(yield func(OutMsg) bool)) []OutMsg {
+// collect drains everything queued for a client after its Leave.
+func collect(seq func(yield func(OutMsg) bool)) []OutMsg {
 	var out []OutMsg
 	seq(func(m OutMsg) bool {
-		if len(m.Payload()) == 0 {
-			return false
-		}
 		out = append(out, m)
-		return len(out) < 100
+		return len(out) < 10_000
 	})
 	return out
 }
@@ -34,42 +33,41 @@ func mediaMsg(keyframe bool) []byte {
 	return msg
 }
 
+func stageOf(r *Room) protocol.StageStateData {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.stageStateLocked()
+}
+
 func TestFanoutSkipsPublisher(t *testing.T) {
 	hub := NewHub(discard())
-	room := hub.Room("r1")
-
-	alice, _ := room.Join("a", "alice")
-	bob, bobOut := room.Join("b", "bob")
+	room, alice, _ := hub.Join("r1", "a", "alice")
+	_, bob, bobOut := hub.Join("r1", "b", "bob")
 
 	room.TakeStage(alice)
 	room.ForwardMedia(alice, mediaMsg(true))
-	room.Leave(bob) // closes bob's channel so drain terminates
+	hub.Leave(room, bob)
 
-	var gotMedia int
-	for m := range bobOut {
+	var media int
+	for _, m := range collect(bobOut) {
 		if m.Binary() {
-			gotMedia++
+			media++
 		}
 	}
-	if gotMedia != 1 {
-		t.Fatalf("bob got %d media messages, want 1", gotMedia)
+	if media != 1 {
+		t.Fatalf("bob got %d media messages, want 1", media)
 	}
 }
 
 func TestNonPublisherMediaIgnored(t *testing.T) {
 	hub := NewHub(discard())
-	room := hub.Room("r1")
+	room, _, _ := hub.Join("r1", "a", "alice")
+	_, bob, bobOut := hub.Join("r1", "b", "bob")
 
-	alice, _ := room.Join("a", "alice")
-	bob, bobOut := room.Join("b", "bob")
+	room.ForwardMedia(bob, mediaMsg(true)) // bob never took the stage
+	hub.Leave(room, bob)
 
-	// bob never took the stage; his media must not be forwarded.
-	room.ForwardMedia(bob, mediaMsg(true))
-	room.Leave(alice)
-	_ = alice
-
-	room.Leave(bob)
-	for m := range bobOut {
+	for _, m := range collect(bobOut) {
 		if m.Binary() {
 			t.Fatal("media forwarded from a non-publisher")
 		}
@@ -78,17 +76,15 @@ func TestNonPublisherMediaIgnored(t *testing.T) {
 
 func TestPublisherLeavingFreesStage(t *testing.T) {
 	hub := NewHub(discard())
-	room := hub.Room("r1")
-
-	alice, _ := room.Join("a", "alice")
-	bob, bobOut := room.Join("b", "bob")
+	room, alice, _ := hub.Join("r1", "a", "alice")
+	_, bob, bobOut := hub.Join("r1", "b", "bob")
 
 	room.TakeStage(alice)
-	room.Leave(alice)
-	room.Leave(bob)
+	hub.Leave(room, alice)
+	hub.Leave(room, bob)
 
 	var last protocol.StageStateData
-	for m := range bobOut {
+	for _, m := range collect(bobOut) {
 		if m.Binary() {
 			continue
 		}
@@ -110,23 +106,79 @@ func TestPublisherLeavingFreesStage(t *testing.T) {
 
 func TestOwnerCanStopCompanionStage(t *testing.T) {
 	hub := NewHub(discard())
-	room := hub.Room("r1")
-
-	activity, _ := room.Join("u1", "pedro")
-	companion, _ := room.Join("u1:tab", "pedro (sharing)")
-	stranger, _ := room.Join("u2", "mallory")
+	room, activity, _ := hub.Join("r1", "u1", "pedro")
+	_, companion, _ := hub.Join("r1", "u1:tab", "pedro (sharing)")
+	_, stranger, _ := hub.Join("r1", "u2", "mallory")
 
 	room.TakeStage(companion)
 
-	// A stranger cannot stop someone else's stream.
 	room.LeaveStage(stranger)
-	if got := room.stageState().PublisherID; got != "u1:tab" {
+	if got := stageOf(room).PublisherID; got != "u1:tab" {
 		t.Fatalf("stranger cleared the stage (publisher %q)", got)
 	}
 
-	// The owner's Activity connection can.
 	room.LeaveStage(activity)
-	if got := room.stageState().PublisherID; got != "" {
+	if got := stageOf(room).PublisherID; got != "" {
 		t.Fatalf("owner could not stop own companion stream (publisher %q)", got)
+	}
+}
+
+// TestNewJoinerRequiresKeyframe: with no GOP cached, a fresh viewer must not
+// receive delta frames until a keyframe arrives.
+func TestNewJoinerRequiresKeyframe(t *testing.T) {
+	hub := NewHub(discard())
+	room, alice, _ := hub.Join("r1", "a", "alice")
+	room.TakeStage(alice) // clears GOP
+
+	_, bob, bobOut := hub.Join("r1", "b", "bob")
+
+	room.ForwardMedia(alice, mediaMsg(false)) // delta first: must be dropped
+	room.ForwardMedia(alice, mediaMsg(true))  // then a keyframe: delivered
+	room.ForwardMedia(alice, mediaMsg(false)) // and the next delta: delivered
+	hub.Leave(room, bob)
+
+	var media int
+	for _, m := range collect(bobOut) {
+		if m.Binary() {
+			media++
+		}
+	}
+	if media != 2 {
+		t.Fatalf("joiner got %d media messages, want 2 (keyframe + following delta)", media)
+	}
+}
+
+// TestConcurrentJoinLeave hammers the exact interleavings that previously
+// caused send-on-closed-channel panics and hub/room split-brain. Run with
+// -race.
+func TestConcurrentJoinLeave(t *testing.T) {
+	hub := NewHub(discard())
+
+	var wg sync.WaitGroup
+	for g := 0; g < 8; g++ {
+		wg.Add(1)
+		go func(g int) {
+			defer wg.Done()
+			for i := 0; i < 500; i++ {
+				id := fmt.Sprintf("u%d-%d", g, i)
+				room, c, seq := hub.Join("contested", id, id)
+				if g%2 == 0 {
+					room.TakeStage(c)
+					room.ForwardMedia(c, mediaMsg(true))
+				}
+				done := make(chan struct{})
+				go func() {
+					seq(func(OutMsg) bool { return true })
+					close(done)
+				}()
+				hub.Leave(room, c)
+				<-done
+			}
+		}(g)
+	}
+	wg.Wait()
+
+	if n := hub.Rooms(); n != 0 {
+		t.Fatalf("%d rooms leaked after all clients left (split-brain)", n)
 	}
 }

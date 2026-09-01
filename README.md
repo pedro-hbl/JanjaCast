@@ -22,8 +22,11 @@ sub-second latency, tab/system audio, 30/60 fps, and a one-click
 - 📉 **Adaptive bitrate** — congestion steps quality down, never latency up
 - 🎚 **Per-viewer volume**, live fps / bitrate / latency readout
 - 🛑 **Stop from anywhere** — the capture tab or remotely from the Activity
-- 🔐 **Authenticated rooms** — Discord OAuth identity + short-lived signed
-  share tokens; nobody outside the call can join or hijack a stream
+- 🔐 **Authenticated rooms** — every join must present a Discord OAuth token
+  (verified against Discord, application-audience checked) or a short-lived
+  signed share token. Room ids are unguessable activity-instance ids and
+  should be treated as bearer secrets; verifying actual call membership is on
+  the roadmap
 - 🔁 **Self-healing** — automatic reconnect on both ends; the stage re-claims
   itself
 - 🖍 Hand-drawn **crayon UI** (see the banner) served by the same binary

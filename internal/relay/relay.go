@@ -1,12 +1,16 @@
-// Package relay implements the fan-out core of janjacast: rooms keyed by
+// Package relay implements the fan-out core of JanjaCast: rooms keyed by
 // Discord activity instance, each with at most one publisher whose media
 // chunks are forwarded to every other participant.
+//
+// Lock discipline: Hub.mu is always acquired before Room.mu, never the
+// reverse. Client.out is never closed — senders use non-blocking sends and
+// the write loop exits via Client.done, so a racing broadcast can never hit
+// a closed channel.
 package relay
 
 import (
 	"iter"
 	"log/slog"
-	"maps"
 	"strings"
 	"sync"
 
@@ -17,6 +21,10 @@ import (
 // overflows the relay drops video until the next keyframe rather than
 // letting one slow consumer stall the room.
 const sendBuffer = 256
+
+// maxGOPBytes bounds the late-join cache; past this the cache is dropped and
+// joiners wait for the next keyframe like before.
+const maxGOPBytes = 16 << 20
 
 // Hub owns all rooms.
 type Hub struct {
@@ -30,38 +38,122 @@ func NewHub(log *slog.Logger) *Hub {
 	return &Hub{rooms: make(map[string]*Room), log: log}
 }
 
-// Room returns the room with the given id, creating it if needed.
-func (h *Hub) Room(id string) *Room {
+// Join atomically finds-or-creates the room and adds a participant to it,
+// replaying the cached GOP before the client becomes visible to the live
+// fan-out (so cached chunks always precede live ones). It returns the room,
+// the client handle, and the message sequence for the write loop.
+func (h *Hub) Join(roomID, userID, username string) (*Room, *Client, iter.Seq[OutMsg]) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	r, ok := h.rooms[id]
+	r, ok := h.rooms[roomID]
 	if !ok {
 		r = &Room{
-			id:      id,
-			hub:     h,
+			id:      roomID,
 			clients: make(map[*Client]struct{}),
-			log:     h.log.With("room", id),
+			log:     h.log.With("room", roomID),
 		}
-		h.rooms[id] = r
+		h.rooms[roomID] = r
 	}
-	return r
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	c := &Client{
+		UserID:       userID,
+		Username:     username,
+		out:          make(chan outMsg, sendBuffer),
+		done:         make(chan struct{}),
+		needKeyframe: true, // must not decode deltas before a keyframe
+	}
+
+	c.enqueueControl(protocol.CtrlWelcome, protocol.WelcomeData{
+		StageStateData: r.stageStateLocked(),
+		SelfID:         c.UserID,
+	})
+
+	// Replay the cached GOP so the newcomer has a picture immediately. If
+	// the replay overflows the queue, the client stays in needKeyframe so a
+	// truncated GOP is never fed to its decoder.
+	replayed := true
+	for _, msg := range r.gop {
+		select {
+		case c.out <- outMsg{binary: true, payload: msg}:
+		default:
+			replayed = false
+		}
+	}
+	if len(r.gop) > 0 && replayed {
+		c.needKeyframe = false
+	}
+
+	r.clients[c] = struct{}{}
+	r.broadcastRoomStateLocked()
+	r.log.Info("joined", "user", username, "id", userID)
+
+	// The sequence drains queued messages before honoring done, so nothing
+	// already accepted is dropped on the floor at disconnect.
+	seq := func(yield func(OutMsg) bool) {
+		for {
+			select {
+			case m := <-c.out:
+				if !yield(m) {
+					return
+				}
+			default:
+				select {
+				case m := <-c.out:
+					if !yield(m) {
+						return
+					}
+				case <-c.done:
+					return
+				}
+			}
+		}
+	}
+	return r, c, seq
 }
 
-func (h *Hub) removeIfEmpty(r *Room) {
+// Leave atomically removes the participant, freeing the stage if it held it,
+// and reaps the room when it empties.
+func (h *Hub) Leave(r *Room, c *Client) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	r.mu.Lock()
-	empty := len(r.clients) == 0
-	r.mu.Unlock()
-	if empty {
+	defer r.mu.Unlock()
+
+	if _, ok := r.clients[c]; !ok {
+		return
+	}
+	delete(r.clients, c)
+	c.closeOnce.Do(func() { close(c.done) })
+
+	if r.publisher == c {
+		r.publisher = nil
+		r.config = nil
+		r.clearGOPLocked()
+		r.broadcastStageStateLocked()
+	}
+	r.broadcastRoomStateLocked()
+
+	// Identity check: only reap the exact Room object registered under this
+	// id, so a stale reference can never evict a live successor.
+	if len(r.clients) == 0 && h.rooms[r.id] == r {
 		delete(h.rooms, r.id)
 	}
+	r.log.Info("left", "user", c.Username)
+}
+
+// Rooms returns the number of live rooms (for health/metrics).
+func (h *Hub) Rooms() int {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return len(h.rooms)
 }
 
 // Room is one activity instance: N participants, at most one publisher.
 type Room struct {
 	id  string
-	hub *Hub
 	log *slog.Logger
 
 	mu        sync.Mutex
@@ -76,20 +168,19 @@ type Room struct {
 	gopBytes int
 }
 
-// maxGOPBytes bounds the late-join cache; past this the cache is dropped and
-// joiners wait for the next keyframe like before.
-const maxGOPBytes = 16 << 20
-
 // Client is one connected WebSocket participant.
 type Client struct {
 	UserID   string
 	Username string
 
-	room *Room
-	// Out delivers messages to the connection write loop. Closed by Leave.
+	// out delivers messages to the connection write loop; it is buffered,
+	// only ever sent to non-blockingly, and never closed.
 	out chan outMsg
+	// done is closed exactly once by Leave; the write loop exits on it.
+	done      chan struct{}
+	closeOnce sync.Once
 	// needKeyframe marks that video was dropped and delta frames must be
-	// suppressed until the next keyframe arrives. Guarded by room.mu.
+	// suppressed until the next keyframe arrives. Guarded by Room.mu.
 	needKeyframe bool
 }
 
@@ -107,81 +198,14 @@ func (m outMsg) Binary() bool { return m.binary }
 // Payload is the raw message bytes.
 func (m outMsg) Payload() []byte { return m.payload }
 
-// Join adds a participant and returns its client handle plus a sequence for
-// the write loop to range over.
-func (r *Room) Join(userID, username string) (*Client, iter.Seq[OutMsg]) {
-	c := &Client{
-		UserID:   userID,
-		Username: username,
-		room:     r,
-		out:      make(chan outMsg, sendBuffer),
-	}
-	r.mu.Lock()
-	r.clients[c] = struct{}{}
-	r.mu.Unlock()
-
-	c.enqueueControl(protocol.CtrlWelcome, protocol.WelcomeData{
-		StageStateData: r.stageState(),
-		SelfID:         c.UserID,
-	})
-
-	// Replay the cached GOP so the newcomer has a picture immediately.
-	r.mu.Lock()
-	replay := make([][]byte, len(r.gop))
-	copy(replay, r.gop)
-	r.mu.Unlock()
-	for _, msg := range replay {
-		select {
-		case c.out <- outMsg{binary: true, payload: msg}:
-		default:
-		}
-	}
-
-	r.broadcastRoomState()
-	r.log.Info("joined", "user", username, "id", userID)
-
-	seq := func(yield func(OutMsg) bool) {
-		for m := range c.out {
-			if !yield(m) {
-				return
-			}
-		}
-	}
-	return c, seq
-}
-
-// Leave removes the participant, freeing the stage if it held it.
-func (r *Room) Leave(c *Client) {
-	r.mu.Lock()
-	if _, ok := r.clients[c]; !ok {
-		r.mu.Unlock()
-		return
-	}
-	delete(r.clients, c)
-	close(c.out)
-	wasPublisher := r.publisher == c
-	if wasPublisher {
-		r.publisher = nil
-		r.config = nil
-	}
-	r.mu.Unlock()
-
-	if wasPublisher {
-		r.broadcastStageState()
-	}
-	r.broadcastRoomState()
-	r.hub.removeIfEmpty(r)
-	r.log.Info("left", "user", c.Username)
-}
-
 // TakeStage makes c the publisher, replacing any current one.
 func (r *Room) TakeStage(c *Client) {
 	r.mu.Lock()
+	defer r.mu.Unlock()
 	r.publisher = c
 	r.config = nil
 	r.clearGOPLocked()
-	r.mu.Unlock()
-	r.broadcastStageState()
+	r.broadcastStageStateLocked()
 	r.log.Info("stage taken", "user", c.Username)
 }
 
@@ -190,28 +214,26 @@ func (r *Room) TakeStage(c *Client) {
 // companion capture tab, whose id is theirs with a ":tab" suffix).
 func (r *Room) LeaveStage(c *Client) {
 	r.mu.Lock()
+	defer r.mu.Unlock()
 	if r.publisher == nil || (r.publisher != c && baseID(r.publisher.UserID) != baseID(c.UserID)) {
-		r.mu.Unlock()
 		return
 	}
 	r.publisher = nil
 	r.config = nil
 	r.clearGOPLocked()
-	r.mu.Unlock()
-	r.broadcastStageState()
+	r.broadcastStageStateLocked()
 }
 
 // SetConfig records the publisher's codec config and announces it.
 func (r *Room) SetConfig(c *Client, cfg *protocol.ConfigData) {
 	r.mu.Lock()
+	defer r.mu.Unlock()
 	if r.publisher != c {
-		r.mu.Unlock()
 		return
 	}
 	r.config = cfg
 	r.clearGOPLocked() // new encoder session invalidates the cache
-	r.mu.Unlock()
-	r.broadcastStageState()
+	r.broadcastStageStateLocked()
 }
 
 // ForwardControl broadcasts a publisher-originated control message (e.g.
@@ -219,32 +241,21 @@ func (r *Room) SetConfig(c *Client, cfg *protocol.ConfigData) {
 // ignored.
 func (r *Room) ForwardControl(from *Client, t protocol.ControlType, data any) {
 	r.mu.Lock()
-	isPublisher := r.publisher == from
-	r.mu.Unlock()
-	if !isPublisher {
+	defer r.mu.Unlock()
+	if r.publisher != from {
 		return
 	}
-	for c := range r.snapshotClients() {
+	for c := range r.clients {
 		if c != from {
 			c.enqueueControl(t, data)
 		}
 	}
 }
 
-func (r *Room) clearGOPLocked() {
-	r.gop = nil
-	r.gopBytes = 0
-}
-
-// baseID strips the companion-tab suffix, yielding the person's identity.
-func baseID(id string) string {
-	base, _ := strings.CutSuffix(id, ":tab")
-	return base
-}
-
 // ForwardMedia fans a binary media message from the publisher out to every
 // other participant. Slow viewers get video dropped until the next keyframe;
-// audio is always queued if there is room, else dropped silently.
+// audio is always queued if there is room, else dropped silently. Messages
+// with unknown media kinds are discarded by the header parser.
 func (r *Room) ForwardMedia(from *Client, msg []byte) {
 	hdr, err := protocol.ParseMediaHeader(msg)
 	if err != nil {
@@ -260,7 +271,9 @@ func (r *Room) ForwardMedia(from *Client, msg []byte) {
 	if hdr.Kind == protocol.KindVideo {
 		switch {
 		case hdr.Keyframe():
-			r.gop = append(r.gop[:0], msg)
+			// Fresh slice: reslicing the old backing array would pin the
+			// previous GOP's chunks in unused capacity.
+			r.gop = [][]byte{msg}
 			r.gopBytes = len(msg)
 		case r.gop != nil:
 			if r.gopBytes+len(msg) > maxGOPBytes {
@@ -295,10 +308,8 @@ func (r *Room) ForwardMedia(from *Client, msg []byte) {
 	}
 }
 
-// stageState snapshots the current stage. Callers need not hold r.mu.
-func (r *Room) stageState() protocol.StageStateData {
-	r.mu.Lock()
-	defer r.mu.Unlock()
+// stageStateLocked snapshots the stage. Caller must hold r.mu.
+func (r *Room) stageStateLocked() protocol.StageStateData {
 	s := protocol.StageStateData{Config: r.config}
 	if r.publisher != nil {
 		s.PublisherID = r.publisher.UserID
@@ -307,40 +318,46 @@ func (r *Room) stageState() protocol.StageStateData {
 	return s
 }
 
-func (r *Room) broadcastStageState() {
-	state := r.stageState()
-	for c := range r.snapshotClients() {
+// broadcastStageStateLocked fans the stage state out. Caller must hold r.mu;
+// all sends are non-blocking so holding the lock is cheap.
+func (r *Room) broadcastStageStateLocked() {
+	state := r.stageStateLocked()
+	for c := range r.clients {
 		c.enqueueControl(protocol.CtrlStageState, state)
 	}
 }
 
-func (r *Room) broadcastRoomState() {
-	var parts []protocol.Participant
-	r.mu.Lock()
+func (r *Room) broadcastRoomStateLocked() {
+	parts := make([]protocol.Participant, 0, len(r.clients))
 	for c := range r.clients {
 		parts = append(parts, protocol.Participant{UserID: c.UserID, Username: c.Username})
 	}
-	r.mu.Unlock()
 	state := protocol.RoomStateData{Participants: parts}
-	for c := range r.snapshotClients() {
+	for c := range r.clients {
 		c.enqueueControl(protocol.CtrlRoomState, state)
 	}
 }
 
-// snapshotClients returns an iterator over a point-in-time copy of members,
-// safe to range without holding the lock.
-func (r *Room) snapshotClients() iter.Seq[*Client] {
-	r.mu.Lock()
-	snap := maps.Clone(r.clients)
-	r.mu.Unlock()
-	return maps.Keys(snap)
+func (r *Room) clearGOPLocked() {
+	r.gop = nil
+	r.gopBytes = 0
 }
 
-// SendControl queues a control message for this client alone.
+// baseID strips the companion-tab suffix, yielding the person's identity.
+func baseID(id string) string {
+	base, _ := strings.CutSuffix(id, ":tab")
+	return base
+}
+
+// SendControl queues a control message for this client alone. Safe to call
+// concurrently with Leave: the channel is never closed.
 func (c *Client) SendControl(t protocol.ControlType, data any) {
 	c.enqueueControl(t, data)
 }
 
+// enqueueControl marshals and queues a control message. The send is
+// non-blocking and the channel is never closed, so this is safe under any
+// lock and against concurrent Leave.
 func (c *Client) enqueueControl(t protocol.ControlType, data any) {
 	payload, err := protocol.MarshalControl(t, data)
 	if err != nil {
