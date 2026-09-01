@@ -51,6 +51,10 @@ export class Session {
   onSync: ((sync: SyncData) => void) | null = null;
   /** Called after a successful automatic reconnect (not the first open). */
   onReconnected: (() => void) | null = null;
+  /** Publisher side: a viewer or the relay needs a keyframe right now. */
+  onKeyframeRequest: (() => void) | null = null;
+  /** Publisher side: someone took the stage from us (their display name). */
+  onStageTaken: ((byName: string) => void) | null = null;
 
   constructor(
     private identity: Identity,
@@ -170,6 +174,10 @@ export class Session {
     this.sendControl("sync", sync);
   }
 
+  requestKeyframe(): void {
+    this.sendControl("keyframe_request", {});
+  }
+
   sendMedia(buf: ArrayBuffer): void {
     if (this.ws?.readyState === WebSocket.OPEN) this.ws.send(buf);
   }
@@ -231,6 +239,14 @@ export class Session {
       case "sync":
         this.onSync?.(ctrl.data as SyncData);
         break;
+      case "keyframe_request":
+        this.onKeyframeRequest?.();
+        break;
+      case "stage_taken": {
+        const { byName } = ctrl.data as { byName: string };
+        this.onStageTaken?.(byName ?? "someone");
+        break;
+      }
       case "token_refresh": {
         // Fresh share token so reconnects keep working past token expiry.
         const { shareToken } = ctrl.data as { shareToken: string };

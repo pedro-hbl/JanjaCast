@@ -39,6 +39,13 @@ const SharePage: Component = () => {
   );
   const [stats, setStats] = createSignal({ fps: 0, kbps: 0, targetKbps: 0 });
   const [error, setError] = createSignal<string | null>(null);
+  const [hint, setHint] = createSignal<"text" | "motion">("text");
+  const [takenBy, setTakenBy] = createSignal<string | null>(null);
+
+  // Keyframe-on-demand: the relay asks when a viewer joins or falls behind.
+  session.onKeyframeRequest = () => capture()?.forceKeyframe();
+  // If someone takes the stage, say so instead of silently reverting.
+  session.onStageTaken = (byName) => setTakenBy(byName);
 
   // Remote stop: if we held the stage and it is no longer ours (the user
   // clicked Stop in the Activity, or someone took over), end capture here.
@@ -99,11 +106,14 @@ const SharePage: Component = () => {
 
   const start = async () => {
     setError(null);
+    setTakenBy(null);
     try {
       const handle = await startCapture(fps(), (buf) => session.sendMedia(buf), {
         backpressure: () => session.bufferedAmount(),
+        contentHint: hint(),
       });
       handle.onended = stop;
+      handle.onconfigchange = (cfg) => session.announceConfig(cfg);
       setCapture(handle);
       session.takeStage();
       session.announceConfig(handle.config);
@@ -140,6 +150,9 @@ const SharePage: Component = () => {
           when={capture()}
           fallback={
             <>
+              <Show when={takenBy()}>
+                <p class="error-text">✋ {takenBy()} took the stage.</p>
+              </Show>
               <label class="fps-label">
                 Framerate{" "}
                 <select
@@ -149,6 +162,17 @@ const SharePage: Component = () => {
                 >
                   <option value={30}>30 fps</option>
                   <option value={60}>60 fps</option>
+                </select>
+              </label>
+              <label class="fps-label">
+                Optimize for{" "}
+                <select
+                  class="crayon-select"
+                  value={hint()}
+                  onChange={(e) => setHint(e.currentTarget.value as "text" | "motion")}
+                >
+                  <option value="text">📖 Text (code, slides)</option>
+                  <option value="motion">🎮 Motion (games, video)</option>
                 </select>
               </label>
               <button

@@ -13,6 +13,7 @@ import (
 	"log/slog"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/pedro-hbl/janjacast/internal/protocol"
 )
@@ -84,6 +85,9 @@ func (h *Hub) Join(roomID, userID, username string) (*Room, *Client, iter.Seq[Ou
 	}
 	if len(r.gop) > 0 && replayed {
 		c.needKeyframe = false
+	} else if r.publisher != nil {
+		// No usable cache: get this joiner a picture as fast as possible.
+		r.requestKeyframeLocked()
 	}
 
 	r.clients[c] = struct{}{}
@@ -166,7 +170,14 @@ type Room struct {
 	// waiting for the next keyframe. Guarded by mu.
 	gop      [][]byte
 	gopBytes int
+
+	// lastKFReq debounces keyframe requests to the publisher. Guarded by mu.
+	lastKFReq time.Time
 }
+
+// kfDebounce is the minimum gap between keyframe requests forwarded to a
+// publisher — coalesces a burst of struggling viewers into one request.
+const kfDebounce = 300 * time.Millisecond
 
 // Client is one connected WebSocket participant.
 type Client struct {
@@ -198,15 +209,35 @@ func (m outMsg) Binary() bool { return m.binary }
 // Payload is the raw message bytes.
 func (m outMsg) Payload() []byte { return m.payload }
 
-// TakeStage makes c the publisher, replacing any current one.
+// TakeStage makes c the publisher, replacing any current one. A displaced
+// publisher is told who took over so its UI can say so.
 func (r *Room) TakeStage(c *Client) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if old := r.publisher; old != nil && old != c {
+		old.enqueueControl(protocol.CtrlStageTaken, protocol.StageTakenData{ByName: c.Username})
+	}
 	r.publisher = c
 	r.config = nil
 	r.clearGOPLocked()
 	r.broadcastStageStateLocked()
 	r.log.Info("stage taken", "user", c.Username)
+}
+
+// RequestKeyframe forwards a keyframe request to the publisher, debounced
+// per room. Safe to call whenever a viewer is stuck waiting for a keyframe.
+func (r *Room) RequestKeyframe() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.requestKeyframeLocked()
+}
+
+func (r *Room) requestKeyframeLocked() {
+	if r.publisher == nil || time.Since(r.lastKFReq) < kfDebounce {
+		return
+	}
+	r.lastKFReq = time.Now()
+	r.publisher.enqueueControl(protocol.CtrlKeyframeRequest, struct{}{})
 }
 
 // LeaveStage clears the stage if c holds it — or if c is the same person on
@@ -297,7 +328,10 @@ func (r *Room) ForwardMedia(from *Client, msg []byte) {
 			case c.out <- outMsg{binary: true, payload: msg}:
 				c.needKeyframe = false
 			default:
-				c.needKeyframe = true // overflow: drop until next keyframe
+				if !c.needKeyframe {
+					c.needKeyframe = true // overflow: drop until next keyframe
+					r.requestKeyframeLocked()
+				}
 			}
 		} else {
 			select {

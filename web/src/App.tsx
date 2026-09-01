@@ -44,6 +44,8 @@ const App: Component = () => {
       player = new Player(canvasRef, () => s.serverNow());
       s.onMedia = (buf) => player?.push(buf);
       s.onSync = (sync) => player?.setSync(sync);
+      // Fast recovery: when video stalls waiting for a keyframe, ask for one.
+      player.onNeedKeyframe = () => s.requestKeyframe();
       s.connect();
       setSession(s);
     } catch (e) {
@@ -100,6 +102,18 @@ const App: Component = () => {
     url.searchParams.set("fps", String(fps()));
     await openExternal(url.toString());
     setCompanionOpened(true);
+  };
+
+  const [confirmTakeover, setConfirmTakeover] = createSignal(false);
+
+  /** Entry point for the Share button: if someone else is live, ask before
+   *  kicking them off the stage. */
+  const shareClicked = () => {
+    if (live() && !session()?.ownsStage()) {
+      setConfirmTakeover(true);
+      return;
+    }
+    void share();
   };
 
   const share = async () => {
@@ -201,8 +215,8 @@ const App: Component = () => {
             <Show
               when={session()?.ownsStage()}
               fallback={
-                <button onClick={share} class="crayon-btn crayon-btn--go">
-                  Share screen
+                <button onClick={shareClicked} class="crayon-btn crayon-btn--go">
+                  {live() ? "Take the stage" : "Share screen"}
                 </button>
               }
             >
@@ -258,6 +272,43 @@ const App: Component = () => {
           <span class="error-text">{error()}</span>
         </Show>
       </footer>
+
+      <Show when={confirmTakeover()}>
+        <div
+          style={{
+            position: "fixed",
+            inset: "0",
+            display: "flex",
+            "align-items": "center",
+            "justify-content": "center",
+            background: "rgba(0,0,0,0.55)",
+            "z-index": "10",
+          }}
+        >
+          <div class="share-card" style={{ "max-width": "340px", padding: "24px" }}>
+            <p style={{ "font-size": "16px", margin: "0 0 16px" }}>
+              ✋ Kick <strong>{stage().publisherName}</strong> off the stage?
+            </p>
+            <div style={{ display: "flex", gap: "12px", "justify-content": "center" }}>
+              <button
+                class="crayon-btn crayon-btn--go"
+                onClick={() => {
+                  setConfirmTakeover(false);
+                  void share();
+                }}
+              >
+                Yeah, my turn
+              </button>
+              <button
+                class="crayon-btn crayon-btn--stop"
+                onClick={() => setConfirmTakeover(false)}
+              >
+                Never mind
+              </button>
+            </div>
+          </div>
+        </div>
+      </Show>
     </div>
   );
 };

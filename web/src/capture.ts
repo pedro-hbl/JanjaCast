@@ -7,7 +7,10 @@
 
 import { KIND_AUDIO, KIND_VIDEO, packMedia, type ConfigData } from "./protocol";
 
-const KEYFRAME_INTERVAL_US = 2_000_000; // request a keyframe every 2s so late joiners sync fast
+// Safety-net keyframe cadence. Recovery and late-join are driven by
+// keyframe-on-demand requests from the relay, so this only bounds the worst
+// case — a long interval saves substantial bitrate on static screen content.
+const KEYFRAME_INTERVAL_US = 10_000_000;
 
 // Adaptive bitrate: when the WebSocket send buffer backs up the uplink can't
 // keep pace — step the encoder down; after a sustained clear period, step
@@ -28,6 +31,8 @@ export interface CaptureStats {
 export interface CaptureOptions {
   /** Bytes queued on the transport but not yet sent (ws.bufferedAmount). */
   backpressure?: () => number;
+  /** "text" sharpens edges for code/slides; "motion" favors smoothness. */
+  contentHint?: "text" | "motion";
 }
 
 export interface CaptureSample {
@@ -42,8 +47,12 @@ export interface CaptureHandle {
   stats(): CaptureStats;
   /** Timestamp of the most recently encoded frame — used for clock sync. */
   lastSample(): CaptureSample | null;
+  /** Encode the next frame as a keyframe (keyframe-on-demand). */
+  forceKeyframe(): void;
   /** Fires when the user ends capture via the browser's own UI. */
   onended: (() => void) | null;
+  /** Fires when the source resized and config changed — re-announce it. */
+  onconfigchange: ((cfg: ConfigData) => void) | null;
 }
 
 interface VideoCodecChoice {
@@ -107,13 +116,24 @@ export async function startCapture(
       noiseSuppression: false,
       autoGainControl: false,
     },
+    // Chromium extras (typed loosely on purpose): reliably capture system
+    // audio, keep this tab out of its own picker, and let the sharer switch
+    // the shared surface without restarting the stream.
+    ...({
+      systemAudio: "include",
+      selfBrowserSurface: "exclude",
+      surfaceSwitching: "include",
+    } as object),
   });
 
   const videoTrack = stream.getVideoTracks()[0];
   if (!videoTrack) throw new Error("no video track from getDisplayMedia");
+  // "text" tells the encoder to preserve sharp edges — the difference
+  // between readable and mushy code/slides at a given bitrate.
+  videoTrack.contentHint = opts.contentHint ?? "text";
   const settings = videoTrack.getSettings();
-  const width = settings.width ?? 1920;
-  const height = settings.height ?? 1080;
+  let width = settings.width ?? 1920;
+  let height = settings.height ?? 1080;
 
   const chosen = await pickVideoCodec(width, height, framerate);
 
@@ -154,6 +174,7 @@ export async function startCapture(
   const videoReader = videoProcessor.readable.getReader();
   let lastKeyframeTs = 0;
   let running = true;
+  let keyframeWanted = false;
   let sample: CaptureSample | null = null;
 
   (async () => {
@@ -171,13 +192,37 @@ export async function startCapture(
         continue;
       }
       const ts = frame.timestamp ?? 0;
-      const keyframe = ts - lastKeyframeTs >= KEYFRAME_INTERVAL_US;
-      if (keyframe) lastKeyframeTs = ts;
+      const keyframe = keyframeWanted || ts - lastKeyframeTs >= KEYFRAME_INTERVAL_US;
+      if (keyframe) {
+        lastKeyframeTs = ts;
+        keyframeWanted = false;
+      }
       sample = { ts, at: performance.now() };
       videoEncoder.encode(frame, { keyFrame: keyframe });
       frame.close();
     }
   })();
+
+  // Shared-source resizes (window shares especially) must reconfigure the
+  // encoder and re-announce dimensions, or viewers keep a stale canvas and
+  // the encoder may error. Debounced: live window-dragging fires storms.
+  let resizeTimer: ReturnType<typeof setTimeout> | null = null;
+  videoTrack.addEventListener("resize", () => {
+    if (resizeTimer) clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(() => {
+      const now = videoTrack.getSettings();
+      const w = now.width ?? width;
+      const h = now.height ?? height;
+      if ((w === width && h === height) || videoEncoder.state !== "configured") return;
+      width = w;
+      height = h;
+      chosen.config = { ...chosen.config, width, height };
+      videoEncoder.configure({ ...chosen.config, bitrate });
+      keyframeWanted = true; // fresh parameter set needs a fresh IDR
+      handle.config = { ...handle.config, width, height };
+      handle.onconfigchange?.(handle.config);
+    }, 500);
+  });
 
   // --- adaptive bitrate -----------------------------------------------------
   let clearSeconds = 0;
@@ -190,13 +235,17 @@ export async function startCapture(
       if (next < bitrate) {
         bitrate = next;
         videoEncoder.configure({ ...chosen.config, bitrate });
+        keyframeWanted = true; // reconfigure can reset reference state
       }
     } else if (backlog < ABR_LOW_WATER && bitrate < targetBitrate) {
       clearSeconds++;
       if (clearSeconds >= ABR_STEP_UP_AFTER_S) {
         clearSeconds = 0;
-        bitrate = Math.min(targetBitrate, Math.round(bitrate * 1.15));
+        // Additive increase: multiplicative recovery from the floor takes
+        // over a minute to get back to target — far too slow.
+        bitrate = Math.min(targetBitrate, bitrate + 400_000);
         videoEncoder.configure({ ...chosen.config, bitrate });
+        keyframeWanted = true;
       }
     } else {
       clearSeconds = 0;
@@ -258,11 +307,16 @@ export async function startCapture(
     },
     stats: () => stats,
     lastSample: () => sample,
+    forceKeyframe: () => {
+      keyframeWanted = true;
+    },
     onended: null,
+    onconfigchange: null,
     stop() {
       running = false;
       clearInterval(statsTimer);
       clearInterval(abrTimer);
+      if (resizeTimer) clearTimeout(resizeTimer);
       for (const track of stream.getTracks()) track.stop();
       videoReader.cancel().catch(() => {});
       audioReader?.cancel().catch(() => {});

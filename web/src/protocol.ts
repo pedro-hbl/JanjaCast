@@ -15,6 +15,8 @@ export type ControlType =
   | "ping"
   | "pong"
   | "sync"
+  | "keyframe_request"
+  | "stage_taken"
   | "welcome"
   | "stage_state"
   | "room_state"

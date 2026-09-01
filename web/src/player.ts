@@ -47,6 +47,11 @@ export class Player {
   private byteCount = 0;
   private currentStats: PlayerStats = { fps: 0, kbps: 0, latencyMs: null };
   private statsTimer: ReturnType<typeof setInterval>;
+  private lastKfAsk = 0;
+
+  /** Fired (throttled) when video is stalled waiting for a keyframe —
+   *  wire it to Session.requestKeyframe for fast recovery. */
+  onNeedKeyframe: (() => void) | null = null;
 
   constructor(
     private canvas: HTMLCanvasElement,
@@ -141,7 +146,14 @@ export class Player {
     this.byteCount += chunk.payload.byteLength;
 
     if (chunk.kind === KIND_VIDEO && this.videoDecoder?.state === "configured") {
-      if (this.awaitingKeyframe && !chunk.keyframe) return;
+      if (this.awaitingKeyframe && !chunk.keyframe) {
+        const now = performance.now();
+        if (now - this.lastKfAsk > 1000) {
+          this.lastKfAsk = now;
+          this.onNeedKeyframe?.();
+        }
+        return;
+      }
       this.awaitingKeyframe = false;
       // Drop to live: a keyframe is a safe point to throw away a backlog
       // that the decoder or presenter has fallen behind on.

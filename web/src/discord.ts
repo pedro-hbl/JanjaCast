@@ -94,6 +94,10 @@ export async function setupIdentity(): Promise<Identity> {
   sdkInstance = sdk;
   await sdk.ready();
 
+  // Software-decoding 1080p60 in an Activity is punishing; ask Discord to
+  // enable hardware acceleration. Best-effort — older clients lack it.
+  sdk.commands.encourageHardwareAcceleration().catch(() => {});
+
   const { code } = await sdk.commands.authorize({
     client_id: clientId,
     response_type: "code",

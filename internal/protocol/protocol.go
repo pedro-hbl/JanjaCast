@@ -77,6 +77,11 @@ const (
 	CtrlLeaveStage ControlType = "leave_stage" // stop publishing
 	CtrlConfig     ControlType = "config"      // publisher announces codec config
 	CtrlPing       ControlType = "ping"        // clock sync probe
+	// CtrlKeyframeRequest asks the publisher for an immediate keyframe —
+	// sent by viewers stuck waiting (late join with no cache, drop-to-live)
+	// and by the relay itself when it starts dropping a viewer's video.
+	// Debounced per room server-side.
+	CtrlKeyframeRequest ControlType = "keyframe_request"
 
 	// Server -> client.
 	CtrlWelcome      ControlType = "welcome"       // join accepted, current room state
@@ -88,6 +93,9 @@ const (
 
 	// Publisher -> server -> viewers (forwarded verbatim).
 	CtrlSync ControlType = "sync" // maps capture timestamps to wall clock
+
+	// Server -> displaced publisher.
+	CtrlStageTaken ControlType = "stage_taken" // someone took your stage
 )
 
 // Control is the JSON envelope for text messages.
@@ -176,6 +184,13 @@ type ErrorData struct {
 // the short token expiry.
 type TokenRefreshData struct {
 	ShareToken string `json:"shareToken"`
+}
+
+// StageTakenData is the payload of CtrlStageTaken, telling a displaced
+// publisher who replaced them (so their UI can say so instead of silently
+// reverting).
+type StageTakenData struct {
+	ByName string `json:"byName"`
 }
 
 // MarshalControl encodes a control envelope with its payload.

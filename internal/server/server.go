@@ -504,5 +504,7 @@ func (s *Server) handleControl(room *relay.Room, client *relay.Client, data []by
 		}
 	case protocol.CtrlSync:
 		room.ForwardControl(client, protocol.CtrlSync, ctrl.Data)
+	case protocol.CtrlKeyframeRequest:
+		room.RequestKeyframe()
 	}
 }
