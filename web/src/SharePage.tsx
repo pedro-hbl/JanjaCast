@@ -15,28 +15,51 @@ const SharePage: Component = () => {
 
   const identity: Identity = {
     inDiscord: false,
-    userId: params.get("user") ?? Math.random().toString(36).slice(2, 10),
+    userId: Math.random().toString(36).slice(2, 10), // server overrides via token
     username: `${name} (sharing)`,
     room,
   };
 
-  const session = new Session(identity);
+  const session = new Session(identity, {
+    shareToken: params.get("token") ?? undefined,
+  });
   session.connect();
 
   const [capture, setCapture] = createSignal<CaptureHandle | null>(null);
   const [fps, setFps] = createSignal<30 | 60>(
     params.get("fps") === "60" ? 60 : 30,
   );
-  const [stats, setStats] = createSignal({ fps: 0, kbps: 0 });
+  const [stats, setStats] = createSignal({ fps: 0, kbps: 0, targetKbps: 0 });
   const [error, setError] = createSignal<string | null>(null);
+
+  // Re-claim the stage after a transport reconnect so viewers recover
+  // without the sharer touching anything.
+  session.onReconnected = () => {
+    const c = capture();
+    if (c) {
+      session.takeStage();
+      session.announceConfig(c.config);
+    }
+  };
 
   const statsTimer = setInterval(() => {
     const c = capture();
     if (c) setStats(c.stats());
   }, 1000);
 
+  // Publish clock-sync marks so viewers can measure glass-to-glass latency.
+  const syncTimer = setInterval(() => {
+    const sample = capture()?.lastSample();
+    if (!sample) return;
+    session.sendSync({
+      captureTs: sample.ts,
+      wallTs: session.serverNow() - (performance.now() - sample.at),
+    });
+  }, 1000);
+
   onCleanup(() => {
     clearInterval(statsTimer);
+    clearInterval(syncTimer);
     capture()?.stop();
     session.close();
   });
@@ -44,7 +67,9 @@ const SharePage: Component = () => {
   const start = async () => {
     setError(null);
     try {
-      const handle = await startCapture(fps(), (buf) => session.sendMedia(buf));
+      const handle = await startCapture(fps(), (buf) => session.sendMedia(buf), {
+        backpressure: () => session.bufferedAmount(),
+      });
       handle.onended = stop;
       setCapture(handle);
       session.takeStage();
@@ -117,6 +142,7 @@ const SharePage: Component = () => {
       >
         <p style={{ "font-size": "18px" }}>
           🔴 Live at {fps()} fps — {stats().fps} fps · {stats().kbps} kbps
+          (target {stats().targetKbps})
         </p>
         <button
           onClick={stop}

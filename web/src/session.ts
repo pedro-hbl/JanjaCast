@@ -1,5 +1,7 @@
 // WebSocket session with the relay server: joins the room, exposes stage /
-// room state as Solid signals, and forwards media chunks in both directions.
+// room state as Solid signals, forwards media chunks in both directions,
+// reconnects automatically with backoff, and keeps a server-clock estimate
+// from ping/pong probes (used for glass-to-glass latency).
 
 import { createSignal } from "solid-js";
 import { apiPath, type Identity } from "./discord";
@@ -8,9 +10,18 @@ import type {
   Control,
   RoomStateData,
   StageStateData,
+  SyncData,
 } from "./protocol";
 
-export type SessionStatus = "connecting" | "open" | "closed";
+export type SessionStatus = "connecting" | "open" | "reconnecting" | "closed";
+
+export interface Credentials {
+  accessToken?: string;
+  shareToken?: string;
+}
+
+const PING_INTERVAL_MS = 10_000;
+const MAX_BACKOFF_MS = 8_000;
 
 export class Session {
   readonly status;
@@ -18,14 +29,26 @@ export class Session {
   readonly participants;
 
   private ws: WebSocket | null = null;
+  private closedByUser = false;
+  private reconnectAttempt = 0;
+  private pingTimer: ReturnType<typeof setInterval> | null = null;
+  private clockOffsets: number[] = []; // serverTime - localTime estimates
+
   private setStatus;
   private setStage;
   private setParticipants;
 
   /** Called for every incoming binary media message. */
   onMedia: ((buf: ArrayBuffer) => void) | null = null;
+  /** Called for publisher clock-sync marks. */
+  onSync: ((sync: SyncData) => void) | null = null;
+  /** Called after a successful automatic reconnect (not the first open). */
+  onReconnected: (() => void) | null = null;
 
-  constructor(private identity: Identity) {
+  constructor(
+    private identity: Identity,
+    private creds: Credentials = {},
+  ) {
     const [status, setStatus] = createSignal<SessionStatus>("connecting");
     const [stage, setStage] = createSignal<StageStateData>({});
     const [participants, setParticipants] = createSignal<RoomStateData>({
@@ -46,15 +69,20 @@ export class Session {
     this.ws = ws;
 
     ws.onopen = () => {
+      const reconnected = this.reconnectAttempt > 0;
+      this.reconnectAttempt = 0;
       this.sendControl("join", {
         room: this.identity.room,
         userId: this.identity.userId,
         username: this.identity.username,
+        accessToken: this.creds.accessToken,
+        shareToken: this.creds.shareToken,
       });
       this.setStatus("open");
+      this.startPinging();
+      if (reconnected) this.onReconnected?.();
     };
-    ws.onclose = () => this.setStatus("closed");
-    ws.onerror = () => this.setStatus("closed");
+    ws.onclose = () => this.handleClose();
     ws.onmessage = (ev) => {
       if (typeof ev.data === "string") {
         this.handleControl(JSON.parse(ev.data) as Control);
@@ -64,9 +92,54 @@ export class Session {
     };
   }
 
+  private handleClose(): void {
+    this.stopPinging();
+    if (this.closedByUser) {
+      this.setStatus("closed");
+      return;
+    }
+    this.setStatus("reconnecting");
+    const delay = Math.min(
+      500 * 2 ** this.reconnectAttempt + Math.random() * 250,
+      MAX_BACKOFF_MS,
+    );
+    this.reconnectAttempt++;
+    setTimeout(() => {
+      if (!this.closedByUser) this.connect();
+    }, delay);
+  }
+
   close(): void {
+    this.closedByUser = true;
+    this.stopPinging();
     this.ws?.close();
   }
+
+  // --- clock sync -----------------------------------------------------------
+
+  private startPinging(): void {
+    this.stopPinging();
+    const ping = () => this.sendControl("ping", { t: performance.now() });
+    ping();
+    setTimeout(ping, 500); // a couple of quick early samples
+    setTimeout(ping, 1500);
+    this.pingTimer = setInterval(ping, PING_INTERVAL_MS);
+  }
+
+  private stopPinging(): void {
+    if (this.pingTimer) clearInterval(this.pingTimer);
+    this.pingTimer = null;
+  }
+
+  /** Current estimate of the server's wall clock, in Unix milliseconds. */
+  serverNow(): number {
+    if (this.clockOffsets.length === 0) return Date.now();
+    const sorted = [...this.clockOffsets].sort((a, b) => a - b);
+    const median = sorted[Math.floor(sorted.length / 2)]!;
+    return performance.now() + median;
+  }
+
+  // --- outbound -------------------------------------------------------------
 
   takeStage(): void {
     this.sendControl("take_stage", {});
@@ -80,6 +153,10 @@ export class Session {
     this.sendControl("config", cfg);
   }
 
+  sendSync(sync: SyncData): void {
+    this.sendControl("sync", sync);
+  }
+
   sendMedia(buf: ArrayBuffer): void {
     if (this.ws?.readyState === WebSocket.OPEN) this.ws.send(buf);
   }
@@ -90,7 +167,8 @@ export class Session {
   }
 
   isPublisher(): boolean {
-    return this.stage().publisherId === this.identity.userId;
+    const pid = this.stage().publisherId;
+    return pid === this.identity.userId;
   }
 
   private sendControl(type: Control["type"], data: unknown): void {
@@ -98,6 +176,8 @@ export class Session {
       this.ws.send(JSON.stringify({ type, data }));
     }
   }
+
+  // --- inbound --------------------------------------------------------------
 
   private handleControl(ctrl: Control): void {
     switch (ctrl.type) {
@@ -107,6 +187,17 @@ export class Session {
         break;
       case "room_state":
         this.setParticipants((ctrl.data ?? { participants: [] }) as RoomStateData);
+        break;
+      case "pong": {
+        const { t, serverTime } = ctrl.data as { t: number; serverTime: number };
+        const rtt = performance.now() - t;
+        // offset maps performance.now() -> server Unix ms
+        this.clockOffsets.push(serverTime + rtt / 2 - performance.now());
+        if (this.clockOffsets.length > 7) this.clockOffsets.shift();
+        break;
+      }
+      case "sync":
+        this.onSync?.(ctrl.data as SyncData);
         break;
       case "error":
         console.error("server error:", ctrl.data);

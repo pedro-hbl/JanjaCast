@@ -52,9 +52,14 @@ environment than you'd think:
 Requires Go 1.26+ and Node 24+.
 
 ```sh
-make all      # builds web client, embeds it, builds ./golive
-./golive      # serves http://localhost:8080
+make all                    # builds web client, embeds it, builds ./golive
+GOLIVE_ALLOW_ANON=1 ./golive  # serves http://localhost:8080
 ```
+
+`GOLIVE_ALLOW_ANON=1` disables join authentication for local development.
+Without it, every WebSocket join must present a Discord OAuth token (verified
+against Discord) or a short-lived HMAC share token minted for companion
+capture tabs — the production default.
 
 Open `http://localhost:8080/?room=demo` in two browser windows (Chromium-based
 — WebCodecs required), click **Share screen** in one, watch in the other.
@@ -92,8 +97,11 @@ docker compose up --build
 - [x] M0 — scaffold: Go relay + Solid client, local end-to-end pipeline
 - [x] M1 — Activity boots inside Discord; capture spike **answered: iframe
       denies `display-capture`** → companion capture tab implemented
-- [ ] M2 — hardened video pipeline (adaptive bitrate, reconnect, late-join fast sync)
-- [ ] M3 — audio polish, take-the-stage UX, stats overlay, worker-based decode
+- [x] M2 — hardened pipeline: auto-reconnect (stage re-claimed), instant
+      late-join (server GOP cache), adaptive bitrate, A/V sync, glass-to-glass
+      latency in the stats readout, authenticated joins (Discord OAuth +
+      signed share tokens)
+- [ ] M3 — take-the-stage UX polish, worker-based decode, avatars
 - [ ] M4 — Docker image publishing, docs, v0.1
 
 ## License

@@ -10,6 +10,8 @@ export interface Identity {
   username: string;
   /** Room id — the activity instance id inside Discord. */
   room: string;
+  /** Discord OAuth access token; proves identity to the golive server. */
+  accessToken?: string;
 }
 
 const CLIENT_ID = import.meta.env.GOLIVE_DISCORD_CLIENT_ID as string | undefined;
@@ -104,5 +106,6 @@ export async function setupIdentity(): Promise<Identity> {
     userId: auth.user.id,
     username: auth.user.global_name ?? auth.user.username,
     room: sdk.instanceId,
+    accessToken: access_token,
   };
 }

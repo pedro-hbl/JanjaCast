@@ -67,7 +67,17 @@ type Room struct {
 	clients   map[*Client]struct{}
 	publisher *Client
 	config    *protocol.ConfigData // last codec config announced by publisher
+
+	// gop caches the current group of pictures — the last video keyframe and
+	// every video chunk since — so late joiners render instantly instead of
+	// waiting for the next keyframe. Guarded by mu.
+	gop      [][]byte
+	gopBytes int
 }
+
+// maxGOPBytes bounds the late-join cache; past this the cache is dropped and
+// joiners wait for the next keyframe like before.
+const maxGOPBytes = 16 << 20
 
 // Client is one connected WebSocket participant.
 type Client struct {
@@ -110,6 +120,19 @@ func (r *Room) Join(userID, username string) (*Client, iter.Seq[OutMsg]) {
 	r.mu.Unlock()
 
 	c.enqueueControl(protocol.CtrlWelcome, r.stageState())
+
+	// Replay the cached GOP so the newcomer has a picture immediately.
+	r.mu.Lock()
+	replay := make([][]byte, len(r.gop))
+	copy(replay, r.gop)
+	r.mu.Unlock()
+	for _, msg := range replay {
+		select {
+		case c.out <- outMsg{binary: true, payload: msg}:
+		default:
+		}
+	}
+
 	r.broadcastRoomState()
 	r.log.Info("joined", "user", username, "id", userID)
 
@@ -152,6 +175,7 @@ func (r *Room) TakeStage(c *Client) {
 	r.mu.Lock()
 	r.publisher = c
 	r.config = nil
+	r.clearGOPLocked()
 	r.mu.Unlock()
 	r.broadcastStageState()
 	r.log.Info("stage taken", "user", c.Username)
@@ -166,6 +190,7 @@ func (r *Room) LeaveStage(c *Client) {
 	}
 	r.publisher = nil
 	r.config = nil
+	r.clearGOPLocked()
 	r.mu.Unlock()
 	r.broadcastStageState()
 }
@@ -178,8 +203,31 @@ func (r *Room) SetConfig(c *Client, cfg *protocol.ConfigData) {
 		return
 	}
 	r.config = cfg
+	r.clearGOPLocked() // new encoder session invalidates the cache
 	r.mu.Unlock()
 	r.broadcastStageState()
+}
+
+// ForwardControl broadcasts a publisher-originated control message (e.g.
+// clock sync marks) verbatim to every other participant. Non-publishers are
+// ignored.
+func (r *Room) ForwardControl(from *Client, t protocol.ControlType, data any) {
+	r.mu.Lock()
+	isPublisher := r.publisher == from
+	r.mu.Unlock()
+	if !isPublisher {
+		return
+	}
+	for c := range r.snapshotClients() {
+		if c != from {
+			c.enqueueControl(t, data)
+		}
+	}
+}
+
+func (r *Room) clearGOPLocked() {
+	r.gop = nil
+	r.gopBytes = 0
 }
 
 // ForwardMedia fans a binary media message from the publisher out to every
@@ -195,6 +243,23 @@ func (r *Room) ForwardMedia(from *Client, msg []byte) {
 	if r.publisher != from {
 		return // stale sender lost the stage
 	}
+
+	// Maintain the late-join cache from the video stream.
+	if hdr.Kind == protocol.KindVideo {
+		switch {
+		case hdr.Keyframe():
+			r.gop = append(r.gop[:0], msg)
+			r.gopBytes = len(msg)
+		case r.gop != nil:
+			if r.gopBytes+len(msg) > maxGOPBytes {
+				r.clearGOPLocked() // runaway GOP; wait for the next keyframe
+			} else {
+				r.gop = append(r.gop, msg)
+				r.gopBytes += len(msg)
+			}
+		}
+	}
+
 	for c := range r.clients {
 		if c == from {
 			continue
@@ -257,6 +322,11 @@ func (r *Room) snapshotClients() iter.Seq[*Client] {
 	snap := maps.Clone(r.clients)
 	r.mu.Unlock()
 	return maps.Keys(snap)
+}
+
+// SendControl queues a control message for this client alone.
+func (c *Client) SendControl(t protocol.ControlType, data any) {
+	c.enqueueControl(t, data)
 }
 
 func (c *Client) enqueueControl(t protocol.ControlType, data any) {

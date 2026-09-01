@@ -8,6 +8,7 @@ import {
   type Component,
 } from "solid-js";
 import {
+  apiPath,
   captureAllowed,
   fetchPublicOrigin,
   openExternal,
@@ -24,7 +25,11 @@ const App: Component = () => {
   const [session, setSession] = createSignal<Session | null>(null);
   const [capture, setCapture] = createSignal<CaptureHandle | null>(null);
   const [fps, setFps] = createSignal<30 | 60>(30);
-  const [stats, setStats] = createSignal({ fps: 0, kbps: 0 });
+  const [stats, setStats] = createSignal<{
+    fps: number;
+    kbps: number;
+    latencyMs?: number | null;
+  }>({ fps: 0, kbps: 0 });
 
   let canvasRef!: HTMLCanvasElement;
   let player: Player | null = null;
@@ -33,9 +38,10 @@ const App: Component = () => {
     try {
       const id = await setupIdentity();
       setIdentity(id);
-      const s = new Session(id);
-      player = new Player(canvasRef);
+      const s = new Session(id, { accessToken: id.accessToken });
+      player = new Player(canvasRef, () => s.serverNow());
       s.onMedia = (buf) => player?.push(buf);
+      s.onSync = (sync) => player?.setSync(sync);
       s.connect();
       setSession(s);
     } catch (e) {
@@ -69,13 +75,23 @@ const App: Component = () => {
   const [companionOpened, setCompanionOpened] = createSignal(false);
 
   /** Discord's iframe denies display-capture, so sharing happens in a
-   *  companion tab in the user's real browser (same room, direct origin). */
+   *  companion tab in the user's real browser (same room, direct origin).
+   *  The tab authenticates with a short-lived share token minted here. */
   const openCompanion = async (id: Identity) => {
-    const origin = await fetchPublicOrigin();
+    const [origin, tokenResp] = await Promise.all([
+      fetchPublicOrigin(),
+      fetch(apiPath("/api/share-token"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ accessToken: id.accessToken, room: id.room }),
+      }),
+    ]);
+    if (!tokenResp.ok) throw new Error(`share token refused: ${tokenResp.status}`);
+    const { shareToken } = (await tokenResp.json()) as { shareToken: string };
+
     const url = new URL("/share", origin);
-    url.searchParams.set("room", id.room);
-    // Distinct id: the Activity stays a viewer of its own companion stream.
-    url.searchParams.set("user", `${id.userId}:tab`);
+    url.searchParams.set("token", shareToken);
+    url.searchParams.set("room", id.room); // display only; token is authoritative
     url.searchParams.set("name", id.username);
     url.searchParams.set("fps", String(fps()));
     await openExternal(url.toString());
@@ -131,6 +147,7 @@ const App: Component = () => {
           </span>
           <span style={{ color: "#949ba4" }}>
             {stats().fps} fps · {stats().kbps} kbps
+            {stats().latencyMs != null ? ` · ${stats().latencyMs} ms` : ""}
           </span>
         </Show>
         <span style={{ "margin-left": "auto", color: "#949ba4" }}>

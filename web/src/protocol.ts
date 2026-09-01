@@ -12,10 +12,20 @@ export type ControlType =
   | "take_stage"
   | "leave_stage"
   | "config"
+  | "ping"
+  | "pong"
+  | "sync"
   | "welcome"
   | "stage_state"
   | "room_state"
   | "error";
+
+/** Publisher clock-sync mark: capture timestamp (µs) ↔ server wall clock
+ *  (Unix ms). Lets viewers compute glass-to-glass latency. */
+export interface SyncData {
+  captureTs: number;
+  wallTs: number;
+}
 
 export interface Control<T = unknown> {
   type: ControlType;

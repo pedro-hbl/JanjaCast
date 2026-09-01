@@ -5,6 +5,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io/fs"
 	"log/slog"
 	"net/http"
@@ -32,26 +33,33 @@ type Config struct {
 	// (e.g. https://stream.example.com) used for companion capture links.
 	// When empty it is derived from each request's Host header.
 	PublicOrigin string
+	// AllowAnon skips join authentication entirely — local development
+	// only (GOLIVE_ALLOW_ANON=1). In normal operation every join must
+	// present a Discord access token or a golive share token.
+	AllowAnon bool
 }
 
 // Server is the root http.Handler.
 type Server struct {
-	cfg Config
-	log *slog.Logger
-	hub *relay.Hub
-	mux *http.ServeMux
+	cfg  Config
+	log  *slog.Logger
+	hub  *relay.Hub
+	mux  *http.ServeMux
+	auth *authn
 }
 
 // New builds the handler.
 func New(cfg Config, log *slog.Logger) *Server {
 	s := &Server{
-		cfg: cfg,
-		log: log,
-		hub: relay.NewHub(log),
-		mux: http.NewServeMux(),
+		cfg:  cfg,
+		log:  log,
+		hub:  relay.NewHub(log),
+		mux:  http.NewServeMux(),
+		auth: newAuthn(),
 	}
 
 	s.mux.HandleFunc("POST /api/token", s.handleToken)
+	s.mux.HandleFunc("POST /api/share-token", s.handleShareToken)
 	s.mux.HandleFunc("GET /api/health", s.handleHealth)
 	s.mux.HandleFunc("GET /api/config", s.handleConfig)
 	s.mux.HandleFunc("GET /ws", s.handleWS)
@@ -148,6 +156,70 @@ func (s *Server) handleToken(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(map[string]string{"access_token": token.AccessToken})
 }
 
+// handleShareToken mints a short-lived signed token that lets a companion
+// capture tab join a room. The caller must prove who they are with their
+// Discord access token; anonymous servers (dev) skip verification.
+func (s *Server) handleShareToken(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		AccessToken string `json:"accessToken"`
+		Room        string `json:"room"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Room == "" {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	claims := shareClaims{
+		Room: body.Room,
+		Exp:  time.Now().Add(10 * time.Minute).Unix(),
+	}
+	if s.cfg.AllowAnon {
+		claims.UserID = "anon"
+		claims.Username = "sharer"
+	} else {
+		id, err := s.auth.verifyDiscordToken(r.Context(), body.AccessToken)
+		if err != nil {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		claims.UserID = id.UserID + ":tab"
+		claims.Username = id.Username + " (sharing)"
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]string{
+		"shareToken": s.auth.mintShareToken(claims),
+	})
+}
+
+// authenticateJoin resolves a join request to a trusted identity. The
+// client-supplied name/id are only honored on anonymous (dev) servers.
+func (s *Server) authenticateJoin(ctx context.Context, join protocol.JoinData) (protocol.JoinData, error) {
+	switch {
+	case join.ShareToken != "":
+		claims, err := s.auth.verifyShareToken(join.ShareToken)
+		if err != nil {
+			return join, err
+		}
+		join.Room = claims.Room
+		join.UserID = claims.UserID
+		join.Username = claims.Username
+		return join, nil
+	case join.AccessToken != "":
+		id, err := s.auth.verifyDiscordToken(ctx, join.AccessToken)
+		if err != nil {
+			return join, err
+		}
+		join.UserID = id.UserID
+		join.Username = id.Username
+		return join, nil
+	case s.cfg.AllowAnon:
+		return join, nil
+	default:
+		return join, errAuthRequired
+	}
+}
+
+var errAuthRequired = errors.New("authentication required")
+
 // handleWS upgrades the connection and runs the relay session: the first
 // message must be a CtrlJoin, after which text messages are control and
 // binary messages are media chunks forwarded to the room.
@@ -177,7 +249,14 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var join protocol.JoinData
-	if err := json.Unmarshal(ctrl.Data, &join); err != nil || join.Room == "" {
+	if err := json.Unmarshal(ctrl.Data, &join); err != nil || (join.Room == "" && join.ShareToken == "") {
+		return
+	}
+	join, err = s.authenticateJoin(ctx, join)
+	if err != nil {
+		payload, _ := protocol.MarshalControl(protocol.CtrlError,
+			protocol.ErrorData{Message: "unauthorized: " + err.Error()})
+		_ = conn.Write(ctx, websocket.MessageText, payload)
 		return
 	}
 
@@ -232,5 +311,15 @@ func (s *Server) handleControl(room *relay.Room, client *relay.Client, data []by
 		if err := json.Unmarshal(ctrl.Data, &cfg); err == nil {
 			room.SetConfig(client, &cfg)
 		}
+	case protocol.CtrlPing:
+		var ping protocol.PingData
+		if err := json.Unmarshal(ctrl.Data, &ping); err == nil {
+			client.SendControl(protocol.CtrlPong, protocol.PongData{
+				T:          ping.T,
+				ServerTime: float64(time.Now().UnixMilli()),
+			})
+		}
+	case protocol.CtrlSync:
+		room.ForwardControl(client, protocol.CtrlSync, ctrl.Data)
 	}
 }

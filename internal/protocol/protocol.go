@@ -71,12 +71,17 @@ const (
 	CtrlTakeStage  ControlType = "take_stage"  // become the publisher
 	CtrlLeaveStage ControlType = "leave_stage" // stop publishing
 	CtrlConfig     ControlType = "config"      // publisher announces codec config
+	CtrlPing       ControlType = "ping"        // clock sync probe
 
 	// Server -> client.
 	CtrlWelcome    ControlType = "welcome"     // join accepted, current room state
 	CtrlStageState ControlType = "stage_state" // publisher changed / config changed
 	CtrlRoomState  ControlType = "room_state"  // participant list changed
+	CtrlPong       ControlType = "pong"        // ping reply with server time
 	CtrlError      ControlType = "error"
+
+	// Publisher -> server -> viewers (forwarded verbatim).
+	CtrlSync ControlType = "sync" // maps capture timestamps to wall clock
 )
 
 // Control is the JSON envelope for text messages.
@@ -85,11 +90,35 @@ type Control struct {
 	Data json.RawMessage `json:"data,omitempty"`
 }
 
-// JoinData is the payload of CtrlJoin.
+// JoinData is the payload of CtrlJoin. Exactly one credential is expected
+// unless the server runs with anonymous access (local dev): AccessToken is a
+// Discord OAuth token (verified against Discord), ShareToken is a golive
+// HMAC token minted for a companion capture tab.
 type JoinData struct {
-	Room     string `json:"room"`     // Discord activity instance id
-	UserID   string `json:"userId"`   // Discord user id
-	Username string `json:"username"` // display name
+	Room        string `json:"room"`     // Discord activity instance id
+	UserID      string `json:"userId"`   // Discord user id
+	Username    string `json:"username"` // display name
+	AccessToken string `json:"accessToken,omitempty"`
+	ShareToken  string `json:"shareToken,omitempty"`
+}
+
+// PingData / PongData carry clock-sync probes. Times are milliseconds.
+type PingData struct {
+	T float64 `json:"t"` // client clock at send
+}
+
+// PongData is the server's reply to CtrlPing.
+type PongData struct {
+	T          float64 `json:"t"`          // echoed client time
+	ServerTime float64 `json:"serverTime"` // server wall clock, Unix ms
+}
+
+// SyncData is broadcast by the publisher: "capture timestamp CaptureTs
+// (microseconds) happened at server wall clock WallTs (Unix ms)". Viewers
+// use it to compute glass-to-glass latency.
+type SyncData struct {
+	CaptureTs float64 `json:"captureTs"`
+	WallTs    float64 `json:"wallTs"`
 }
 
 // ConfigData is the payload of CtrlConfig / part of CtrlStageState: the
