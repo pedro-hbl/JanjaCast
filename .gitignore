@@ -1,6 +1,6 @@
-# binaries
-golive
-golive.exe
+# binaries (root only — cmd/golive/ is source!)
+/golive
+/golive.exe
 
 # web
 web/node_modules/
