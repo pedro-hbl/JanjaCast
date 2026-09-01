@@ -13,10 +13,11 @@
       <stop offset="0" stop-color="#1c2230"/>
       <stop offset="1" stop-color="#161b26"/>
     </linearGradient>
-    <linearGradient id="goG" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#00ADD8"/>
-      <stop offset="1" stop-color="#0b7fa3"/>
-    </linearGradient>
+    <path id="iDiscord" d="M20.317 4.3698a19.7913 19.7913 0 00-4.8851-1.5152.0741.0741 0 00-.0785.0371c-.211.3753-.4447.8648-.6083 1.2495-1.8447-.2762-3.68-.2762-5.4868 0-.1636-.3933-.4058-.8742-.6177-1.2495a.077.077 0 00-.0785-.037 19.7363 19.7363 0 00-4.8852 1.515.0699.0699 0 00-.0321.0277C.5334 9.0458-.319 13.5799.0992 18.0578a.0824.0824 0 00.0312.0561c2.0528 1.5076 4.0413 2.4228 5.9929 3.0294a.0777.0777 0 00.0842-.0276c.4616-.6304.8731-1.2952 1.226-1.9942a.076.076 0 00-.0416-.1057c-.6528-.2476-1.2743-.5495-1.8722-.8923a.077.077 0 01-.0076-.1277c.1258-.0943.2517-.1923.3718-.2914a.0743.0743 0 01.0776-.0105c3.9278 1.7933 8.18 1.7933 12.0614 0a.0739.0739 0 01.0785.0095c.1202.099.246.1981.3728.2924a.077.077 0 01-.0066.1276 12.2986 12.2986 0 01-1.873.8914.0766.0766 0 00-.0407.1067c.3604.698.7719 1.3628 1.225 1.9932a.076.076 0 00.0842.0286c1.961-.6067 3.9495-1.5219 6.0023-3.0294a.077.077 0 00.0313-.0552c.5004-5.177-.8382-9.6739-3.5485-13.6604a.061.061 0 00-.0312-.0286zM8.02 15.3312c-1.1825 0-2.1569-1.0857-2.1569-2.419 0-1.3332.9555-2.4189 2.157-2.4189 1.2108 0 2.1757 1.0952 2.1568 2.419 0 1.3332-.9555 2.4189-2.1569 2.4189zm7.9748 0c-1.1825 0-2.1569-1.0857-2.1569-2.419 0-1.3332.9554-2.4189 2.1569-2.4189 1.2108 0 2.1757 1.0952 2.1568 2.419 0 1.3332-.946 2.4189-2.1568 2.4189Z"/>
+    <path id="iCloudflare" d="M16.5088 16.8447c.1475-.5068.0908-.9707-.1553-1.3154-.2246-.3164-.6045-.499-1.0615-.5205l-8.6592-.1123a.1559.1559 0 0 1-.1333-.0713c-.0283-.042-.0351-.0986-.021-.1553.0278-.084.1123-.1484.2036-.1562l8.7359-.1123c1.0351-.0489 2.1601-.8868 2.5537-1.9136l.499-1.3013c.0215-.0561.0293-.1128.0147-.168-.5625-2.5463-2.835-4.4453-5.5499-4.4453-2.5039 0-4.6284 1.6177-5.3876 3.8614-.4927-.3658-1.1187-.5625-1.794-.499-1.2026.119-2.1665 1.083-2.2861 2.2856-.0283.31-.0069.6128.0635.894C1.5683 13.171 0 14.7754 0 16.752c0 .1748.0142.3515.0352.5273.0141.083.0844.1475.1689.1475h15.9814c.0909 0 .1758-.0645.2032-.1553l.12-.4268zm2.7568-5.5634c-.0771 0-.1611 0-.2383.0112-.0566 0-.1054.0415-.127.0976l-.3378 1.1744c-.1475.5068-.0918.9707.1543 1.3164.2256.3164.6055.498 1.0625.5195l1.8437.1133c.0557 0 .1055.0263.1329.0703.0283.043.0351.1074.0214.1562-.0283.084-.1132.1485-.204.1553l-1.921.1123c-1.041.0488-2.1582.8867-2.5527 1.914l-.1406.3585c-.0283.0713.0215.1416.0986.1416h6.5977c.0771 0 .1474-.0489.169-.126.1122-.4082.1757-.837.1757-1.2803 0-2.6025-2.125-4.727-4.7344-4.727"/>
+    <path id="iChrome" d="M12 0C8.21 0 4.831 1.757 2.632 4.501l3.953 6.848A5.454 5.454 0 0 1 12 6.545h10.691A12 12 0 0 0 12 0zM1.931 5.47A11.943 11.943 0 0 0 0 12c0 6.012 4.42 10.991 10.189 11.864l3.953-6.847a5.45 5.45 0 0 1-6.865-2.29zm13.342 2.166a5.446 5.446 0 0 1 1.45 7.09l.002.001h-.002l-5.344 9.257c.206.01.413.016.621.016 6.627 0 12-5.373 12-12 0-1.54-.29-3.011-.818-4.364zM12 16.364a4.364 4.364 0 1 1 0-8.728 4.364 4.364 0 0 1 0 8.728Z"/>
+    <path id="iGo" d="M1.811 10.231c-.047 0-.058-.023-.035-.059l.246-.315c.023-.035.081-.058.128-.058h4.172c.046 0 .058.035.035.07l-.199.303c-.023.036-.082.07-.117.07zM.047 11.306c-.047 0-.059-.023-.035-.058l.245-.316c.023-.035.082-.058.129-.058h5.328c.047 0 .07.035.058.07l-.093.28c-.012.047-.058.07-.105.07zm2.828 1.075c-.047 0-.059-.035-.035-.07l.163-.292c.023-.035.07-.07.117-.07h2.337c.047 0 .07.035.07.082l-.023.28c0 .047-.047.082-.082.082zm12.129-2.36c-.736.187-1.239.327-1.963.514-.176.046-.187.058-.34-.117-.174-.199-.303-.327-.548-.444-.737-.362-1.45-.257-2.115.175-.795.514-1.204 1.274-1.192 2.22.011.935.654 1.706 1.577 1.835.795.105 1.46-.175 1.987-.77.105-.13.198-.27.315-.434H10.47c-.245 0-.304-.152-.222-.35.152-.362.432-.97.596-1.274a.315.315 0 01.292-.187h4.253c-.023.316-.023.631-.07.947a4.983 4.983 0 01-.958 2.29c-.841 1.11-1.94 1.8-3.33 1.986-1.145.152-2.209-.07-3.143-.77-.865-.655-1.356-1.52-1.484-2.595-.152-1.274.222-2.419.993-3.424.83-1.086 1.928-1.776 3.272-2.02 1.098-.2 2.15-.07 3.096.571.62.41 1.063.97 1.356 1.648.07.105.023.164-.117.2m3.868 6.461c-1.064-.024-2.034-.328-2.852-1.029a3.665 3.665 0 01-1.262-2.255c-.21-1.32.152-2.489.947-3.529.853-1.122 1.881-1.706 3.272-1.95 1.192-.21 2.314-.095 3.33.595.923.63 1.496 1.484 1.648 2.605.198 1.578-.257 2.863-1.344 3.962-.771.783-1.718 1.273-2.805 1.495-.315.06-.63.07-.934.106zm2.78-4.72c-.011-.153-.011-.27-.034-.387-.21-1.157-1.274-1.81-2.384-1.554-1.087.245-1.788.935-2.045 2.033-.21.912.234 1.835 1.075 2.21.643.28 1.285.244 1.905-.07.923-.48 1.425-1.228 1.484-2.233z"/>
+    <path id="iDocker" d="M13.983 11.078h2.119a.186.186 0 00.186-.185V9.006a.186.186 0 00-.186-.186h-2.119a.185.185 0 00-.185.185v1.888c0 .102.083.185.185.185m-2.954-5.43h2.118a.186.186 0 00.186-.186V3.574a.186.186 0 00-.186-.185h-2.118a.185.185 0 00-.185.185v1.888c0 .102.082.185.185.185m0 2.716h2.118a.187.187 0 00.186-.186V6.29a.186.186 0 00-.186-.185h-2.118a.185.185 0 00-.185.185v1.887c0 .102.082.185.185.186m-2.93 0h2.12a.186.186 0 00.184-.186V6.29a.185.185 0 00-.185-.185H8.1a.185.185 0 00-.185.185v1.887c0 .102.083.185.185.186m-2.964 0h2.119a.186.186 0 00.185-.186V6.29a.185.185 0 00-.185-.185H5.136a.186.186 0 00-.186.185v1.887c0 .102.084.185.186.186m5.893 2.715h2.118a.186.186 0 00.186-.185V9.006a.186.186 0 00-.186-.186h-2.118a.185.185 0 00-.185.185v1.888c0 .102.082.185.185.185m-2.93 0h2.12a.185.185 0 00.184-.185V9.006a.185.185 0 00-.184-.186h-2.12a.185.185 0 00-.184.185v1.888c0 .102.083.185.185.185m-2.964 0h2.119a.185.185 0 00.185-.185V9.006a.185.185 0 00-.184-.186h-2.12a.186.186 0 00-.186.186v1.887c0 .102.084.185.186.185m-2.92 0h2.12a.185.185 0 00.184-.185V9.006a.185.185 0 00-.184-.186h-2.12a.185.185 0 00-.184.185v1.888c0 .102.082.185.185.185M23.763 9.89c-.065-.051-.672-.51-1.954-.51-.338.001-.676.03-1.01.087-.248-1.7-1.653-2.53-1.716-2.566l-.344-.199-.226.327c-.284.438-.49.922-.612 1.43-.23.97-.09 1.882.403 2.661-.595.332-1.55.413-1.744.42H.751a.751.751 0 00-.75.748 11.376 11.376 0 00.692 4.062c.545 1.428 1.355 2.48 2.41 3.124 1.18.723 3.1 1.137 5.275 1.137.983.003 1.963-.086 2.93-.266a12.248 12.248 0 003.823-1.389c.98-.567 1.86-1.288 2.61-2.136 1.252-1.418 1.998-2.997 2.553-4.4h.221c1.372 0 2.215-.549 2.68-1.009.309-.293.55-.65.707-1.046l.098-.288Z"/>
   </defs>
 
   <!-- canvas -->
@@ -30,21 +31,14 @@
   <!-- ============ SHARER: companion tab ============ -->
   <g>
     <rect x="48" y="128" width="330" height="212" rx="14" fill="url(#cardG)" stroke="#2c3444"/>
-    <!-- chrome mark -->
-    <g transform="translate(82,164)">
-      <circle r="17" fill="#fff"/>
-      <path d="M0 -17A17 17 0 0 1 14.7 8.5L5.2 3A11 11 0 0 0 0 -11z" fill="#EA4335" transform="rotate(-30)"/>
-      <path d="M0 -17A17 17 0 0 1 14.7 8.5L5.2 3A11 11 0 0 0 0 -11z" fill="#FBBC05" transform="rotate(90)"/>
-      <path d="M0 -17A17 17 0 0 1 14.7 8.5L5.2 3A11 11 0 0 0 0 -11z" fill="#34A853" transform="rotate(210)"/>
-      <circle r="7.5" fill="#4285F4" stroke="#fff" stroke-width="2"/>
-    </g>
-    <text x="112" y="162" fill="#f2f4f8" font-size="18" font-weight="700">Sharer — companion tab</text>
-    <text x="112" y="182" fill="#8b94a6" font-size="13">real Chrome, full permissions</text>
+    <use href="#iChrome" transform="translate(68,146) scale(1.5)" fill="#fff"/>
+    <text x="118" y="162" fill="#f2f4f8" font-size="18" font-weight="700">Sharer — companion tab</text>
+    <text x="118" y="182" fill="#8b94a6" font-size="13">real Chrome, full permissions</text>
     <g fill="#aeb7c6" font-size="13.5">
-      <text x="70" y="222">🖥  getDisplayMedia() — screen / window / tab</text>
-      <text x="70" y="248">⚙  WebCodecs encode · H.264 (hw) + Opus</text>
-      <text x="70" y="274">📶  adaptive bitrate · 30 / 60 fps</text>
-      <text x="70" y="300">🛑  Stop here or remotely from the Activity</text>
+      <text x="70" y="222">getDisplayMedia() — screen / window / tab</text>
+      <text x="70" y="248">WebCodecs encode · H.264 (hw) + Opus</text>
+      <text x="70" y="274">adaptive bitrate · 30 / 60 fps</text>
+      <text x="70" y="300">Stop here — or remotely from the Activity</text>
     </g>
     <rect x="70" y="314" width="120" height="3" rx="1.5" fill="#d93a3a"/>
   </g>
@@ -52,110 +46,99 @@
   <!-- ============ DISCORD CLIENT: viewers ============ -->
   <g>
     <rect x="48" y="420" width="330" height="224" rx="14" fill="url(#cardG)" stroke="#2c3444"/>
-    <!-- discord mark -->
-    <g transform="translate(84,458)">
-      <rect x="-19" y="-19" width="38" height="38" rx="11" fill="#5865F2"/>
-      <path d="M-11 6c-1-8 1-13 4-16 2 1 3 2 4 3h6c1-1 2-2 4-3 3 3 5 8 4 16-2 2-5 3-7 4l-1.5-2.5h-5L-4 10c-2-1-5-2-7-4z" fill="#fff"/>
-      <circle cx="-4.2" cy="0" r="2.1" fill="#5865F2"/>
-      <circle cx="4.2" cy="0" r="2.1" fill="#5865F2"/>
-    </g>
-    <text x="114" y="456" fill="#f2f4f8" font-size="18" font-weight="700">Discord client</text>
-    <text x="114" y="476" fill="#8b94a6" font-size="13">voice channel · every participant</text>
+    <rect x="66" y="438" width="40" height="40" rx="11" fill="#5865F2"/>
+    <use href="#iDiscord" transform="translate(70,444) scale(1.33)" fill="#fff"/>
+    <text x="118" y="456" fill="#f2f4f8" font-size="18" font-weight="700">Discord client</text>
+    <text x="118" y="476" fill="#8b94a6" font-size="13">voice channel · every participant</text>
     <g fill="#aeb7c6" font-size="13.5">
-      <text x="70" y="516">🎛  Activity iframe — SolidJS UI</text>
-      <text x="70" y="542">🎞  WebCodecs decode → canvas · A/V sync</text>
-      <text x="70" y="568">🔊  per-viewer volume · live fps / kbps / ms</text>
-      <text x="70" y="594">⛔  CSP: no WebRTC, no display-capture</text>
+      <text x="70" y="516">Activity iframe — SolidJS UI</text>
+      <text x="70" y="542">WebCodecs decode → canvas · A/V sync</text>
+      <text x="70" y="568">per-viewer volume · live fps / kbps / ms</text>
+      <text x="70" y="594">CSP: no WebRTC, no display-capture</text>
     </g>
     <rect x="70" y="608" width="120" height="3" rx="1.5" fill="#5865F2"/>
+  </g>
+
+  <!-- ============ CLOUDFLARE TUNNEL ============ -->
+  <g>
+    <rect x="500" y="150" width="264" height="130" rx="14" fill="url(#cardG)" stroke="#5a4326"/>
+    <use href="#iCloudflare" transform="translate(524,170) scale(1.7)" fill="#F38020"/>
+    <text x="574" y="190" fill="#f2f4f8" font-size="16" font-weight="700">Cloudflare Tunnel</text>
+    <text x="574" y="212" fill="#8b94a6" font-size="12.5">public HTTPS / WSS ingress</text>
+    <text x="574" y="231" fill="#8b94a6" font-size="12.5">no ports opened at home</text>
+    <text x="632" y="262" fill="#7b8494" font-size="12" text-anchor="middle">or any TLS reverse proxy → :8080</text>
+  </g>
+
+  <!-- ============ SERVER (docker) ============ -->
+  <g>
+    <rect x="884" y="128" width="348" height="440" rx="18" fill="none" stroke="#1D63ED" stroke-width="2" stroke-dasharray="10 7"/>
+    <rect x="906" y="112" width="136" height="32" rx="9" fill="#1D63ED"/>
+    <use href="#iDocker" transform="translate(913,117) scale(0.92)" fill="#fff"/>
+    <text x="944" y="134" fill="#fff" font-size="14" font-weight="700">Docker</text>
+
+    <rect x="908" y="168" width="300" height="352" rx="14" fill="url(#cardG)" stroke="#155e70"/>
+    <use href="#iGo" transform="translate(928,190) scale(2.1)" fill="#00ADD8"/>
+    <text x="994" y="208" fill="#f2f4f8" font-size="18" font-weight="700">golive server</text>
+    <text x="994" y="228" fill="#8b94a6" font-size="13">single static binary</text>
+    <g fill="#aeb7c6" font-size="13.5">
+      <text x="932" y="268">WebSocket relay — 1 ingest → N viewers</text>
+      <text x="932" y="296">GOP cache → instant late-join</text>
+      <text x="932" y="324">keyframe-aware drop for slow viewers</text>
+      <text x="932" y="352">Discord OAuth + HMAC share tokens</text>
+      <text x="932" y="380">client embedded via embed.FS</text>
+      <text x="932" y="408">ping/pong clock sync (latency stat)</text>
+    </g>
+    <g font-size="12" fill="#7b8494">
+      <text x="932" y="448">server egress ≈ bitrate × viewers</text>
+      <text x="932" y="468">(4 Mbps × 10 viewers = 40 Mbps while live)</text>
+      <text x="932" y="500" fill="#00ADD8">goroutine-per-connection · zero CGO</text>
+    </g>
+    <text x="1058" y="552" fill="#5b83c9" font-size="12" text-anchor="middle">FROM scratch · one multi-arch image · built-in healthcheck</text>
   </g>
 
   <!-- ============ DISCORD PROXY ============ -->
   <g>
     <rect x="452" y="470" width="300" height="96" rx="14" fill="url(#cardG)" stroke="#3d4356"/>
-    <g transform="translate(486,506)">
-      <rect x="-16" y="-16" width="32" height="32" rx="9" fill="#5865F2"/>
-      <path d="M-9 5c-1-6.5 1-10.5 3.3-13 1.6.8 2.4 1.6 3.2 2.4h5c.8-.8 1.6-1.6 3.2-2.4C8 -5.5 10 -1.5 9 5c-1.6 1.6-4 2.4-5.6 3.2l-1.2-2h-4.1l-1.2 2C-5 7.4-7.4 6.6-9 5z" fill="#fff"/>
-    </g>
-    <text x="512" y="502" fill="#f2f4f8" font-size="16" font-weight="700">Discord Activities proxy</text>
-    <text x="512" y="524" fill="#8b94a6" font-size="12.5">&lt;app-id&gt;.discordsays.com</text>
-    <text x="512" y="544" fill="#8b94a6" font-size="12.5">strict CSP · URL mapping "/" → tunnel</text>
-  </g>
-
-  <!-- ============ CLOUDFLARE TUNNEL ============ -->
-  <g>
-    <rect x="510" y="150" width="240" height="128" rx="14" fill="url(#cardG)" stroke="#5a4326"/>
-    <!-- cloudflare cloud -->
-    <g transform="translate(556,196)">
-      <path d="M-26 12c-7 0-12-5-12-11 0-5 3.5-9.5 8.5-10.8C-27.5 -18 -20 -24 -11 -24c10 0 18 7 19.5 16C15 -7 20 -1.5 20 5c0 6.5-5 12-13 12z" fill="#F6821F" transform="scale(0.85)"/>
-      <path d="M-20 10c-2-7 2-12 8-13 1-6 6-10 12-10 4 0 7 1.5 9.5 4-6 0-11 4-12.5 10-5 .5-8.5 4-9 9z" fill="#FBAD41" transform="scale(0.85)"/>
-    </g>
-    <text x="596" y="192" fill="#f2f4f8" font-size="16" font-weight="700">Cloudflare Tunnel</text>
-    <text x="596" y="214" fill="#8b94a6" font-size="12.5">public HTTPS / WSS ingress</text>
-    <text x="596" y="234" fill="#8b94a6" font-size="12.5">no ports opened at home</text>
-    <text x="530" y="262" fill="#7b8494" font-size="12">or any TLS reverse proxy in front of :8080</text>
-  </g>
-
-  <!-- ============ SERVER (docker) ============ -->
-  <g>
-    <!-- docker dashed container -->
-    <rect x="884" y="128" width="348" height="420" rx="18" fill="none" stroke="#1D63ED" stroke-width="2" stroke-dasharray="10 7"/>
-    <rect x="906" y="112" width="104" height="30" rx="8" fill="#1D63ED"/>
-    <text x="958" y="132" fill="#fff" font-size="14" font-weight="700" text-anchor="middle">Docker</text>
-    <text x="1222" y="134" fill="#5b83c9" font-size="12" text-anchor="end">FROM scratch · one image</text>
-
-    <rect x="908" y="168" width="300" height="352" rx="14" fill="url(#cardG)" stroke="#155e70"/>
-    <!-- go badge -->
-    <rect x="932" y="192" width="56" height="34" rx="9" fill="url(#goG)"/>
-    <text x="960" y="215" fill="#fff" font-size="17" font-weight="800" text-anchor="middle">GO</text>
-    <text x="1002" y="208" fill="#f2f4f8" font-size="18" font-weight="700">golive server</text>
-    <text x="1002" y="228" fill="#8b94a6" font-size="13">single static binary</text>
-    <g fill="#aeb7c6" font-size="13.5">
-      <text x="932" y="268">🔁  WebSocket relay — 1 ingest → N viewers</text>
-      <text x="932" y="296">⚡  GOP cache → instant late-join</text>
-      <text x="932" y="324">🧮  keyframe-aware drop for slow viewers</text>
-      <text x="932" y="352">🔐  Discord OAuth + HMAC share tokens</text>
-      <text x="932" y="380">📦  client embedded via embed.FS</text>
-      <text x="932" y="408">🕐  ping/pong clock sync (latency stat)</text>
-    </g>
-    <g font-size="12" fill="#7b8494">
-      <text x="932" y="448">server egress ≈ bitrate × viewers</text>
-      <text x="932" y="468">(4 Mbps × 10 viewers = 40 Mbps while live)</text>
-      <text x="932" y="500" fill="#00ADD8">goroutine-per-connection · zero deps beyond ws</text>
-    </g>
+    <rect x="470" y="490" width="34" height="34" rx="9" fill="#5865F2"/>
+    <use href="#iDiscord" transform="translate(474,496) scale(1.08)" fill="#fff"/>
+    <text x="516" y="502" fill="#f2f4f8" font-size="16" font-weight="700">Discord Activities proxy</text>
+    <text x="516" y="524" fill="#8b94a6" font-size="12.5">&lt;app-id&gt;.discordsays.com</text>
+    <text x="516" y="544" fill="#8b94a6" font-size="12.5">strict CSP · URL mapping "/" → tunnel</text>
   </g>
 
   <!-- ============ FLOWS ============ -->
   <!-- sharer -> tunnel -->
-  <path d="M378 214 C 440 214, 450 214, 504 214" fill="none" stroke="#43b581" stroke-width="3.5" marker-end="url(#arrG)"/>
-  <text x="392" y="200" fill="#43b581" font-size="12.5" font-weight="600">WSS · media chunks</text>
+  <path d="M378 214 L 494 214" fill="none" stroke="#43b581" stroke-width="3.5" marker-end="url(#arrG)"/>
+  <text x="437" y="198" fill="#43b581" font-size="12.5" font-weight="600" text-anchor="middle">WSS · media chunks</text>
 
   <!-- tunnel -> server -->
-  <path d="M750 214 C 810 214, 820 214, 878 240" fill="none" stroke="#43b581" stroke-width="3.5" marker-end="url(#arrG)"/>
-  <text x="762" y="200" fill="#43b581" font-size="12.5" font-weight="600">H.264 + Opus</text>
+  <path d="M764 214 L 878 214" fill="none" stroke="#43b581" stroke-width="3.5" marker-end="url(#arrG)"/>
+  <text x="822" y="198" fill="#43b581" font-size="12.5" font-weight="600" text-anchor="middle">H.264 + Opus</text>
 
   <!-- server -> proxy (fan-out down-left) -->
-  <path d="M908 460 C 850 470, 820 500, 758 512" fill="none" stroke="#5865F2" stroke-width="3.5" marker-end="url(#arrB)"/>
-  <text x="778" y="466" fill="#5865F2" font-size="12.5" font-weight="600">fan-out × N</text>
+  <path d="M908 490 C 850 496, 820 506, 760 512" fill="none" stroke="#5865F2" stroke-width="3.5" marker-end="url(#arrB)"/>
+  <text x="836" y="482" fill="#5865F2" font-size="12.5" font-weight="600" text-anchor="middle">fan-out × N</text>
 
   <!-- proxy -> discord client -->
-  <path d="M452 518 C 420 518, 410 520, 384 522" fill="none" stroke="#5865F2" stroke-width="3.5" marker-end="url(#arrB)"/>
+  <path d="M452 518 L 388 521" fill="none" stroke="#5865F2" stroke-width="3.5" marker-end="url(#arrB)"/>
 
   <!-- activity -> proxy -> server: auth (dashed, up) -->
-  <path d="M378 470 C 430 440, 560 320, 878 300" fill="none" stroke="#7b8494" stroke-width="1.8" stroke-dasharray="6 5" marker-end="url(#arrDim)"/>
-  <text x="500" y="352" fill="#7b8494" font-size="12">OAuth code → token exchange · authed join · /.proxy/*</text>
+  <path d="M378 452 C 480 420, 640 370, 878 330" fill="none" stroke="#7b8494" stroke-width="1.8" stroke-dasharray="6 5" marker-end="url(#arrDim)"/>
+  <g text-anchor="middle">
+    <text x="612" y="352" fill="#7b8494" font-size="12">OAuth code → token exchange · authed join · /.proxy/*</text>
+  </g>
 
   <!-- share button spawns companion tab (dashed, left column) -->
-  <path d="M180 420 C 172 392, 172 368, 180 340" fill="none" stroke="#7b8494" stroke-width="1.8" stroke-dasharray="6 5" marker-end="url(#arrDim)"/>
-  <text x="30" y="384" fill="#7b8494" font-size="12">“Share screen” opens</text>
-  <text x="30" y="400" fill="#7b8494" font-size="12">the capture tab</text>
+  <path d="M186 420 C 178 392, 178 368, 186 340" fill="none" stroke="#7b8494" stroke-width="1.8" stroke-dasharray="6 5" marker-end="url(#arrDim)"/>
+  <text x="200" y="376" fill="#7b8494" font-size="12">“Share screen”</text>
+  <text x="200" y="392" fill="#7b8494" font-size="12">opens the capture tab</text>
 
   <!-- latency badge -->
   <g>
-    <rect x="452" y="612" width="380" height="52" rx="26" fill="#12251a" stroke="#2b5c3f"/>
-    <circle cx="486" cy="638" r="9" fill="#d93a3a">
+    <rect x="400" y="616" width="520" height="52" rx="26" fill="#12251a" stroke="#2b5c3f"/>
+    <circle cx="432" cy="642" r="9" fill="#d93a3a">
       <animate attributeName="opacity" values="1;0.35;1" dur="1.6s" repeatCount="indefinite"/>
     </circle>
-    <text x="506" y="644" fill="#7ee2a8" font-size="15" font-weight="700">≈ 0.3 – 0.6 s glass-to-glass · drop-to-live keeps it flat</text>
+    <text x="672" y="648" fill="#7ee2a8" font-size="15" font-weight="700" text-anchor="middle">≈ 0.3 – 0.6 s glass-to-glass · drop-to-live keeps it flat</text>
   </g>
 </svg>

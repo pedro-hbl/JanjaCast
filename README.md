@@ -1,123 +1,125 @@
 # golive
 
-Open-source screen livestreaming as a **Discord Activity**: one participant
-shares their screen (or a tab) at 30/60 fps, everyone else in the voice call
-watches it live inside the Activity — with tab/system audio, live
-fps/bitrate/latency stats, per-viewer volume, and a one-click "take the
-stage" model.
+[![ci](https://github.com/pedro-hbl/golive/actions/workflows/ci.yml/badge.svg)](https://github.com/pedro-hbl/golive/actions/workflows/ci.yml)
+[![release](https://github.com/pedro-hbl/golive/actions/workflows/release.yml/badge.svg)](https://github.com/pedro-hbl/golive/actions/workflows/release.yml)
+[![container](https://img.shields.io/badge/ghcr.io-pedro--hbl%2Fgolive-1D63ED?logo=docker&logoColor=white)](https://github.com/pedro-hbl/golive/pkgs/container/golive)
+[![license](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+
+**Screen livestreaming as a Discord Activity.** One person shares their
+screen; everyone in the voice call watches live inside the Activity —
+sub-second latency, tab/system audio, 30/60 fps, and a one-click
+"take the stage" model. Open source, self-hosted, one binary.
 
 ![golive architecture — capture in a companion Chrome tab, WebCodecs over WSS through a Cloudflare Tunnel into a Go relay in Docker, fanned out through Discord's Activities proxy to every viewer in the call](docs/architecture.svg)
 
-> **Status: early development.** The relay pipeline works end-to-end in plain
-> browsers; Discord-embedded operation is being validated (see
-> [Roadmap](#roadmap)).
+## Features
 
-## Why not just Go Live?
+- 🖥 **Share screen, window, or tab** at 30 or 60 fps, with tab/system audio
+- ⚡ **Sub-second latency** (~0.3–0.6 s glass-to-glass), held flat by
+  drop-to-live catch-up — it can't drift
+- 🚪 **Instant late-join** — new viewers get a picture immediately (server-side
+  GOP cache)
+- 📉 **Adaptive bitrate** — congestion steps quality down, never latency up
+- 🎚 **Per-viewer volume**, live fps / bitrate / latency readout
+- 🛑 **Stop from anywhere** — the capture tab or remotely from the Activity
+- 🔐 **Authenticated rooms** — Discord OAuth identity + short-lived signed
+  share tokens; nobody outside the call can join or hijack a stream
+- 🔁 **Self-healing** — automatic reconnect on both ends; the stage re-claims
+  itself
+- 🖍 Hand-drawn **crayon UI** (see the banner) served by the same binary
 
-Discord's built-in Go Live is great — this project exists as an open-source
-**tech showcase**: proving out what a screen-streaming pipeline looks like when
-built on the open web stack that Discord Activities allow. Which is a harsher
-environment than you'd think:
+## Why it's built this way
 
-- **WebRTC is not available inside Activities** — Discord's iframe sandbox only
-  permits WebSockets/HTTPS through their proxy. golive therefore streams with
-  **WebCodecs** (hardware H.264, VP8 fallback, Opus audio) over a WebSocket
-  relay, targeting sub-second glass-to-glass latency.
-- All traffic is forced through Discord's `*.discordsays.com` proxy with a
-  strict CSP.
-- **Screen capture inside the Activity iframe is blocked** — Discord's iframe
-  denies the `display-capture` feature by permissions policy (verified
-  empirically). golive therefore opens a **companion capture tab** in the
-  sharer's real browser; the Activity stays the viewing surface for everyone.
+Discord Activities are iframes behind a strict CSP: **WebRTC is not
+available**, all traffic must flow through Discord's
+`<app-id>.discordsays.com` proxy, and the iframe **denies screen capture**
+(`display-capture` permissions policy — verified empirically).
 
-## Architecture
+So golive does it the hard way, on the open web stack that *is* allowed:
 
+- Capture happens in a **companion tab** in the sharer's real browser (one
+  click from the Activity, authenticated by a short-lived token).
+- Video/audio are encoded with **WebCodecs** (hardware H.264 with VP8
+  fallback, plus Opus) and shipped as binary chunks over **WebSockets**.
+- A **Go relay** fans one ingest out to every viewer, dropping intelligently
+  for slow consumers.
+- Viewers decode with WebCodecs onto a canvas, video slaved to the audio
+  clock. Playback is decode-driven, so it keeps running while alt-tabbed.
+
+Wire format and control protocol: [`internal/protocol/protocol.go`](internal/protocol/protocol.go).
+
+## Quick start
+
+### Run the published image (recommended)
+
+The multi-arch image works for **any** Discord application — the client id is
+served at runtime, nothing is baked in:
+
+```sh
+export DISCORD_CLIENT_ID=...      # Discord developer portal → your app
+export DISCORD_CLIENT_SECRET=...
+docker compose up
 ```
-┌─ sharer (browser/Discord) ─┐      ┌─ golive server (Go) ─┐      ┌─ viewers ─┐
-│ getDisplayMedia            │  WS  │                      │  WS  │ WebCodecs │
-│  └─ WebCodecs encode       ├─────►│  room fan-out relay  ├─────►│  decode   │
-│     H.264/VP8 + Opus       │      │  (1 in → N out)      │      │  canvas + │
-└────────────────────────────┘      └──────────────────────┘      │  audio    │
-                                                                  └───────────┘
-```
 
-- **Server:** a single Go binary — WebSocket relay (one publisher per room,
-  fan-out to viewers, keyframe-aware drop policy for slow consumers), Discord
-  OAuth token exchange, and the client embedded via `embed.FS`.
-- **Client:** SolidJS + Vite + TypeScript. Capture with `getDisplayMedia`,
-  encode/decode with WebCodecs, render to canvas. Playback is decode-driven
-  (not rAF-driven) so viewers keep streaming while alt-tabbed.
-- **Protocol:** JSON control messages + 13-byte-header binary media chunks.
-  See [`internal/protocol/protocol.go`](internal/protocol/protocol.go).
+Add `--profile tunnel` to also start a Cloudflare quick tunnel (zero-config
+public HTTPS; the URL appears in the tunnel container's logs — set it as the
+URL mapping in the portal). Full portal walkthrough:
+[docs/discord-setup.md](docs/discord-setup.md).
 
-## Quick start (local, no Discord)
+### Build from source
 
 Requires Go 1.26+ and Node 24+.
 
 ```sh
-make all                    # builds web client, embeds it, builds ./golive
-GOLIVE_ALLOW_ANON=1 ./golive  # serves http://localhost:8080
+make all                      # web client → embed → ./golive
+GOLIVE_ALLOW_ANON=1 ./golive  # local dev: auth off, http://localhost:8080
 ```
 
-`GOLIVE_ALLOW_ANON=1` disables join authentication for local development.
-Without it, every WebSocket join must present a Discord OAuth token (verified
-against Discord) or a short-lived HMAC share token minted for companion
-capture tabs — the production default.
+Open `http://localhost:8080/?room=demo` in two Chromium windows, hit
+**Share screen** in one, watch in the other — no Discord needed for
+development.
 
-Open `http://localhost:8080/?room=demo` in two browser windows (Chromium-based
-— WebCodecs required), click **Share screen** in one, watch in the other.
+### Configuration
 
-For development with hot reload:
-
-```sh
-go run ./cmd/golive          # terminal 1 — API + relay on :8080
-cd web && npm run dev        # terminal 2 — vite on :5173, proxies /api + /ws
-```
-
-## Running as a Discord Activity
-
-See [docs/discord-setup.md](docs/discord-setup.md) for the full walkthrough
-(creating the Discord application, URL mappings, HTTPS tunnel for dev).
-
-Short version — the published multi-arch image works for **any** Discord app
-(the client id is served at runtime, nothing is baked in):
-
-```sh
-export DISCORD_CLIENT_ID=...      # from the Discord developer portal
-export DISCORD_CLIENT_SECRET=...
-docker compose up                  # pulls ghcr.io/pedro-hbl/golive:latest
-```
-
-Add `--profile tunnel` to also start a Cloudflare quick tunnel that exposes
-the server over public HTTPS with zero configuration (the URL is printed in
-the tunnel container's logs — put it in the portal's URL mapping). Use
-`docker compose up --build` to build from source instead of pulling. The
-container has a built-in healthcheck (`/golive healthcheck`).
+| Env var | Purpose |
+| --- | --- |
+| `DISCORD_CLIENT_ID` | Discord application id (portal → General Information) |
+| `DISCORD_CLIENT_SECRET` | OAuth secret (portal → OAuth2); server-side only |
+| `GOLIVE_ADDR` | Listen address, default `:8080` |
+| `GOLIVE_PUBLIC_ORIGIN` | Pin the public origin for companion links (default: derived per request) |
+| `GOLIVE_ALLOW_ANON` | `1` disables join auth — local development only |
+| `GOLIVE_DEV_WEB_DIR` | Serve the client from disk instead of the embedded build |
 
 ## Self-hosting notes
 
-- The server is a single process; a small VPS is plenty for one community.
-- Bandwidth is the real cost: server egress ≈ stream bitrate × viewers
-  (e.g. 4 Mbps × 10 viewers = 40 Mbps while live).
-- Discord requires the Activity be served over HTTPS — put the server behind
-  any TLS reverse proxy or a Cloudflare Tunnel.
+- One process, tiny footprint; a small VPS handles a community. The real cost
+  is egress: **stream bitrate × viewers** while live.
+- Discord requires HTTPS — any TLS reverse proxy or a Cloudflare Tunnel in
+  front of `:8080` works. Quick-tunnel URLs rotate on restart; use a named
+  tunnel (free) for anything long-lived, or the portal mapping goes stale.
+- The container ships a built-in healthcheck (`/golive healthcheck`), already
+  wired in the compose file.
 
-## Roadmap
+## Development
 
-- [x] M0 — scaffold: Go relay + Solid client, local end-to-end pipeline
-- [x] M1 — Activity boots inside Discord; capture spike **answered: iframe
-      denies `display-capture`** → companion capture tab implemented
-- [x] M2 — hardened pipeline: auto-reconnect (stage re-claimed), instant
-      late-join (server GOP cache), adaptive bitrate, A/V sync, glass-to-glass
-      latency in the stats readout, authenticated joins (Discord OAuth +
-      signed share tokens)
-- [x] M3 (partial) — remote stop from the Activity, per-viewer volume,
-      crayon-drawing UI theme, drop-to-live latency bound
-- [x] M4 — multi-arch Docker image on GHCR, compose healthcheck + optional
-      tunnel profile, runtime client-id config (one image fits every app),
-      architecture diagram
-- [ ] Next — worker-based decode (background-proof viewers), participant
-      avatars, take-the-stage confirm dialog, v0.1 tag
+```sh
+go run ./cmd/golive           # API + relay on :8080
+cd web && npm run dev         # Vite on :5173, proxies /api and /ws
+go test ./...                 # relay + auth tests
+```
+
+The client is SolidJS + TypeScript ([`web/src`](web/src)); the server is
+plain Go ([`internal`](internal)): `relay` (rooms, fan-out, GOP cache),
+`server` (HTTP, WS, auth), `protocol` (wire format).
+
+## Status
+
+Works end-to-end inside Discord today: authenticated Activity, companion-tab
+capture, multi-viewer relay, audio, remote stop, volume, live stats. Next up:
+worker-based decode for fully background-proof viewers, participant avatars,
+a take-the-stage confirm dialog, and a v0.1 tag.
+
+Issues and PRs welcome — the codebase is deliberately small and readable.
 
 ## License
 
