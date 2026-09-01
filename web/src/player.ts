@@ -21,8 +21,15 @@ export interface PlayerStats {
 
 const MAX_VIDEO_DELAY_MS = 300;
 
+// Drop-to-live: if the decoder or presentation queue is deeper than this
+// when a keyframe arrives, discard the backlog and resume from the keyframe.
+// Without this, a viewer that decodes/draws even slightly slower than the
+// sharer encodes falls further behind every second, forever.
+const MAX_QUEUE_DEPTH = 6;
+
 export class Player {
   private videoDecoder: VideoDecoder | null = null;
+  private videoCfg: VideoDecoderConfig | null = null;
   private audioDecoder: AudioDecoder | null = null;
   private audioCtx: AudioContext | null = null;
   private audioPlayhead = 0;
@@ -78,12 +85,13 @@ export class Player {
       output: (frame) => this.presentFrame(frame),
       error: (e) => console.error("video decoder:", e),
     });
-    this.videoDecoder.configure({
+    this.videoCfg = {
       codec: cfg.videoCodec,
       codedWidth: cfg.width,
       codedHeight: cfg.height,
       optimizeForLatency: true,
-    });
+    };
+    this.videoDecoder.configure(this.videoCfg);
 
     if (cfg.audioCodec && cfg.sampleRate && cfg.channels) {
       this.audioCtx = new AudioContext({ sampleRate: cfg.sampleRate });
@@ -110,6 +118,18 @@ export class Player {
     if (chunk.kind === KIND_VIDEO && this.videoDecoder?.state === "configured") {
       if (this.awaitingKeyframe && !chunk.keyframe) return;
       this.awaitingKeyframe = false;
+      // Drop to live: a keyframe is a safe point to throw away a backlog
+      // that the decoder or presenter has fallen behind on.
+      if (
+        chunk.keyframe &&
+        (this.videoDecoder.decodeQueueSize > MAX_QUEUE_DEPTH ||
+          this.pendingFrames.size > MAX_QUEUE_DEPTH)
+      ) {
+        this.videoDecoder.reset();
+        this.videoDecoder.configure(this.videoCfg!);
+        for (const f of this.pendingFrames) f.close();
+        this.pendingFrames.clear();
+      }
       this.videoDecoder.decode(
         new EncodedVideoChunk({
           type: chunk.keyframe ? "key" : "delta",
@@ -147,10 +167,13 @@ export class Player {
     this.audioAnchor = null;
   }
 
-  /** Present a decoded frame, delaying (bounded) to line up with audio. */
+  /** Present a decoded frame, delaying (bounded) to line up with audio.
+   *  When the presentation queue backs up (e.g. throttled timers in a
+   *  backgrounded tab), draw immediately instead — holding VideoFrames
+   *  starves the decoder's frame pool and stalls the whole pipeline. */
   private presentFrame(frame: VideoFrame): void {
     const delayMs = this.videoDelayMs(frame.timestamp ?? 0);
-    if (delayMs <= 4) {
+    if (delayMs <= 4 || this.pendingFrames.size > MAX_QUEUE_DEPTH) {
       this.drawFrame(frame);
       return;
     }
