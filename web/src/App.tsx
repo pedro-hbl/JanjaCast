@@ -18,6 +18,8 @@ import {
 import { Session } from "./session";
 import { startCapture, type CaptureHandle } from "./capture";
 import { Player } from "./player";
+import { ScribbleDot, StickFigure, CloudDoodle } from "./doodles";
+import "./theme.css";
 
 const App: Component = () => {
   const [identity, setIdentity] = createSignal<Identity | null>(null);
@@ -130,96 +132,78 @@ const App: Component = () => {
   const live = () => Boolean(stage().publisherId);
 
   return (
-    <div style={{ display: "flex", "flex-direction": "column", height: "100%" }}>
-      <header
-        style={{
-          display: "flex",
-          "align-items": "center",
-          gap: "12px",
-          padding: "10px 16px",
-          background: "#111214",
-        }}
-      >
-        <strong>golive</strong>
+    <div class="app">
+      <header class="app-header">
+        <strong class="logo">golive</strong>
         <Show when={live()}>
-          <span style={{ color: "#f23f43" }}>
-            ● LIVE — {stage().publisherName}
+          <span class="live-badge">
+            <ScribbleDot class="live-dot" /> LIVE — {stage().publisherName}
           </span>
-          <span style={{ color: "#949ba4" }}>
+          <span class="stat-pill">
             {stats().fps} fps · {stats().kbps} kbps
             {stats().latencyMs != null ? ` · ${stats().latencyMs} ms` : ""}
           </span>
         </Show>
-        <span style={{ "margin-left": "auto", color: "#949ba4" }}>
+        <span class="status-line">
           {session()?.status() ?? "starting"} · {identity()?.username ?? "…"}
         </span>
       </header>
 
-      <main style={{ flex: 1, display: "flex", "min-height": 0 }}>
-        <div
-          style={{
-            flex: 1,
-            display: "flex",
-            "align-items": "center",
-            "justify-content": "center",
-            background: "#000",
-          }}
-        >
+      <main class="app-main">
+        <div class="stage">
           <canvas
             ref={canvasRef}
-            style={{
-              "max-width": "100%",
-              "max-height": "100%",
-              display: live() && !capture() ? "block" : "none",
-            }}
+            class="stage-canvas"
+            style={{ display: live() && !capture() ? "block" : "none" }}
           />
           <Show when={capture()}>
-            <p style={{ color: "#949ba4" }}>
+            <p class="stage-msg">
               You are sharing your screen at {fps()} fps.
             </p>
           </Show>
           <Show when={!live()}>
-            <p style={{ color: "#949ba4", "text-align": "center" }}>
-              {companionOpened()
-                ? "Sharing tab opened in your browser — click Start sharing there. The stream will appear here."
-                : "Nobody is live. Take the stage!"}
-            </p>
+            <div class="stage-empty">
+              <CloudDoodle class="stage-cloud" />
+              <p class="stage-msg">
+                {companionOpened()
+                  ? "Sharing tab opened in your browser — click Start sharing there. The stream will appear here."
+                  : "Nobody is live. Take the stage!"}
+              </p>
+            </div>
           </Show>
         </div>
 
-        <aside style={{ width: "180px", padding: "12px", background: "#111214" }}>
-          <h4 style={{ margin: "0 0 8px" }}>In the room</h4>
+        <aside class="sidebar">
+          <h4 class="sidebar-title">In the room</h4>
           <For each={session()?.participants().participants ?? []}>
-            {(p) => <div style={{ padding: "2px 0" }}>{p.username}</div>}
+            {(p) => (
+              <div class="participant">
+                <StickFigure class="participant-icon" />
+                <span class="participant-name">{p.username}</span>
+              </div>
+            )}
           </For>
         </aside>
       </main>
 
-      <footer
-        style={{
-          display: "flex",
-          gap: "12px",
-          "align-items": "center",
-          padding: "10px 16px",
-          background: "#111214",
-        }}
-      >
+      <footer class="app-footer">
         <Show
           when={capture()}
           fallback={
-            <button onClick={share} style={buttonStyle("#248046")}>
+            <button onClick={share} class="crayon-btn crayon-btn--go">
               Share screen
             </button>
           }
         >
-          <button onClick={stopSharing} style={buttonStyle("#da373c")}>
+          <button onClick={stopSharing} class="crayon-btn crayon-btn--stop">
             Stop sharing
           </button>
         </Show>
 
-        <label style={{ color: "#949ba4" }}>
+        <label class="fps-label">
           Framerate{" "}
           <select
+            class="crayon-select"
             value={fps()}
             disabled={Boolean(capture())}
             onChange={(e) => setFps(Number(e.currentTarget.value) as 30 | 60)}
@@ -230,23 +214,11 @@ const App: Component = () => {
         </label>
 
         <Show when={error()}>
-          <span style={{ color: "#f23f43" }}>{error()}</span>
+          <span class="error-text">{error()}</span>
         </Show>
       </footer>
     </div>
   );
 };
-
-function buttonStyle(bg: string) {
-  return {
-    background: bg,
-    color: "#fff",
-    border: "none",
-    "border-radius": "4px",
-    padding: "8px 16px",
-    cursor: "pointer",
-    font: "inherit",
-  };
-}
 
 export default App;
