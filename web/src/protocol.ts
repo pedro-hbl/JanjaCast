@@ -48,6 +48,11 @@ export interface StageStateData {
   config?: ConfigData | null;
 }
 
+/** Welcome payload: stage state plus the server-assigned id of this client. */
+export interface WelcomeData extends StageStateData {
+  selfId?: string;
+}
+
 export interface Participant {
   userId: string;
   username: string;

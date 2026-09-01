@@ -141,6 +141,14 @@ type StageStateData struct {
 	Config        *ConfigData `json:"config,omitempty"`
 }
 
+// WelcomeData is the payload of CtrlWelcome: the stage state plus the
+// server-assigned identity of the joining client (authoritative after auth —
+// a companion tab learns its real id here).
+type WelcomeData struct {
+	StageStateData
+	SelfID string `json:"selfId"`
+}
+
 // RoomStateData is the payload of CtrlRoomState.
 type RoomStateData struct {
 	Participants []Participant `json:"participants"`

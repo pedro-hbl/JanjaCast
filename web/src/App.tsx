@@ -190,14 +190,47 @@ const App: Component = () => {
         <Show
           when={capture()}
           fallback={
-            <button onClick={share} class="crayon-btn crayon-btn--go">
-              Share screen
-            </button>
+            <Show
+              when={session()?.ownsStage()}
+              fallback={
+                <button onClick={share} class="crayon-btn crayon-btn--go">
+                  Share screen
+                </button>
+              }
+            >
+              {/* Our companion tab holds the stage: stop it from here. */}
+              <button
+                onClick={() => session()?.leaveStage()}
+                class="crayon-btn crayon-btn--stop"
+              >
+                Stop sharing
+              </button>
+            </Show>
           }
         >
           <button onClick={stopSharing} class="crayon-btn crayon-btn--stop">
             Stop sharing
           </button>
+        </Show>
+
+        <Show when={live()}>
+          <label class="fps-label">
+            Volume{" "}
+            <input
+              type="range"
+              min="0"
+              max="100"
+              value="100"
+              onInput={(e) =>
+                player?.setVolume(Number(e.currentTarget.value) / 100)
+              }
+              style={{
+                "vertical-align": "middle",
+                width: "90px",
+                "accent-color": "#5cb53f",
+              }}
+            />
+          </label>
         </Show>
 
         <label class="fps-label">

@@ -11,6 +11,7 @@ import type {
   RoomStateData,
   StageStateData,
   SyncData,
+  WelcomeData,
 } from "./protocol";
 
 export type SessionStatus = "connecting" | "open" | "reconnecting" | "closed";
@@ -29,6 +30,7 @@ export class Session {
   readonly participants;
 
   private ws: WebSocket | null = null;
+  private assignedId: string | null = null;
   private closedByUser = false;
   private reconnectAttempt = 0;
   private pingTimer: ReturnType<typeof setInterval> | null = null;
@@ -166,9 +168,23 @@ export class Session {
     return this.ws?.bufferedAmount ?? 0;
   }
 
+  /** The server-assigned id of this connection (authoritative after auth). */
+  selfId(): string {
+    return this.assignedId ?? this.identity.userId;
+  }
+
   isPublisher(): boolean {
     const pid = this.stage().publisherId;
-    return pid === this.identity.userId;
+    return pid != null && pid === this.selfId();
+  }
+
+  /** True when this user holds the stage on ANY of their connections —
+   *  their Activity view or their ":tab" companion capture tab. */
+  ownsStage(): boolean {
+    const pid = this.stage().publisherId;
+    if (!pid) return false;
+    const strip = (id: string) => (id.endsWith(":tab") ? id.slice(0, -4) : id);
+    return strip(pid) === strip(this.selfId());
   }
 
   private sendControl(type: Control["type"], data: unknown): void {
@@ -181,7 +197,12 @@ export class Session {
 
   private handleControl(ctrl: Control): void {
     switch (ctrl.type) {
-      case "welcome":
+      case "welcome": {
+        const welcome = (ctrl.data ?? {}) as WelcomeData;
+        if (welcome.selfId) this.assignedId = welcome.selfId;
+        this.setStage(welcome);
+        break;
+      }
       case "stage_state":
         this.setStage((ctrl.data ?? {}) as StageStateData);
         break;

@@ -32,6 +32,8 @@ export class Player {
   private videoCfg: VideoDecoderConfig | null = null;
   private audioDecoder: AudioDecoder | null = null;
   private audioCtx: AudioContext | null = null;
+  private gain: GainNode | null = null;
+  private volume = 1;
   private audioPlayhead = 0;
   /** Maps audio chunk timestamps (µs) to AudioContext time (s). */
   private audioAnchor: { chunkTsUs: number; ctxTime: number } | null = null;
@@ -74,6 +76,14 @@ export class Player {
     this.sync = sync;
   }
 
+  /** Playback volume, 0..1. Survives decoder rebuilds. */
+  setVolume(v: number): void {
+    this.volume = Math.min(Math.max(v, 0), 1);
+    if (this.gain) this.gain.gain.value = this.volume;
+    // A volume gesture is also the perfect moment to unstick autoplay.
+    this.audioCtx?.resume().catch(() => {});
+  }
+
   /** (Re)build decoders for a new publisher config. */
   configure(cfg: ConfigData): void {
     this.teardownDecoders();
@@ -95,8 +105,23 @@ export class Player {
 
     if (cfg.audioCodec && cfg.sampleRate && cfg.channels) {
       this.audioCtx = new AudioContext({ sampleRate: cfg.sampleRate });
+      this.gain = this.audioCtx.createGain();
+      this.gain.gain.value = this.volume;
+      this.gain.connect(this.audioCtx.destination);
       this.audioPlayhead = 0;
       this.audioAnchor = null;
+      // Autoplay policy: a context created without a user gesture starts
+      // suspended and produces silence. Resume on the next interaction.
+      if (this.audioCtx.state === "suspended") {
+        const resume = () => {
+          this.audioCtx?.resume().catch(() => {});
+          document.removeEventListener("pointerdown", resume);
+          document.removeEventListener("keydown", resume);
+        };
+        this.audioCtx.resume().catch(() => {});
+        document.addEventListener("pointerdown", resume);
+        document.addEventListener("keydown", resume);
+      }
       this.audioDecoder = new AudioDecoder({
         output: (data) => this.playAudio(data),
         error: (e) => console.error("audio decoder:", e),
@@ -164,6 +189,7 @@ export class Player {
     this.audioDecoder = null;
     this.audioCtx?.close().catch(() => {});
     this.audioCtx = null;
+    this.gain = null;
     this.audioAnchor = null;
   }
 
@@ -235,7 +261,7 @@ export class Player {
     }
     const src = ctx.createBufferSource();
     src.buffer = buffer;
-    src.connect(ctx.destination);
+    src.connect(this.gain ?? ctx.destination);
     src.start(this.audioPlayhead);
     this.audioAnchor = { chunkTsUs, ctxTime: this.audioPlayhead };
     this.audioPlayhead += buffer.duration;

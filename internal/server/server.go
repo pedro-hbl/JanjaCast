@@ -74,9 +74,18 @@ func New(cfg Config, log *slog.Logger) *Server {
 		}
 		dist = sub
 	}
-	s.mux.Handle("/", http.FileServer(http.FS(dist)))
+	// HTML must never be cached (Discord's proxy caches aggressively and
+	// serves stale bundles after deploys); hashed assets may cache forever.
+	static := http.FileServer(http.FS(dist))
+	s.mux.Handle("/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/" || !strings.Contains(r.URL.Path, ".") {
+			w.Header().Set("Cache-Control", "no-store")
+		}
+		static.ServeHTTP(w, r)
+	}))
 	// SPA route: the companion capture page is client-side routed.
 	s.mux.HandleFunc("GET /share", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-store")
 		http.ServeFileFS(w, r, dist, "index.html")
 	})
 	return s

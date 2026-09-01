@@ -107,3 +107,26 @@ func TestPublisherLeavingFreesStage(t *testing.T) {
 		t.Fatalf("stage still held by %q after publisher left", last.PublisherID)
 	}
 }
+
+func TestOwnerCanStopCompanionStage(t *testing.T) {
+	hub := NewHub(discard())
+	room := hub.Room("r1")
+
+	activity, _ := room.Join("u1", "pedro")
+	companion, _ := room.Join("u1:tab", "pedro (sharing)")
+	stranger, _ := room.Join("u2", "mallory")
+
+	room.TakeStage(companion)
+
+	// A stranger cannot stop someone else's stream.
+	room.LeaveStage(stranger)
+	if got := room.stageState().PublisherID; got != "u1:tab" {
+		t.Fatalf("stranger cleared the stage (publisher %q)", got)
+	}
+
+	// The owner's Activity connection can.
+	room.LeaveStage(activity)
+	if got := room.stageState().PublisherID; got != "" {
+		t.Fatalf("owner could not stop own companion stream (publisher %q)", got)
+	}
+}

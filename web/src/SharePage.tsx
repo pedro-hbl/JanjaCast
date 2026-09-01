@@ -3,7 +3,13 @@
 // joins the same room over WebSocket, takes the stage, and streams — while
 // the Activity remains the viewing surface for everyone in the call.
 
-import { createSignal, onCleanup, Show, type Component } from "solid-js";
+import {
+  createEffect,
+  createSignal,
+  onCleanup,
+  Show,
+  type Component,
+} from "solid-js";
 import type { Identity } from "./discord";
 import { Session } from "./session";
 import { startCapture, type CaptureHandle } from "./capture";
@@ -34,11 +40,36 @@ const SharePage: Component = () => {
   const [stats, setStats] = createSignal({ fps: 0, kbps: 0, targetKbps: 0 });
   const [error, setError] = createSignal<string | null>(null);
 
+  // Remote stop: if we held the stage and it is no longer ours (the user
+  // clicked Stop in the Activity, or someone took over), end capture here.
+  // A short grace window after reconnect avoids reacting to the transient
+  // empty stage seen before our re-take round-trips.
+  let wasPublisher = false;
+  let graceUntil = 0;
+  createEffect(() => {
+    const st = session.stage();
+    const mine = st.publisherId != null && st.publisherId === session.selfId();
+    if (mine) {
+      wasPublisher = true;
+      return;
+    }
+    if (performance.now() < graceUntil) return;
+    if (wasPublisher) {
+      wasPublisher = false;
+      const c = capture();
+      if (c) {
+        c.stop();
+        setCapture(null);
+      }
+    }
+  });
+
   // Re-claim the stage after a transport reconnect so viewers recover
   // without the sharer touching anything.
   session.onReconnected = () => {
     const c = capture();
     if (c) {
+      graceUntil = performance.now() + 3000;
       session.takeStage();
       session.announceConfig(c.config);
     }

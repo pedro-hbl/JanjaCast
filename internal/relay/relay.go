@@ -7,6 +7,7 @@ import (
 	"iter"
 	"log/slog"
 	"maps"
+	"strings"
 	"sync"
 
 	"github.com/pedro-hbl/golive/internal/protocol"
@@ -119,7 +120,10 @@ func (r *Room) Join(userID, username string) (*Client, iter.Seq[OutMsg]) {
 	r.clients[c] = struct{}{}
 	r.mu.Unlock()
 
-	c.enqueueControl(protocol.CtrlWelcome, r.stageState())
+	c.enqueueControl(protocol.CtrlWelcome, protocol.WelcomeData{
+		StageStateData: r.stageState(),
+		SelfID:         c.UserID,
+	})
 
 	// Replay the cached GOP so the newcomer has a picture immediately.
 	r.mu.Lock()
@@ -181,10 +185,12 @@ func (r *Room) TakeStage(c *Client) {
 	r.log.Info("stage taken", "user", c.Username)
 }
 
-// LeaveStage clears the stage if c holds it.
+// LeaveStage clears the stage if c holds it — or if c is the same person on
+// another connection (a user in the Activity remotely stopping their own
+// companion capture tab, whose id is theirs with a ":tab" suffix).
 func (r *Room) LeaveStage(c *Client) {
 	r.mu.Lock()
-	if r.publisher != c {
+	if r.publisher == nil || (r.publisher != c && baseID(r.publisher.UserID) != baseID(c.UserID)) {
 		r.mu.Unlock()
 		return
 	}
@@ -228,6 +234,12 @@ func (r *Room) ForwardControl(from *Client, t protocol.ControlType, data any) {
 func (r *Room) clearGOPLocked() {
 	r.gop = nil
 	r.gopBytes = 0
+}
+
+// baseID strips the companion-tab suffix, yielding the person's identity.
+func baseID(id string) string {
+	base, _ := strings.CutSuffix(id, ":tab")
+	return base
 }
 
 // ForwardMedia fans a binary media message from the publisher out to every
