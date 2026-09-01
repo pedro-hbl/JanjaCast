@@ -13,3 +13,5 @@ web/dist/*
 
 # Claude Code session artifacts (agent worktrees etc.)
 .claude/
+*~
+*.exe
