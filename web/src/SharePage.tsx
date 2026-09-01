@@ -7,6 +7,8 @@ import { createSignal, onCleanup, Show, type Component } from "solid-js";
 import type { Identity } from "./discord";
 import { Session } from "./session";
 import { startCapture, type CaptureHandle } from "./capture";
+import { ScribbleDot, SunDoodle } from "./doodles";
+import "./theme.css";
 
 const SharePage: Component = () => {
   const params = new URLSearchParams(location.search);
@@ -86,86 +88,66 @@ const SharePage: Component = () => {
   };
 
   return (
-    <div
-      style={{
-        height: "100%",
-        display: "flex",
-        "flex-direction": "column",
-        "align-items": "center",
-        "justify-content": "center",
-        gap: "16px",
-        padding: "24px",
-        "text-align": "center",
-      }}
-    >
-      <h1 style={{ margin: 0 }}>golive — screen sharing</h1>
-      <p style={{ color: "#949ba4", margin: 0 }}>
-        Room <code>{room}</code> · connection: {session.status()}
-      </p>
+    <div class="share-page">
+      <SunDoodle class="share-sun" />
 
-      <Show
-        when={capture()}
-        fallback={
-          <>
-            <label style={{ color: "#949ba4" }}>
-              Framerate{" "}
-              <select
-                value={fps()}
-                onChange={(e) => setFps(Number(e.currentTarget.value) as 30 | 60)}
+      <div class="share-card">
+        <h1 class="share-title">golive — screen sharing</h1>
+        <p class="share-room">
+          Room <code>{room}</code> · connection: {session.status()}
+        </p>
+
+        <Show
+          when={capture()}
+          fallback={
+            <>
+              <label class="fps-label">
+                Framerate{" "}
+                <select
+                  class="crayon-select"
+                  value={fps()}
+                  onChange={(e) => setFps(Number(e.currentTarget.value) as 30 | 60)}
+                >
+                  <option value={30}>30 fps</option>
+                  <option value={60}>60 fps</option>
+                </select>
+              </label>
+              <button
+                onClick={start}
+                disabled={session.status() !== "open"}
+                class="crayon-btn crayon-btn--go crayon-btn--big"
               >
-                <option value={30}>30 fps</option>
-                <option value={60}>60 fps</option>
-              </select>
-            </label>
-            <button
-              onClick={start}
-              disabled={session.status() !== "open"}
-              style={{
-                background: "#248046",
-                color: "#fff",
-                border: "none",
-                "border-radius": "6px",
-                padding: "14px 28px",
-                "font-size": "16px",
-                cursor: "pointer",
-              }}
-            >
-              Start sharing
-            </button>
-            <p style={{ color: "#949ba4", "max-width": "420px" }}>
-              Pick the screen, window, or tab to stream. Keep this tab open
-              while sharing — everyone in the Discord call watches through the
-              Activity.
-            </p>
-          </>
-        }
-      >
-        <p style={{ "font-size": "18px" }}>
-          🔴 Live at {fps()} fps — {stats().fps} fps · {stats().kbps} kbps
-          (target {stats().targetKbps})
-        </p>
-        <button
-          onClick={stop}
-          style={{
-            background: "#da373c",
-            color: "#fff",
-            border: "none",
-            "border-radius": "6px",
-            padding: "14px 28px",
-            "font-size": "16px",
-            cursor: "pointer",
-          }}
+                Start sharing
+              </button>
+              <p class="share-hint">
+                Pick the screen, window, or tab to stream. Keep this tab open
+                while sharing — everyone in the Discord call watches through the
+                Activity.
+              </p>
+            </>
+          }
         >
-          Stop sharing
-        </button>
-        <p style={{ color: "#949ba4" }}>
-          You can minimize this tab; the stream keeps running.
-        </p>
-      </Show>
+          <p class="share-live">
+            <ScribbleDot class="live-dot" /> Live at {fps()} fps — {stats().fps}{" "}
+            fps · {stats().kbps} kbps (target {stats().targetKbps})
+          </p>
+          <button
+            onClick={stop}
+            class="crayon-btn crayon-btn--stop crayon-btn--big"
+          >
+            Stop sharing
+          </button>
+          <p class="share-hint">
+            You can minimize this tab; the stream keeps running.
+          </p>
+        </Show>
 
-      <Show when={error()}>
-        <p style={{ color: "#f23f43" }}>{error()}</p>
-      </Show>
+        <Show when={error()}>
+          <p class="error-text">{error()}</p>
+        </Show>
+      </div>
+
+      <div class="grass-strip" aria-hidden="true" />
     </div>
   );
 };

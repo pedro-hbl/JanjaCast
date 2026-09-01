@@ -1,0 +1,395 @@
+/* ------------------------------------------------------------------
+   golive — "crayon on dark construction paper" theme
+   The Activity view lives inside Discord's dark UI, so the ground is a
+   deep blue-grey paper with the crayon-box palette as accents.  The
+   standalone /share page flips to a cream paper sheet (see .share-page
+   overrides at the bottom).  Everything is self-contained: system
+   fonts, inline SVG, data URIs — no external requests (Discord CSP).
+   ------------------------------------------------------------------ */
+
+:root {
+  /* crayon box */
+  --crayon-blue: #5d9be0;
+  --crayon-blue-deep: #3e7dc9;
+  --grass: #5cb53f;
+  --grass-deep: #3f8f2a;
+  --path-brown: #9c6b3f;
+  --pink: #e86aa6;
+  --redorange: #e85d3a;
+  --yellow: #f2c230;
+  --purple: #8b5fc7;
+  --angry: #d93a3a;
+
+  /* semantic (dark construction paper defaults) */
+  --ground: #171a24;
+  --surface: #1e2231;
+  --surface-2: #272c3e;
+  --text: #f4efdd;
+  --muted: #b3aeA0;
+  --outline: #0b0d14;
+
+  --font-hand: "Comic Sans MS", "Comic Sans", "Chalkboard SE", "Comic Neue",
+    "Segoe Print", cursive;
+  --font-body: system-ui, "Segoe UI", sans-serif;
+  --font-num: ui-monospace, "Cascadia Mono", Consolas, "SF Mono", monospace;
+
+  /* wobbly hand-drawn corner recipes — neighbours never share one */
+  --wobble-a: 255px 15px 225px 15px / 15px 225px 15px 255px;
+  --wobble-b: 15px 225px 15px 255px / 225px 15px 255px 15px;
+  --wobble-sm: 12px 5px 10px 6px / 6px 10px 5px 12px;
+}
+
+/* --------------------------- app shell --------------------------- */
+
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--ground);
+  color: var(--text);
+  font-family: var(--font-body);
+}
+
+.app-header,
+.app-footer {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 16px;
+  background: var(--surface);
+}
+.app-header { border-bottom: 3px solid var(--outline); }
+.app-footer { border-top: 3px solid var(--outline); }
+
+.logo {
+  font-family: var(--font-hand);
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  color: var(--text);
+  transform: rotate(-1.5deg);
+  padding: 0 2px 6px;
+  background:
+    url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='72' height='7' viewBox='0 0 72 7'><path d='M2 4.5 Q11 1 20 4.5 T38 4.5 T56 4.5 T70 3.5' fill='none' stroke='%235d9be0' stroke-width='2.4' stroke-linecap='round'/></svg>")
+    repeat-x left bottom / 72px 7px;
+}
+
+/* LIVE badge — scribbled pulsing dot drawn in doodles.tsx */
+.live-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-family: var(--font-hand);
+  font-weight: 700;
+  color: var(--angry);
+  transform: rotate(-1deg);
+}
+.live-dot {
+  flex: none;
+  transform-origin: 50% 50%;
+  animation: crayon-pulse 1.5s ease-in-out infinite;
+}
+@keyframes crayon-pulse {
+  0%, 100% { transform: scale(1) rotate(-6deg); opacity: 1; }
+  50% { transform: scale(1.3) rotate(8deg); opacity: 0.7; }
+}
+
+/* stats stay strictly readable: monospace numbers in a quiet pill */
+.stat-pill {
+  font-family: var(--font-num);
+  font-size: 12.5px;
+  color: var(--muted);
+  background: var(--surface-2);
+  border: 2px solid var(--outline);
+  border-radius: var(--wobble-sm);
+  padding: 3px 9px 4px;
+  white-space: nowrap;
+}
+
+.status-line {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+/* ----------------------------- stage ----------------------------- */
+
+.app-main {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
+
+/* the video area is the hero: black letterbox with a wobbly crayon
+   frame, everything else stays out of its way */
+.stage {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #000;
+  margin: 10px 8px 10px 10px;
+  border: 3px solid var(--crayon-blue-deep);
+  border-radius: 18px 7px 14px 9px / 9px 15px 7px 18px;
+  overflow: hidden;
+}
+
+.stage-canvas {
+  max-width: 100%;
+  max-height: 100%;
+}
+
+.stage-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 16px;
+}
+.stage-cloud { opacity: 0.85; }
+
+.stage-msg {
+  margin: 0;
+  max-width: 420px;
+  text-align: center;
+  color: var(--muted);
+  font-family: var(--font-hand);
+  font-size: 15px;
+}
+
+/* --------------------------- sidebar ----------------------------- */
+
+.sidebar {
+  width: 180px;
+  flex: none;
+  padding: 12px;
+  background: var(--surface);
+  border-left: 3px solid var(--outline);
+  overflow-y: auto;
+}
+
+.sidebar-title {
+  margin: 0 0 10px;
+  font-family: var(--font-hand);
+  font-size: 15px;
+  transform: rotate(-1deg);
+  padding-bottom: 6px;
+  display: inline-block;
+  background:
+    url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='72' height='7' viewBox='0 0 72 7'><path d='M2 4.5 Q11 1 20 4.5 T38 4.5 T56 4.5 T70 3.5' fill='none' stroke='%23f2c230' stroke-width='2.4' stroke-linecap='round'/></svg>")
+    repeat-x left bottom / 72px 7px;
+}
+
+.participant {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 0;
+  font-size: 13.5px;
+  overflow-wrap: anywhere;
+}
+.participant-icon { flex: none; color: var(--crayon-blue); }
+/* rotate every other stick figure the opposite way — kids never draw
+   two people standing the same */
+.participant:nth-child(even) .participant-icon { transform: rotate(6deg); }
+.participant:nth-child(odd) .participant-icon { transform: rotate(-5deg); }
+
+/* --------------------------- buttons ----------------------------- */
+
+.crayon-btn {
+  font-family: var(--font-hand);
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--outline);
+  padding: 8px 18px 9px;
+  border: 3px solid var(--outline);
+  border-radius: var(--wobble-a);
+  cursor: pointer;
+  transform: rotate(-1deg);
+  box-shadow: 2px 3px 0 var(--outline);
+  transition: transform 120ms ease, box-shadow 120ms ease;
+  /* waxy crayon streaks */
+  background-image: repeating-linear-gradient(
+    -40deg,
+    rgba(255, 255, 255, 0.09) 0 2px,
+    transparent 2px 5px
+  );
+}
+.crayon-btn:hover { transform: rotate(1deg) scale(1.04); }
+.crayon-btn:active {
+  transform: rotate(0deg) translateY(2px);
+  box-shadow: 0 1px 0 var(--outline);
+}
+.crayon-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.crayon-btn--go { background-color: var(--grass); }
+.crayon-btn--go:hover:not(:disabled) { background-color: #6cc74e; }
+
+.crayon-btn--stop {
+  background-color: var(--angry);
+  color: #fff;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.35);
+  border-radius: var(--wobble-b);
+}
+.crayon-btn--stop:hover { background-color: #e64b4b; }
+
+.crayon-btn--big {
+  font-size: 18px;
+  padding: 13px 30px 15px;
+}
+
+/* --------------------------- controls ---------------------------- */
+
+.fps-label {
+  color: var(--muted);
+  font-family: var(--font-hand);
+  font-size: 13.5px;
+}
+
+.crayon-select {
+  font-family: var(--font-hand);
+  font-size: 13.5px;
+  color: var(--text);
+  background: var(--surface-2);
+  border: 2px solid var(--outline);
+  border-radius: var(--wobble-sm);
+  padding: 4px 8px;
+  cursor: pointer;
+}
+.crayon-select:disabled { opacity: 0.55; cursor: not-allowed; }
+
+.error-text {
+  color: var(--angry);
+  font-family: var(--font-hand);
+  font-size: 14px;
+  padding-bottom: 4px;
+  background:
+    url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='72' height='7' viewBox='0 0 72 7'><path d='M2 4.5 Q11 1 20 4.5 T38 4.5 T56 4.5 T70 3.5' fill='none' stroke='%23d93a3a' stroke-width='2' stroke-linecap='round'/></svg>")
+    repeat-x left bottom / 72px 7px;
+}
+
+:focus-visible {
+  outline: 3px dashed var(--yellow);
+  outline-offset: 2px;
+}
+
+/* ------------------------- /share page --------------------------- */
+/* Opens in a normal browser tab: flip to a cream sheet of paper with
+   scribbled grass along the bottom and a crayon sun in the corner.   */
+
+.share-page {
+  /* semantic overrides — every shared class recolors itself */
+  --ground: #f7f1e1;
+  --surface: #fffdf3;
+  --surface-2: #f1e9d2;
+  --text: #2b2a33;
+  --muted: #6f6a5b;
+  --outline: #26222e;
+
+  position: relative;
+  height: 100%;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 24px 70px;
+  text-align: center;
+  background:
+    radial-gradient(rgba(60, 40, 20, 0.05) 1px, transparent 1.3px)
+      0 0 / 5px 5px,
+    var(--ground);
+  color: var(--text);
+  font-family: var(--font-body);
+}
+
+.share-sun {
+  position: absolute;
+  top: 18px;
+  right: 22px;
+  pointer-events: none;
+}
+
+/* everything sits on one slightly-tilted paper card */
+.share-card {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  max-width: 520px;
+  padding: 28px 34px 32px;
+  background: var(--surface);
+  border: 3px solid var(--outline);
+  border-radius: var(--wobble-a);
+  box-shadow: 4px 5px 0 rgba(38, 34, 46, 0.22);
+  transform: rotate(-0.6deg);
+}
+
+.share-title {
+  margin: 0;
+  font-family: var(--font-hand);
+  font-size: 26px;
+  transform: rotate(-1deg);
+  padding-bottom: 8px;
+  background:
+    url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='72' height='7' viewBox='0 0 72 7'><path d='M2 4.5 Q11 1 20 4.5 T38 4.5 T56 4.5 T70 3.5' fill='none' stroke='%233e7dc9' stroke-width='2.6' stroke-linecap='round'/></svg>")
+    repeat-x left bottom / 72px 7px;
+}
+
+.share-room {
+  margin: 0;
+  color: var(--muted);
+  font-size: 14px;
+}
+.share-room code {
+  font-family: var(--font-num);
+  background: var(--surface-2);
+  border: 2px solid var(--outline);
+  border-radius: var(--wobble-sm);
+  padding: 1px 7px 2px;
+}
+
+.share-live {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  margin: 0;
+  font-family: var(--font-num);
+  font-size: 16px;
+}
+
+.share-hint {
+  margin: 0;
+  max-width: 420px;
+  color: var(--muted);
+  font-size: 13.5px;
+}
+
+/* scribble-textured grass with crayon flowers along the bottom edge */
+.grass-strip {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 48px;
+  pointer-events: none;
+  background:
+    url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='220' height='48' viewBox='0 0 220 48'><path d='M0 22 Q14 14 28 21 T56 20 T84 22 T112 19 T140 22 T168 20 T196 22 T220 20 L220 48 L0 48 Z' fill='%235cb53f'/><path d='M8 30 q4 -8 7 -1 M30 34 q5 -9 8 -2 M52 29 q4 -8 7 -1 M96 33 q4 -8 7 -1 M140 30 q5 -9 8 -2 M186 33 q4 -8 7 -1' fill='none' stroke='%233f8f2a' stroke-width='2.2' stroke-linecap='round'/><g stroke='%2326222e' stroke-width='1.2'><circle cx='72' cy='27' r='4.2' fill='%23e86aa6'/><circle cx='72' cy='27' r='1.5' fill='%23f2c230' stroke='none'/><circle cx='122' cy='31' r='4.2' fill='%23f2c230'/><circle cx='122' cy='31' r='1.5' fill='%23e85d3a' stroke='none'/><circle cx='170' cy='26' r='4.2' fill='%238b5fc7'/><circle cx='170' cy='26' r='1.5' fill='%23fffdf3' stroke='none'/><circle cx='24' cy='24' r='4.2' fill='%23e85d3a'/><circle cx='24' cy='24' r='1.5' fill='%23f2c230' stroke='none'/></g></svg>")
+    repeat-x left bottom / 220px 48px;
+}
+
+/* ------------------------ accessibility -------------------------- */
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation: none !important;
+    transition: none !important;
+  }
+}
