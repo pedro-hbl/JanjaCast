@@ -10,3 +10,6 @@ web/dist/*
 # env
 .env
 .env.local
+
+# Claude Code session artifacts (agent worktrees etc.)
+.claude/
