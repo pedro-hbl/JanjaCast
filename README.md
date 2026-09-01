@@ -2,8 +2,11 @@
 
 Open-source screen livestreaming as a **Discord Activity**: one participant
 shares their screen (or a tab) at 30/60 fps, everyone else in the voice call
-watches it live inside the Activity — with tab/system audio, live fps/bitrate
-stats, and a one-click "take the stage" model.
+watches it live inside the Activity — with tab/system audio, live
+fps/bitrate/latency stats, per-viewer volume, and a one-click "take the
+stage" model.
+
+![golive architecture — capture in a companion Chrome tab, WebCodecs over WSS through a Cloudflare Tunnel into a Go relay in Docker, fanned out through Discord's Activities proxy to every viewer in the call](docs/architecture.svg)
 
 > **Status: early development.** The relay pipeline works end-to-end in plain
 > browsers; Discord-embedded operation is being validated (see
@@ -76,13 +79,20 @@ cd web && npm run dev        # terminal 2 — vite on :5173, proxies /api + /ws
 See [docs/discord-setup.md](docs/discord-setup.md) for the full walkthrough
 (creating the Discord application, URL mappings, HTTPS tunnel for dev).
 
-Short version:
+Short version — the published multi-arch image works for **any** Discord app
+(the client id is served at runtime, nothing is baked in):
 
 ```sh
 export DISCORD_CLIENT_ID=...      # from the Discord developer portal
 export DISCORD_CLIENT_SECRET=...
-docker compose up --build
+docker compose up                  # pulls ghcr.io/pedro-hbl/golive:latest
 ```
+
+Add `--profile tunnel` to also start a Cloudflare quick tunnel that exposes
+the server over public HTTPS with zero configuration (the URL is printed in
+the tunnel container's logs — put it in the portal's URL mapping). Use
+`docker compose up --build` to build from source instead of pulling. The
+container has a built-in healthcheck (`/golive healthcheck`).
 
 ## Self-hosting notes
 
@@ -101,8 +111,13 @@ docker compose up --build
       late-join (server GOP cache), adaptive bitrate, A/V sync, glass-to-glass
       latency in the stats readout, authenticated joins (Discord OAuth +
       signed share tokens)
-- [ ] M3 — take-the-stage UX polish, worker-based decode, avatars
-- [ ] M4 — Docker image publishing, docs, v0.1
+- [x] M3 (partial) — remote stop from the Activity, per-viewer volume,
+      crayon-drawing UI theme, drop-to-live latency bound
+- [x] M4 — multi-arch Docker image on GHCR, compose healthcheck + optional
+      tunnel profile, runtime client-id config (one image fits every app),
+      architecture diagram
+- [ ] Next — worker-based decode (background-proof viewers), participant
+      avatars, take-the-stage confirm dialog, v0.1 tag
 
 ## License
 

@@ -1,12 +1,32 @@
 services:
   golive:
+    # Use the published image, or `docker compose up --build` to build locally.
+    image: ghcr.io/pedro-hbl/golive:latest
     build:
       context: .
-      args:
-        GOLIVE_DISCORD_CLIENT_ID: ${DISCORD_CLIENT_ID}
     ports:
       - "8080:8080"
     environment:
       DISCORD_CLIENT_ID: ${DISCORD_CLIENT_ID}
       DISCORD_CLIENT_SECRET: ${DISCORD_CLIENT_SECRET}
+      # GOLIVE_PUBLIC_ORIGIN: https://stream.example.com  # optional pin
+    healthcheck:
+      test: ["CMD", "/golive", "healthcheck"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    restart: unless-stopped
+
+  # Optional zero-config public HTTPS via a Cloudflare quick tunnel:
+  #   docker compose --profile tunnel up
+  # The tunnel URL appears in this container's logs; put it in the Discord
+  # portal's URL mapping. (Quick-tunnel URLs change on every restart — use a
+  # named tunnel for anything long-lived.)
+  tunnel:
+    image: cloudflare/cloudflared:latest
+    command: tunnel --url http://golive:8080
+    depends_on:
+      - golive
+    profiles: [tunnel]
     restart: unless-stopped

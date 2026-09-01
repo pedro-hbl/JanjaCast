@@ -45,13 +45,21 @@ export async function openExternal(url: string): Promise<void> {
   }
 }
 
+interface ServerConfig {
+  publicOrigin: string;
+  clientId?: string;
+}
+
+async function fetchConfig(): Promise<ServerConfig> {
+  const resp = await fetch(apiPath("/api/config"));
+  if (!resp.ok) throw new Error(`config fetch failed: ${resp.status}`);
+  return (await resp.json()) as ServerConfig;
+}
+
 /** The server's externally reachable origin — where the companion capture
  *  tab must point, since the Activity itself lives on Discord's proxy. */
 export async function fetchPublicOrigin(): Promise<string> {
-  const resp = await fetch(apiPath("/api/config"));
-  if (!resp.ok) throw new Error(`config fetch failed: ${resp.status}`);
-  const { publicOrigin } = (await resp.json()) as { publicOrigin: string };
-  return publicOrigin;
+  return (await fetchConfig()).publicOrigin;
 }
 
 /** Prefix for same-origin API/WS paths: Discord routes activity traffic
@@ -73,18 +81,21 @@ export async function setupIdentity(): Promise<Identity> {
     };
   }
 
-  if (!CLIENT_ID) {
+  // Prefer the build-time id; otherwise ask the server — this is what lets
+  // one published Docker image serve any Discord application.
+  const clientId = CLIENT_ID ?? (await fetchConfig()).clientId;
+  if (!clientId) {
     throw new Error(
-      "GOLIVE_DISCORD_CLIENT_ID is not set — rebuild the client with it in the environment",
+      "no Discord client id: set DISCORD_CLIENT_ID on the server (or GOLIVE_DISCORD_CLIENT_ID at build time)",
     );
   }
 
-  const sdk = new DiscordSDK(CLIENT_ID);
+  const sdk = new DiscordSDK(clientId);
   sdkInstance = sdk;
   await sdk.ready();
 
   const { code } = await sdk.commands.authorize({
-    client_id: CLIENT_ID,
+    client_id: clientId,
     response_type: "code",
     state: "",
     prompt: "none",

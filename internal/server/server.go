@@ -106,7 +106,12 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 		origin = scheme + "://" + r.Host
 	}
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]string{"publicOrigin": origin})
+	_ = json.NewEncoder(w).Encode(map[string]string{
+		"publicOrigin": origin,
+		// Served at runtime so one published image works for any Discord
+		// app — no client id baked into the bundle required.
+		"clientId": s.cfg.DiscordClientID,
+	})
 }
 
 // ServeHTTP implements http.Handler.
