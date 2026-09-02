@@ -66,13 +66,17 @@ const SharePage: Component = () => {
   session.connect();
 
   const [capture, setCapture] = createSignal<CaptureHandle | null>(null);
+  // 60 is the default everywhere: this is a games-and-video product first,
+  // and the encoder's adaptive bitrate already gives the frames back when
+  // the network can't carry them.
   const [fps, setFps] = createSignal<30 | 60>(
-    params.get("fps") === "60" ? 60 : 30,
+    params.get("fps") === "30" ? 30 : 60,
   );
   const [stats, setStats] = createSignal({ fps: 0, kbps: 0, targetKbps: 0 });
   const [error, setError] = createSignal<string | null>(null);
-  const [hint, setHint] = createSignal<"text" | "motion">("text");
-  const [codec, setCodec] = createSignal<"auto" | "av1">("auto");
+  // "auto" reads the surface the sharer picked (tab ⇒ motion, screen or
+  // window ⇒ text). The two explicit values stay reachable under Advanced.
+  const [hint, setHint] = createSignal<"auto" | "text" | "motion">("auto");
   const [audioMode, setAudioMode] = createSignal<"app" | "system" | "none">("app");
   const [takenBy, setTakenBy] = createSignal<string | null>(null);
   const [viewers, setViewers] = createSignal(0);
@@ -167,7 +171,6 @@ const SharePage: Component = () => {
         backpressure: () => session.bufferedAmount(),
         contentHint: hint(),
         egressBudgetKbps: budgetKbps(),
-        codecPref: codec(),
         audioMode: audioMode(),
       });
       handle.onended = stop;
@@ -241,49 +244,6 @@ const SharePage: Component = () => {
                 </div>
                 <span class="seg-unit">fps</span>
               </div>
-              <label class="fps-label">
-                Optimize for{" "}
-                <select
-                  class="crayon-select"
-                  value={hint()}
-                  onChange={(e) => setHint(e.currentTarget.value as "text" | "motion")}
-                >
-                  <option value="text">📖 Text (code, slides)</option>
-                  <option value="motion">🎮 Motion (games, video)</option>
-                </select>
-              </label>
-              <label class="fps-label">
-                Codec{" "}
-                <select
-                  class="crayon-select"
-                  value={codec()}
-                  onChange={(e) => setCodec(e.currentTarget.value as "auto" | "av1")}
-                >
-                  <option value="auto">Auto (H.264)</option>
-                  <option value="av1">AV1 — sharper per bit (modern GPU)</option>
-                </select>
-              </label>
-              <label class="fps-label">
-                Sound{" "}
-                <select
-                  class="crayon-select"
-                  value={audioMode()}
-                  onChange={(e) =>
-                    setAudioMode(e.currentTarget.value as "app" | "system" | "none")
-                  }
-                >
-                  <option value="app">🎵 App sound — no call echo (recommended)</option>
-                  <option value="system">🔊 Whole-screen sound (echo-prone!)</option>
-                  <option value="none">🔇 No sound</option>
-                </select>
-              </label>
-              <p class="share-hint">
-                {audioMode() === "app"
-                  ? "Pick a window or a browser tab — only that app's sound is shared, so the Discord call is never re-broadcast."
-                  : audioMode() === "system"
-                    ? "⚠ Shares everything on your speakers, INCLUDING the Discord call — everyone will hear themselves unless Discord uses a different output device (Windows: Settings → Sound → Volume mixer → Discord → Output)."
-                    : "Video only; the voice call carries the commentary."}
-              </p>
               <button
                 onClick={start}
                 disabled={session.status() !== "open"}
@@ -296,6 +256,61 @@ const SharePage: Component = () => {
                 while sharing — everyone in the Discord call watches through the
                 Activity.
               </p>
+
+              {/* Everything below here already has a right answer, and the
+                  right answer is the default. The disclosure keeps the two
+                  modes reachable without asking anybody to have an opinion:
+                  the codec is gone entirely (always the best the hardware
+                  offers), sharpness reads the picked surface, and sound is
+                  scoped to the captured app so the call can't echo. */}
+              <details class="crayon-details">
+                <summary>Advanced</summary>
+                <div class="details-body">
+                  <label class="fps-label">
+                    Optimize for{" "}
+                    <select
+                      class="crayon-select"
+                      value={hint()}
+                      onChange={(e) =>
+                        setHint(
+                          e.currentTarget.value as "auto" | "text" | "motion",
+                        )
+                      }
+                    >
+                      <option value="auto">✨ Automatic (recommended)</option>
+                      <option value="text">📖 Text (code, slides)</option>
+                      <option value="motion">🎮 Motion (games, video)</option>
+                    </select>
+                  </label>
+                  <label class="fps-label">
+                    Sound{" "}
+                    <select
+                      class="crayon-select"
+                      value={audioMode()}
+                      onChange={(e) =>
+                        setAudioMode(
+                          e.currentTarget.value as "app" | "system" | "none",
+                        )
+                      }
+                    >
+                      <option value="app">
+                        🎵 App sound — no call echo (recommended)
+                      </option>
+                      <option value="system">
+                        🔊 Whole-screen sound (echo-prone!)
+                      </option>
+                      <option value="none">🔇 No sound</option>
+                    </select>
+                  </label>
+                  <p class="share-hint">
+                    {audioMode() === "app"
+                      ? "Pick a window or a browser tab — only that app's sound is shared, so the Discord call is never re-broadcast."
+                      : audioMode() === "system"
+                        ? "⚠ Shares everything on your speakers, INCLUDING the Discord call — everyone will hear themselves unless Discord uses a different output device (Windows: Settings → Sound → Volume mixer → Discord → Output)."
+                        : "Video only; the voice call carries the commentary."}
+                  </p>
+                </div>
+              </details>
             </>
           }
         >

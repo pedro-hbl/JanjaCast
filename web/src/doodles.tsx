@@ -263,6 +263,201 @@ export const CloudDoodle: Component<{ class?: string }> = (props) => (
   </svg>
 );
 
+/**
+ * The set. The mark's television redrawn at poster size for the empty
+ * stage — same object, more paper: a lopsided blue box on two crooked
+ * legs, a waxy glare across the screen, and the "cast" nub on the corner.
+ *
+ * The nub and its waves are *off* by default (grey nub, waves at zero
+ * opacity) and CSS turns them on — hovering the Share button previews it,
+ * and `.stage-scene--live` leaves them on and rippling. The drawing reads
+ * completely without either state, so nothing is encoded in the motion.
+ */
+export const SceneTv: Component<{ class?: string }> = (props) => (
+  <svg
+    class={props.class}
+    width="240"
+    height="160"
+    viewBox="0 0 240 160"
+    aria-hidden="true"
+  >
+    {/* legs first, so the box sits on top of them */}
+    <path
+      d="M62 124 50 150M142 122 154 148"
+      fill="none"
+      stroke="var(--crayon-blue-deep)"
+      stroke-width="6"
+      stroke-linecap="round"
+    />
+    {/* the box: a rectangle a child would draw, so none of it is square */}
+    <path
+      d="M14 30Q13 20 24 19L164 12Q176 11 177 22L182 108Q183 119 172 120L28 128Q17 129 16 118Z"
+      fill="var(--crayon-blue)"
+      stroke="var(--outline)"
+      stroke-width="5"
+      stroke-linejoin="round"
+    />
+    {/* the screen itself — empty, inked in, nothing playing */}
+    <path
+      d="M30 42Q29 34 38 33L152 27Q161 26 162 35L166 99Q167 107 158 108L42 114Q33 115 32 107Z"
+      fill="var(--outline)"
+      stroke="var(--crayon-blue-deep)"
+      stroke-width="2.4"
+      stroke-linejoin="round"
+    />
+    {/* the streak you get dragging a crayon across glass — diagonal at
+        this size, because two horizontal ones read as lines of text */}
+    <path
+      d="M44 100Q66 70 96 46M76 106Q100 84 124 64"
+      fill="none"
+      stroke="rgba(255,255,255,.2)"
+      stroke-width="5"
+      stroke-linecap="round"
+    />
+    {/* the "cast": nub + one bold wave, both dark until the set is on */}
+    <circle
+      class="scene-tv-nub"
+      cx="190"
+      cy="22"
+      r="9"
+      stroke="var(--outline)"
+      stroke-width="3"
+    />
+    <g fill="none" stroke="var(--angry)" stroke-width="6" stroke-linecap="round">
+      <path class="scene-tv-wave" d="M203 9Q217 22 204 37" />
+      <path class="scene-tv-wave scene-tv-wave--far" d="M215 1Q234 22 216 45" />
+    </g>
+  </svg>
+);
+
+/**
+ * A browser window with its tab lit up, a green button waiting inside it
+ * and an arrow pointing at the button — the whole "we opened a tab in your
+ * real browser, go press the green thing" instruction as one picture.
+ */
+export const BrowserTabDoodle: Component<{ class?: string }> = (props) => (
+  <svg
+    class={props.class}
+    width="216"
+    height="156"
+    viewBox="0 0 216 156"
+    aria-hidden="true"
+  >
+    {/* The tab — drawn first, overlapped by the window's top edge, and
+        filled with the system blue so "that one" is unmistakable. */}
+    <path
+      d="M22 32Q21 10 34 9L104 6Q118 5 119 27L120 34 21 37Z"
+      fill="var(--crayon-blue)"
+      stroke="var(--outline)"
+      stroke-width="3.5"
+      stroke-linejoin="round"
+    />
+    {/* The window: inked in and framed in blue, the same two crayons as
+        the television so the two drawings are visibly siblings. */}
+    <path
+      d="M10 44Q9 33 20 32L186 26Q197 25 198 36L202 120Q203 131 192 132L24 138Q13 139 12 128Z"
+      fill="var(--outline)"
+      stroke="var(--crayon-blue)"
+      stroke-width="4.5"
+      stroke-linejoin="round"
+    />
+    {/* the address bar, scribbled in */}
+    <path
+      d="M28 56Q92 52 156 50"
+      fill="none"
+      stroke="var(--muted)"
+      stroke-width="4"
+      stroke-linecap="round"
+      opacity=".5"
+    />
+    {/* the green button inside it — the thing to press */}
+    <path
+      d="M62 78Q61 69 71 68L140 65Q150 64 151 74L152 92Q153 101 143 102L74 105Q64 106 63 96Z"
+      fill="var(--grass)"
+      stroke="var(--outline)"
+      stroke-width="4"
+      stroke-linejoin="round"
+    />
+    {/* the arrow, bobbing toward it (CSS: .scene-tab-arrow) */}
+    <g
+      class="scene-tab-arrow"
+      fill="none"
+      stroke="var(--yellow)"
+      stroke-width="5"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    >
+      <path d="M196 144Q190 116 168 100" />
+      <path d="M168 100 184 103M168 100 172 116" />
+    </g>
+  </svg>
+);
+
+/**
+ * Loading: a crayon wave that draws itself, over and over. Used for the
+ * gap between joining a live stage and the first decoded frame. Under
+ * reduced motion the animation collapses and the line simply stands there
+ * fully drawn — still a picture, just not a moving one.
+ */
+export const ScribbleLoader: Component<{ class?: string }> = (props) => (
+  <svg
+    class={props.class}
+    width="132"
+    height="24"
+    viewBox="0 0 132 24"
+    aria-hidden="true"
+  >
+    <path
+      d="M5 14Q21 3 37 14T69 14T101 14T127 11"
+      fill="none"
+      stroke="var(--crayon-blue)"
+      stroke-width="5"
+      stroke-linecap="round"
+    />
+  </svg>
+);
+
+/**
+ * Connection state, drawn rather than spelled out. One scribbled blob
+ * that changes *shape* as well as colour — a tick when the socket is
+ * open, an orbiting spark while it is trying, a slash when it is down —
+ * so the state never rests on colour alone. The words live in the
+ * wrapper's `title` and in its visually-hidden label.
+ */
+export const LinkDot: Component<{ class?: string }> = (props) => (
+  <svg
+    class={props.class}
+    width="19"
+    height="19"
+    viewBox="0 0 20 20"
+    aria-hidden="true"
+  >
+    <path
+      class="conn-blob"
+      d="M9.4 2.6C13 2 16.2 4.6 15.8 8.7 15.4 12.6 12.6 15.3 9 14.8 5.5 14.4 2.8 11.6 3.2 7.9 3.6 4.8 6.2 3.1 9.4 2.6Z"
+      stroke="var(--outline)"
+      stroke-width="1.5"
+    />
+    <path
+      class="conn-tick"
+      d="M6.2 8.6 8.6 11.1 12.7 5.9"
+      fill="none"
+      stroke="var(--outline)"
+      stroke-width="2"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    />
+    <circle class="conn-spark" cx="16.6" cy="3.4" r="2.1" />
+    <path
+      class="conn-slash"
+      d="M4.2 15.4 15.4 3.2"
+      fill="none"
+      stroke-width="2.4"
+      stroke-linecap="round"
+    />
+  </svg>
+);
+
 /** Crayon sun for the corner of the /share paper page. */
 export const SunDoodle: Component<{ class?: string }> = (props) => (
   <svg

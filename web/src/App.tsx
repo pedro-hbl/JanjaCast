@@ -20,12 +20,17 @@ import type { StingerData } from "./protocol";
 import { startCapture, type CaptureHandle } from "./capture";
 import { Player } from "./player";
 import {
+  BrowserTabDoodle,
   CastMark,
   CloudDoodle,
   EyesDoodle,
+  LinkDot,
   MegaphoneDoodle,
   OnAirDot,
+  SceneTv,
+  ScribbleLoader,
   StickFigure,
+  SunDoodle,
 } from "./doodles";
 import "./theme.css";
 
@@ -42,12 +47,41 @@ interface RosterRow {
 const baseId = (id: string) => (id.endsWith(":tab") ? id.slice(0, -4) : id);
 const plainName = (n: string) => n.replace(/\s*\(sharing\)\s*$/i, "");
 
+/** How the connection state is *drawn* (the words go in a tooltip).
+ *  `undefined` is the moment before the session exists — that is still
+ *  "trying", not "broken": starting up must never flash red. */
+const linkState = (s: string | undefined) =>
+  s === "open"
+    ? "live"
+    : s === undefined || s === "connecting" || s === "reconnecting"
+      ? "wait"
+      : "down";
+
+/**
+ * The weather behind the empty stage: sun, two clouds, a strip of grass.
+ * The same banner motifs the /share page uses, so the two grounds are
+ * visibly one drawing. Purely decorative — it never appears while the
+ * canvas is showing a picture.
+ */
+const StageBackdrop: Component = () => (
+  <>
+    <SunDoodle class="scene-sun" />
+    <CloudDoodle class="scene-cloud scene-cloud--a" />
+    <CloudDoodle class="scene-cloud scene-cloud--b" />
+    <div class="scene-grass" aria-hidden="true" />
+  </>
+);
+
 const App: Component = () => {
   const [identity, setIdentity] = createSignal<Identity | null>(null);
   const [error, setError] = createSignal<string | null>(null);
   const [session, setSession] = createSignal<Session | null>(null);
   const [capture, setCapture] = createSignal<CaptureHandle | null>(null);
-  const [fps, setFps] = createSignal<30 | 60>(30);
+  // 60 by default — this is a games-and-video product first, and the
+  // encoder's adaptive bitrate hands the frames back when the network
+  // can't carry them. This value is also what the companion tab inherits
+  // through the /share URL, so it is the single framerate default.
+  const [fps, setFps] = createSignal<30 | 60>(60);
   const [volume, setVolume] = createSignal(
     (() => {
       try {
@@ -270,11 +304,42 @@ const App: Component = () => {
     setStats(c ? c.stats() : (player?.stats() ?? { fps: 0, kbps: 0 }));
   }, 1000);
 
+  // --- "waiting for the picture" -------------------------------------------
+  // Joining a live stage is black until the relay delivers a keyframe. That
+  // gap gets a crayon loader instead of dead black — and it must vanish the
+  // instant a frame lands, because nothing is ever allowed to sit on top of
+  // moving video. The signal is the canvas's own backing store: player.ts
+  // sizes it to the frame only when it actually draws one, so a canvas still
+  // at the 300x150 default has never painted. (Decoded frames/s is the
+  // belt-and-braces second opinion, for the impossible 300px-wide stream.)
+  const BLANK_W = 300;
+  const [painted, setPainted] = createSignal(false);
+  let paintedFor: string | undefined | null = null;
+  const paintTimer = setInterval(() => {
+    const pid = stage().publisherId;
+    if (pid !== paintedFor) {
+      paintedFor = pid;
+      // Also wipes the previous stream's last frame, so it can't linger as
+      // a ghost underneath the next sharer's first keyframe.
+      canvasRef.width = BLANK_W;
+      canvasRef.height = 150;
+      setPainted(false);
+      return;
+    }
+    if (
+      !painted() &&
+      (canvasRef.width !== BLANK_W || (player?.stats().fps ?? 0) > 0)
+    ) {
+      setPainted(true);
+    }
+  }, 150);
+
   onCleanup(() => {
     document.removeEventListener("keydown", onKey);
     document.removeEventListener("fullscreenchange", onFsChange);
     if (overlayTimer) clearTimeout(overlayTimer);
     clearInterval(statsTimer);
+    clearInterval(paintTimer);
     clearStinger();
     capture()?.stop();
     player?.close();
@@ -340,7 +405,8 @@ const App: Component = () => {
     try {
       const handle = await startCapture(fps(), (buf) => s.sendMedia(buf), {
         backpressure: () => s.bufferedAmount(),
-        contentHint: "text",
+        // contentHint left to capture.ts's automatic rule (tab ⇒ motion,
+        // screen or window ⇒ text). Nothing to choose here.
       });
       handle.onended = stopSharing;
       handle.onconfigchange = (cfg) => s.announceConfig(cfg);
@@ -409,8 +475,19 @@ const App: Component = () => {
             {stats().latencyMs != null ? ` · ${stats().latencyMs} ms` : ""}
           </span>
         </Show>
-        <span class="status-line">
-          {session()?.status() ?? "starting"} · {identity()?.username ?? "…"}
+        {/* Connection state is drawn, not spelled out: a scribbled dot that
+            changes shape as well as colour (tick / spark / slash). The
+            words are still there for anyone who wants them — on hover and
+            for screen readers — they just no longer shout "reconnecting"
+            across the header. */}
+        <span
+          class={`conn-dot conn-dot--${linkState(session()?.status())}`}
+          title={`${session()?.status() ?? "starting"} · ${identity()?.username ?? "…"}`}
+        >
+          <LinkDot class="conn-mark" />
+          <span class="u-sr-only" role="status">
+            Connection {session()?.status() ?? "starting"}
+          </span>
         </span>
       </header>
 
@@ -447,11 +524,33 @@ const App: Component = () => {
           {/* Stinger overlay: inside .stage so fullscreen/theater show it;
               above the canvas, below the stage controls; never interactive. */}
           <div class="stinger-layer" ref={stingerLayerRef} />
+          {/* Waiting for the first frame: a crayon loader on paper rather
+              than a black rectangle. Gone the moment anything paints. */}
+          <Show
+            when={
+              live() && !capture() && !session()?.ownsStage() && !painted()
+            }
+          >
+            <div class="stage-wait" title="Waiting for the picture…">
+              <ScribbleLoader class="wait-scribble" />
+              <span class="u-sr-only" role="status">
+                Waiting for the picture
+              </span>
+            </div>
+          </Show>
+          {/* Your own view while you hold the stage: the same set as the
+              empty scene, switched on. */}
           <Show when={capture() || session()?.ownsStage()}>
-            <p class="stage-msg">
-              🎥 You are live at {fps()} fps
-              {capture() ? "." : " from your browser tab."}
-            </p>
+            <div class="stage-scene stage-scene--live">
+              <StageBackdrop />
+              <div class="scene-stack">
+                <SceneTv class="scene-tv" />
+                <p class="scene-line">
+                  🎥 You are live at {fps()} fps
+                  {capture() ? "." : " from your browser tab."}
+                </p>
+              </div>
+            </div>
           </Show>
           <Show when={live() && !session()?.ownsStage() && zoom() > 1.001}>
             <span class="zoom-pill" title="Scroll to zoom · drag to pan">
@@ -467,14 +566,34 @@ const App: Component = () => {
               ⛶
             </button>
           </Show>
+          {/* The empty stage is a drawing, not a sentence: the JanjaCast
+              set standing in the grass under a sun, switched off, with the
+              one thing you can do about it planted in front of it. The
+              button's label is the only text in the scene. */}
           <Show when={!live()}>
-            <div class="stage-empty">
-              <CloudDoodle class="stage-cloud" />
-              <p class="stage-msg">
-                {companionOpened()
-                  ? "Sharing tab opened in your browser — click Start sharing there. The stream will appear here."
-                  : "Nobody is live. Take the stage!"}
-              </p>
+            <div class="stage-scene">
+              <StageBackdrop />
+              <Show
+                when={companionOpened()}
+                fallback={
+                  <div class="scene-stack">
+                    <SceneTv class="scene-tv" />
+                    <button
+                      onClick={shareClicked}
+                      class="crayon-btn crayon-btn--go scene-cta"
+                    >
+                      Share screen
+                    </button>
+                  </div>
+                }
+              >
+                {/* The companion tab is open in the real browser: point at
+                    it rather than describing it. */}
+                <div class="scene-stack">
+                  <BrowserTabDoodle class="scene-tab" />
+                  <p class="scene-line">Start sharing in the new tab.</p>
+                </div>
+              </Show>
             </div>
           </Show>
         </div>
@@ -523,9 +642,19 @@ const App: Component = () => {
             <Show
               when={session()?.ownsStage()}
               fallback={
-                <button onClick={shareClicked} class="crayon-btn crayon-btn--go">
-                  {live() ? "Take the stage" : "Share screen"}
-                </button>
+                // One --go per screen (docs/design.md § 5.1): while the
+                // empty stage is showing its own oversized Share button,
+                // the footer keeps quiet. It comes back the moment the
+                // stage has a picture on it — or a companion tab to
+                // re-open — so the action is never unreachable.
+                <Show when={live() || companionOpened()}>
+                  <button
+                    onClick={shareClicked}
+                    class="crayon-btn crayon-btn--go"
+                  >
+                    {live() ? "Take the stage" : "Share screen"}
+                  </button>
+                </Show>
               }
             >
               {/* Our companion tab holds the stage: stop it from here. */}

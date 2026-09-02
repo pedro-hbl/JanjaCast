@@ -32,16 +32,17 @@ export interface CaptureStats {
 export interface CaptureOptions {
   /** Bytes queued on the transport but not yet sent (ws.bufferedAmount). */
   backpressure?: () => number;
-  /** "text" sharpens edges for code/slides; "motion" favors smoothness. */
-  contentHint?: "text" | "motion";
+  /** "text" sharpens edges for code/slides; "motion" favors smoothness.
+   *  "auto" (the default) decides from the surface the sharer actually
+   *  picked in the browser's own picker: a *tab* is overwhelmingly video
+   *  or game content and wants "motion"; monitors and windows keep the
+   *  safe "text" default. Nobody has to answer the question. */
+  contentHint?: "text" | "motion" | "auto";
   /** Total relay egress budget (kbit/s). Quality-first semantics: the full
    *  target bitrate is allowed as long as the network delivers it — the
    *  budget ÷ viewers ceiling engages only while congestion is actually
    *  observed, and lifts again after a clean stretch. 0 = unlimited. */
   egressBudgetKbps?: number;
-  /** "av1" prefers hardware AV1 (30-40% fewer bits at equal quality on
-   *  screen content; requires a modern GPU, falls back to H.264). */
-  codecPref?: "auto" | "av1";
   /** What sound rides along with the share:
    *  - "app" (default): the captured tab/window's OWN audio only
    *    (windowAudio:"window", Chrome 141+). The Discord call can never
@@ -86,11 +87,32 @@ interface VideoCodecChoice {
   config: VideoEncoderConfig;
 }
 
+/**
+ * Always the best encoder the machine actually has — never a question put
+ * to the user.
+ *
+ * The candidate list is ordered strictly best-first and every entry is
+ * gated by `VideoEncoder.isConfigSupported`, so the first *supported* one
+ * wins and a machine without the hardware simply falls through:
+ *
+ *   AV1 (hardware) → H.264 (hardware) → H.264 (any) → VP8
+ *
+ * AV1's screen-content tools (palette mode, intra block copy) cut 30-40%
+ * of the bitrate at equal quality on code, slides and UI, which is why it
+ * leads. It is requested `prefer-hardware` only: software AV1 encode
+ * cannot hold realtime at these resolutions, and isConfigSupported rejects
+ * prefer-hardware outright on a GPU without an AV1 encoder — so this is
+ * auto-best with a graceful fallback, not a gamble.
+ *
+ * Safe for viewers: what we announce, viewers must decode, and AV1 *decode*
+ * is universal in Chromium (hardware where available, dav1d in software
+ * everywhere else) — including the Chromium builds inside every Discord
+ * client and webview. Encode is the scarce half, decode is not.
+ */
 async function pickVideoCodec(
   width: number,
   height: number,
   framerate: number,
-  codecPref: "auto" | "av1" = "auto",
 ): Promise<VideoCodecChoice> {
   const bitrate = framerate >= 60 ? 6_000_000 : 4_000_000;
   const h264 = (codec: string, extra: Partial<VideoEncoderConfig>): VideoCodecChoice => ({
@@ -106,30 +128,35 @@ async function pickVideoCodec(
       ...extra,
     } as VideoEncoderConfig,
   });
-  // SVC (L1T3) first: temporal layers let the relay smoothly lower a slow
-  // viewer's framerate instead of freezing them. Non-SVC fallbacks follow
-  // for encoders that don't support scalabilityMode.
-  const candidates: VideoCodecChoice[] = [];
-  if (codecPref === "av1") {
-    // AV1's screen-content tools (palette mode, intra block copy) cut
-    // 30-40% of bitrate at equal quality on code/slides. Hardware-only:
-    // software AV1 encode cannot hold realtime at these resolutions, and
-    // isConfigSupported rejects prefer-hardware without a capable GPU.
-    const av1 = (extra: Partial<VideoEncoderConfig>): VideoCodecChoice => ({
-      wire: "av01.0.08M.08",
-      config: {
-        codec: "av01.0.08M.08",
-        width,
-        height,
-        framerate,
-        bitrate,
-        latencyMode: "realtime",
-        hardwareAcceleration: "prefer-hardware",
-        ...extra,
-      } as VideoEncoderConfig,
-    });
-    candidates.push(av1({ scalabilityMode: "L1T3" }), av1({}));
-  }
+  // Within each codec, SVC (L1T3) first: temporal layers let the relay
+  // smoothly lower a slow viewer's framerate instead of freezing them.
+  // Non-SVC fallbacks follow for encoders that don't support
+  // scalabilityMode.
+  //
+  // Note the ordering is codec-major, not SVC-major: plain AV1 is preferred
+  // over H.264-with-L1T3, because 30-40% fewer bits for the same picture
+  // beats a smoother degradation path that only engages under congestion —
+  // and several current GPUs (Intel Arc / recent iGPUs among them) expose
+  // hardware AV1 without scalabilityMode, so this is the common case, not a
+  // corner. A single-temporal-layer stream is already a supported shape on
+  // the wire: every non-SVC fallback below produces one.
+  const av1 = (extra: Partial<VideoEncoderConfig>): VideoCodecChoice => ({
+    wire: "av01.0.08M.08",
+    config: {
+      codec: "av01.0.08M.08",
+      width,
+      height,
+      framerate,
+      bitrate,
+      latencyMode: "realtime",
+      hardwareAcceleration: "prefer-hardware",
+      ...extra,
+    } as VideoEncoderConfig,
+  });
+  const candidates: VideoCodecChoice[] = [
+    av1({ scalabilityMode: "L1T3" }),
+    av1({}),
+  ];
   candidates.push(
     h264("avc1.640c34", { hardwareAcceleration: "prefer-hardware", scalabilityMode: "L1T3" }),
     h264("avc1.640c34", { hardwareAcceleration: "prefer-hardware" }),
@@ -191,14 +218,23 @@ export async function startCapture(
 
   const videoTrack = stream.getVideoTracks()[0];
   if (!videoTrack) throw new Error("no video track from getDisplayMedia");
-  // "text" tells the encoder to preserve sharp edges — the difference
-  // between readable and mushy code/slides at a given bitrate.
-  videoTrack.contentHint = opts.contentHint ?? "text";
   const settings = videoTrack.getSettings();
   let width = settings.width ?? 1920;
   let height = settings.height ?? 1080;
 
-  const chosen = await pickVideoCodec(width, height, framerate, opts.codecPref ?? "auto");
+  // Content hint, decided *after* the picker so it can use what the sharer
+  // actually chose. "text" tells the encoder to preserve sharp edges — the
+  // difference between readable and mushy code/slides at a given bitrate;
+  // "motion" spends the same bits on smoothness instead. The one surface we
+  // can call unambiguously is a browser tab ("browser"), which is nearly
+  // always video or a web game, so it gets "motion"; monitors and windows
+  // keep the safe "text" default. An explicit caller choice always wins.
+  const surface = (settings as { displaySurface?: string }).displaySurface;
+  const hint = opts.contentHint ?? "auto";
+  videoTrack.contentHint =
+    hint === "auto" ? (surface === "browser" ? "motion" : "text") : hint;
+
+  const chosen = await pickVideoCodec(width, height, framerate);
 
   const targetBitrate = chosen.config.bitrate ?? 4_000_000;
   let bitrate = targetBitrate;
@@ -395,7 +431,7 @@ export async function startCapture(
   }
 
   const handle: CaptureHandle = {
-    displaySurface: (settings as { displaySurface?: string }).displaySurface,
+    displaySurface: surface,
     hasAudio: Boolean(audioTrack),
     applyRateHint(degraded, viewers) {
       hintDegraded = degraded;
