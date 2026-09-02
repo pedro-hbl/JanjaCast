@@ -26,6 +26,7 @@ import {
   MegaphoneDoodle,
   OnAirDot,
   StickFigure,
+  Wordmark,
 } from "./doodles";
 import "./theme.css";
 
@@ -394,9 +395,11 @@ const App: Component = () => {
   return (
     <div class={theater() ? "app theater" : "app"}>
       <header class="app-header">
-        <strong class="logo">
-          <CastMark class="logo-mark" size={26} />
-          <span class="logo-word u-scribble u-scribble--blue">JanjaCast</span>
+        {/* the scribble is on the lockup, not the word: it runs under mark and
+            wordmark alike, so the three pieces read as one drawing */}
+        <strong class="logo u-scribble u-scribble--blue">
+          <CastMark class="logo-mark" size={28} />
+          <Wordmark />
         </strong>
         <Show when={live()}>
           <span class="live-badge">
@@ -480,10 +483,14 @@ const App: Component = () => {
         </div>
 
         <aside class="sidebar">
+          {/* count and label are separate spans so the number can carry the
+              weight and only the fixed words take the underline — the wave
+              would otherwise change length every time somebody joins */}
           <h4 class="sidebar-title">
             <EyesDoodle class="sidebar-title-icon" />
-            <span class="u-scribble u-scribble--yellow">
-              {roster().length} in the room
+            <span class="sidebar-count">{roster().length}</span>
+            <span class="sidebar-count-label u-scribble u-scribble--yellow">
+              in the room
             </span>
           </h4>
           <div class="roster">

@@ -37,6 +37,13 @@
   /* `--angry` is a *fill*. On the dark ground it only reaches 3.5:1 as
      text, so red words use --angry-lit instead (5.7:1). */
   --angry-lit: #ff6b6b;
+  /* The two wordmark inks. They are semantic, not crayons, because the
+     lettering is *text* and has to clear 4.5:1 on whichever paper it lands
+     on — `--crayon-blue` is 6.5:1 here but only 2.3:1 on cream. See
+     .share-page for the cream pair. --brand-a is the screen, --brand-b the
+     signal, matching the mark. */
+  --brand-a: var(--crayon-blue);
+  --brand-b: var(--angry-lit);
   /* focus must clear 3:1 against whatever it sits on (WCAG 1.4.11) */
   --focus: var(--yellow);
   --hover-wash: rgba(244, 239, 221, 0.1);
@@ -60,7 +67,7 @@
   --step--1: 12px; /* meta, stats */
   --step-0: 13.5px; /* body, list rows */
   --step-1: 15px; /* buttons, labels, stage copy */
-  --step-2: 20px; /* wordmark */
+  --step-2: 20px; /* wordmark, roster count */
   --step-3: 26px; /* share-page title */
 
   /* ---- wobbly hand-drawn corner recipes -------------------------- */
@@ -92,24 +99,53 @@
 
 /* ------------------------- utilities ----------------------------- */
 
+/* Screen-reader-only. Used where a drawing replaces text that must still be
+   announced — today the per-letter wordmark. */
+.u-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
 /* Scribble underline. The house structural device: it marks a thing as
    *titled by hand*, so it goes on names of places (the app, the room,
-   the page) — never on body copy, never on more than one thing per row. */
-.u-scribble {
+   the page) — never on body copy, never on more than one thing per row.
+
+   ONE recipe, no size modifiers. Wavelength (--sc-w) and amplitude (--sc-h)
+   are in `em`, so the wave is always drawn at the same proportion of the type
+   it underlines: a 4-crest wave about 3.8 words wide, one crayon-width tall.
+   Underline a 13.5px label and a 26px title with the same class and they look
+   like the same hand at two distances — which is the whole point. Anything
+   that needs a different wave is not this component.
+
+   The tile's endpoints are level (y=5 at both x=0 and x=72), so repeats butt
+   into one continuous line. **If you redraw it, keep the endpoints level** —
+   an inset start/end leaves a visible seam every wavelength. */
+.u-scribble,
+.error-text {
+  --sc-w: 3.8em;
+  --sc-h: 0.42em;
   position: relative;
   display: inline-block;
-  padding-bottom: 8px;
+  padding-bottom: var(--sc-h);
 }
-.u-scribble::after {
+.u-scribble::after,
+.error-text::after {
   content: "";
   position: absolute;
   left: 0;
   right: 0;
   bottom: 0;
-  height: 8px;
+  height: var(--sc-h);
   background-color: var(--scribble-ink, var(--crayon-blue));
-  -webkit-mask: var(--scribble) repeat-x left bottom / 72px 8px;
-  mask: var(--scribble) repeat-x left bottom / 72px 8px;
+  -webkit-mask: var(--scribble) repeat-x left bottom / var(--sc-w) var(--sc-h);
+  mask: var(--scribble) repeat-x left bottom / var(--sc-w) var(--sc-h);
 }
 .u-scribble--blue { --scribble-ink: var(--crayon-blue); }
 .u-scribble--yellow { --scribble-ink: var(--yellow); }
@@ -142,28 +178,79 @@
   row-gap: 8px;
 }
 
-/* ----------------------------- logo ------------------------------ */
-/* mark + wordmark. The mark alone is the favicon; the pair is the header
-   lockup. They keep a fixed relationship — never re-space them. */
+/* --------------------------- the lockup --------------------------- */
+/* mark + wordmark + scribble, engineered as ONE drawing.
+ *
+ * The composition rules, in the order they matter:
+ *
+ *  1. **The scribble runs under the whole lockup**, not under the word alone.
+ *     It is the ground the television stands on and the line the word is
+ *     written on — that is what ties three objects into one gesture. (This
+ *     reverses the old "never underline the mark" rule; the old lockup read as
+ *     a logo with a decoration parked beside it.)
+ *  2. **The mark stands ON the line.** `align-items: flex-end` bottoms it out
+ *     with the text box, then `margin-bottom` pushes its legs down into the
+ *     wave so it is planted rather than floating.
+ *  3. **Everything is em, off the lockup's own font-size.** Gap, mark offset,
+ *     wavelength and letter bounce all scale together, so the header lockup
+ *     and the /share title are one artwork at two sizes — set the font-size
+ *     and the whole lockup follows. Nothing here is a px nudge.
+ *  4. **Clear space** = the gap, 0.4em of the wordmark's size, all round. The
+ *     header's 12px flex gap and 16px padding clear that at 20px.
+ *
+ * The mark's own size still has to be passed in JSX (`<CastMark size>`): it is
+ * an SVG width, not type. **Keep it at 1.4× the lockup's font-size** — 20px
+ * type takes a 28px mark, 26px type takes 36px. That ratio is what makes the
+ * screen face optically match the cap height once the antenna is discounted,
+ * and it is what makes the -0.2em plant land the legs on the wave at both
+ * sizes. Drift off it and the mark starts floating above the line or sinking
+ * behind it. */
 
 .logo {
   display: inline-flex;
-  align-items: center;
-  gap: 7px;
+  align-items: flex-end;
+  gap: 0.4em;
   flex: none;
+  font-size: var(--step-2);
   transform: rotate(-1.5deg);
 }
 .logo-mark {
   flex: none;
-  /* the drawing is already crooked; the tilt below is the *lockup* tilt */
-  transform: rotate(2deg);
+  /* the drawing is already crooked; this is the *lockup* counter-tilt, so the
+     mark doesn't look glued onto the tilted word */
+  transform: rotate(2.5deg);
+  /* plant the legs in the wave rather than resting them above it */
+  margin-bottom: -0.2em;
 }
-.logo-word {
+
+/* ---- the wordmark: lettering, not typesetting ---- */
+/* Per-letter rotation, baseline bounce and size variance come from the
+   component (doodles.tsx → Wordmark) as --wm-r / --wm-y / --wm-s. The values
+   are hand-tuned per glyph, not generated: regular irregularity reads as a
+   filter, which is exactly the thing this is meant to avoid.
+   `line-height: .88` pulls the wave up against the letters — at 1 the Hand
+   face's descender space parks the scribble a whole crayon-width too low. */
+.wordmark {
   font-family: var(--font-hand);
-  font-size: var(--step-2);
+  font-size: 1em;
   font-weight: 700;
-  letter-spacing: 0.5px;
-  color: var(--text);
+  line-height: 0.88;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+}
+.wm-l {
+  display: inline-block;
+  /* transform only — it never changes the advance width, so the letters keep
+     their kerning and only the drawing moves */
+  transform: rotate(var(--wm-r, 0deg)) translateY(var(--wm-y, 0))
+    scale(var(--wm-s, 1));
+}
+/* the mark's split, spelled: blue screen, red signal. Cast is a notch smaller
+   and rides higher, the way the antenna sits small and high off the box. */
+.wm-janja { color: var(--brand-a); }
+.wm-cast {
+  color: var(--brand-b);
+  font-size: 0.9em;
 }
 
 /* -------------------- on-air / live presence --------------------- */
@@ -354,21 +441,45 @@
   overflow-y: auto;
 }
 
+/* ---- roster heading: "N in the room" as one composed unit ----
+ * The count is the information, so it gets the size; "in the room" is the
+ * unit label and sits at body scale. The eyes are a bystander watching the
+ * number, aligned to its cap height with real breathing room — at the old
+ * cramped spacing the three pieces read as three unrelated objects.
+ *
+ * Only the label is underlined. Underlining the count too would make the wave
+ * change length every time somebody joins; anchoring it to the fixed words
+ * keeps the drawing still while the number moves. Tabular figures hold the
+ * label's start position steady from 1 to 25 and beyond. */
 .sidebar-title {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  margin: 0 0 12px;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin: 0 0 14px;
   font-family: var(--font-hand);
-  font-size: var(--step-1);
   font-weight: 700;
   color: var(--text);
   transform: rotate(-1deg);
 }
+/* baseline-aligned, so the eyes rest on the same line as the count and the
+   words instead of being vertically centred against a taller neighbour —
+   they sit slightly proud of the numeral's cap, peering over it */
 .sidebar-title-icon {
   flex: none;
+  position: relative;
+  top: 2px;
+  margin-right: 2px;
   color: var(--yellow);
-  transform: rotate(-3deg);
+  transform: rotate(-4deg);
+}
+.sidebar-count {
+  font-size: var(--step-2);
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.sidebar-count-label {
+  font-size: var(--step-0);
+  line-height: 1;
 }
 
 .roster {
@@ -633,26 +744,14 @@ label.fps-label {
 
 /* ----------------------------- errors ---------------------------- */
 
+/* geometry comes from the shared .u-scribble rule above — this only picks
+   the ink and the type */
 .error-text {
-  display: inline-block;
-  position: relative;
   margin: 0;
   color: var(--angry-lit);
   font-family: var(--font-hand);
   font-size: 14px;
-  padding-bottom: 8px;
   --scribble-ink: var(--angry);
-}
-.error-text::after {
-  content: "";
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  height: 8px;
-  background-color: var(--scribble-ink);
-  -webkit-mask: var(--scribble) repeat-x left bottom / 72px 8px;
-  mask: var(--scribble) repeat-x left bottom / 72px 8px;
 }
 
 /* --------------------------- focus ------------------------------- */
@@ -678,6 +777,12 @@ label.fps-label {
   --outline: #26222e;
   /* on cream, red must go *darker* to clear 4.5:1, not lighter */
   --angry-lit: #c22f2f;
+  /* wordmark inks, cream pair. `--crayon-blue` is 2.3:1 here and even
+     `--crayon-blue-deep` only reaches 4.1:1 — both fail as text — so the blue
+     half of the wordmark goes to a deeper ink (6.1:1). Red follows
+     --angry-lit down to #c22f2f (5.5:1). Both halves clear SC 1.4.3. */
+  --brand-a: #2f62a8;
+  --brand-b: var(--angry-lit);
   /* yellow is invisible on cream (1.6:1) — focus flips to purple (4.5:1) */
   --focus: #6b3fd4;
   --hover-wash: rgba(38, 34, 46, 0.08);
@@ -728,25 +833,23 @@ label.fps-label {
   transform: rotate(-0.6deg);
 }
 
-/* the title is the logo lockup at display size, plus a quiet second line */
+/* the title is the same lockup one step up the scale — it reuses .logo
+   wholesale and only changes the size and the tilt, because a second
+   hand-tuned composition is a second thing to keep in sync */
 .share-title {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 5px;
+  gap: 7px;
   margin: 0;
   font-family: var(--font-hand);
-  font-size: var(--step-3);
   font-weight: 700;
   line-height: 1.15;
 }
-.share-title-lockup {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
+.share-title .logo {
+  font-size: var(--step-3);
   transform: rotate(-1deg);
 }
-.share-title-mark { flex: none; transform: rotate(2deg); }
 .share-title-sub {
   font-family: var(--font-hand);
   font-size: 14px;

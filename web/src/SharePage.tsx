@@ -13,7 +13,7 @@ import {
 import type { Identity } from "./discord";
 import { Session } from "./session";
 import { startCapture, type CaptureHandle } from "./capture";
-import { CastMark, OnAirDot, SunDoodle } from "./doodles";
+import { CastMark, OnAirDot, SunDoodle, Wordmark } from "./doodles";
 import "./theme.css";
 
 const SharePage: Component = () => {
@@ -192,9 +192,11 @@ const SharePage: Component = () => {
 
       <div class="share-card">
         <h1 class="share-title">
-          <span class="share-title-lockup">
-            <CastMark class="share-title-mark" size={34} />
-            <span class="u-scribble u-scribble--deep">JanjaCast</span>
+          {/* the same .logo lockup as the Activity header, one step up the
+              type scale — deep-blue ink because the wave sits on cream */}
+          <span class="logo u-scribble u-scribble--deep">
+            <CastMark class="logo-mark" size={36} />
+            <Wordmark />
           </span>
           <span class="share-title-sub">screen sharing</span>
         </h1>

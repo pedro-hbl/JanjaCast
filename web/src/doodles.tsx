@@ -13,11 +13,26 @@
 import type { Component } from "solid-js";
 
 /**
- * The JanjaCast mark: a crooked crayon television with two scribbled
- * broadcast waves coming off its top-right corner.
+ * The JanjaCast mark: a crooked crayon television with a face, standing on
+ * two stubby legs, one bold red antenna cocked off its top-right corner.
  *
- * Reads at 20px (header) and at 32px (favicon — the same drawing is
- * hard-coded as a data URI in index.html, keep the two in sync).
+ * **Miniaturisation is the whole design.** The header renders this at 28px
+ * and it must still be a character, not a blue blob. Three decisions follow
+ * from that, and none of them should be undone without re-testing at 20px:
+ *
+ *  - **The screen carries a face, not detail.** Two dot-eyes and a grin are
+ *    four marks that a reader's face-detection locks onto instantly; a waxy
+ *    glare streak is one mark that turns to grey mush below 24px. Personality
+ *    survives shrinking, texture does not. The old highlight streaks are gone.
+ *  - **One antenna, not a pair of concentric waves.** Two arcs close their gap
+ *    and read as a red smudge. A single fat diagonal stem into a chunky ball
+ *    breaks the silhouette out of its bounding box and stays a distinct red
+ *    gesture at every size.
+ *  - **The screen face is large and the strokes are heavy** (2.1–2.8 in a 24
+ *    viewBox). Fewer, bolder strokes; nothing thinner than ~1.4px at 20px.
+ *
+ * Colours come from CSS, so the mark re-inks itself on the cream page.
+ * The favicon is a *separate, bolder cut* of this drawing — see index.html.
  */
 export const CastMark: Component<{ class?: string; size?: number }> = (
   props,
@@ -29,50 +44,112 @@ export const CastMark: Component<{ class?: string; size?: number }> = (
     viewBox="0 0 24 24"
     aria-hidden="true"
   >
-    {/* two little legs, drawn first so the box sits on top of them */}
+    {/* legs first, so the box sits on top of them; long enough to still be
+        two distinct stubs at 24px */}
     <path
-      d="M7.1 18.4 5.9 21.6M13.4 18 14.6 21.1"
+      d="M5.6 19.8 3.9 23.4M13.4 19.4 15.0 22.9"
       fill="none"
       stroke="var(--outline)"
-      stroke-width="1.8"
+      stroke-width="2.6"
       stroke-linecap="round"
     />
-    {/* the screen: a rectangle a child would draw, so none of it is square */}
+    {/* the screen: a box a child would draw, so none of it is square */}
     <path
-      d="M3.2 7.2Q3 6 4.3 5.9L15.2 5.1Q16.5 5 16.6 6.3L17.2 16.6Q17.3 17.9 16 18L4.4 18.9Q3.1 19 3 17.7Z"
+      d="M2.3 8.6Q1.9 6.8 3.7 6.6L15.1 5.6Q16.9 5.4 17.0 7.2L17.5 18.5Q17.6 20.3 15.8 20.4L3.6 21.2Q1.8 21.3 1.9 19.5Z"
       fill="var(--crayon-blue)"
       stroke="var(--outline)"
-      stroke-width="1.8"
+      stroke-width="2.1"
       stroke-linejoin="round"
     />
-    {/* waxy highlight — the streak you get pressing a crayon on glass */}
+    {/* the face — the thing that survives 16px */}
+    <circle cx="6.7" cy="11.4" r="2" fill="var(--outline)" />
+    <circle cx="12.7" cy="10.9" r="2" fill="var(--outline)" />
     <path
-      d="M5.6 9.5Q8.6 8.5 11.5 9.1M5.4 12.4Q9.6 11.2 13.7 12.2"
+      d="M6.9 15.4Q9.8 18.4 12.9 15.0"
       fill="none"
-      stroke="rgba(255,255,255,.5)"
-      stroke-width="1.4"
+      stroke="var(--outline)"
+      stroke-width="2.3"
       stroke-linecap="round"
     />
-    {/* the "cast": a red nub on the corner throwing one bold wave.
-        Two concentric waves is the obvious drawing, but at 20px the gap
-        between them closes and the pair reads as a smudge — so the mark
-        keeps one arc and buys the clearance with a fatter nub. */}
+    {/* the "cast": one bold red antenna, stem merging into the ball so the
+        pair reads as a single gesture rather than two small objects */}
+    <path
+      d="M15.6 6.2Q17.6 4.4 19.1 2.9"
+      fill="none"
+      stroke="var(--angry)"
+      stroke-width="2.8"
+      stroke-linecap="round"
+    />
     <circle
-      cx="16.4"
-      cy="5.2"
-      r="1.8"
+      cx="19.8"
+      cy="2.3"
+      r="2.4"
       fill="var(--angry)"
       stroke="var(--outline)"
       stroke-width="1"
     />
-    <path
-      d="M19.4 2.2Q23 5.4 19.9 8.8"
-      fill="none"
-      stroke="var(--angry)"
-      stroke-width="2.4"
-      stroke-linecap="round"
-    />
   </svg>
+);
+
+/**
+ * The JanjaCast wordmark — lettering, not typesetting.
+ *
+ * The Hand face is the raw material; the craft is what is done to it. Every
+ * letter gets a hand-tuned rotation, baseline bounce and size nudge, because
+ * the tell of "computer pretending to be a hand" is that all the letters agree
+ * with each other. Nothing here is generated from a formula — a formula
+ * produces regular irregularity, which reads as a wobble filter.
+ *
+ * The two-colour split is the mark's split, spelled: **Janja** is the blue
+ * screen, **Cast** is the red signal. Cast is set a notch smaller and rides
+ * slightly higher, echoing how the antenna sits small and high off the box.
+ *
+ * All offsets are in `em`, so the lettering scales as one drawing — the header
+ * (20px) and the /share title (26px) are the same artwork, not two tunings.
+ *
+ * The per-letter spans would make a screen reader spell the name out, so the
+ * accessible name is a single visually-hidden word and the letters are hidden.
+ */
+type Glyph = [char: string, rotate: number, bounce: number, scale: number];
+
+/* prettier-ignore */
+const JANJA: Glyph[] = [
+  ["J", -3.0, 0.020, 1.04],
+  ["a",  1.8, -0.030, 0.97],
+  ["n", -1.4,  0.035, 1.02],
+  ["j",  2.4, -0.010, 1.00],
+  ["a", -2.2,  0.045, 1.05],
+];
+/* prettier-ignore */
+const CAST: Glyph[] = [
+  ["C",  2.6, -0.080, 1.03],
+  ["a", -1.8, -0.060, 0.96],
+  ["s",  2.2, -0.090, 1.01],
+  ["t", -2.6, -0.050, 0.98],
+];
+
+const letters = (glyphs: Glyph[]) =>
+  glyphs.map(([char, rotate, bounce, scale]) => (
+    <span
+      class="wm-l"
+      style={{
+        "--wm-r": `${rotate}deg`,
+        "--wm-y": `${bounce}em`,
+        "--wm-s": `${scale}`,
+      }}
+    >
+      {char}
+    </span>
+  ));
+
+export const Wordmark: Component<{ class?: string }> = (props) => (
+  <span class={props.class ? `wordmark ${props.class}` : "wordmark"}>
+    <span class="u-sr-only">JanjaCast</span>
+    <span class="wm-ink" aria-hidden="true">
+      <span class="wm-janja">{letters(JANJA)}</span>
+      <span class="wm-cast">{letters(CAST)}</span>
+    </span>
+  </span>
 );
 
 /** Scribbled-in dot. Kept for reuse; the on-air badge uses OnAirDot. */
@@ -174,31 +251,40 @@ export const StickFigure: Component<{ class?: string }> = (props) => (
   </svg>
 );
 
-/** Two wonky eyes — heads the room roster ("N in the room"). */
+/**
+ * Two wonky eyes — heads the room roster ("N in the room").
+ *
+ * Drawn like the mark's face rather than like a line icon: **opaque almond,
+ * ink pupil.** Outlined-with-matching-pupil is the obvious drawing and it
+ * fails — at 16px the yellow rim and the yellow pupil close their gap and the
+ * pair reads as two yellow dots. Filling the almond and punching the pupil in
+ * `--outline` keeps hard contrast *inside* the shape, so it still reads as a
+ * pair of eyes at roster size, the same bet CastMark makes on its screen.
+ */
 export const EyesDoodle: Component<{ class?: string }> = (props) => (
   <svg
     class={props.class}
-    width="19"
-    height="14"
-    viewBox="0 0 18 14"
+    width="23"
+    height="16"
+    viewBox="0 0 18 13"
     aria-hidden="true"
   >
     <path
-      d="M1.1 7.3Q4.4 2.1 7.9 7Q4.6 12.3 1.1 7.3Z"
-      fill="none"
+      d="M1.2 6.6Q4.5 1.2 8.2 6.3Q4.8 11.6 1.2 6.6Z"
+      fill="currentColor"
       stroke="currentColor"
-      stroke-width="1.5"
+      stroke-width="1.6"
       stroke-linejoin="round"
     />
-    <circle cx="4.5" cy="7.1" r="1.6" fill="currentColor" />
+    <circle cx="4.8" cy="6.4" r="1.6" fill="var(--outline)" />
     <path
-      d="M10.1 7Q13.5 1.8 16.9 7.2Q13.4 12 10.1 7Z"
-      fill="none"
+      d="M10 6.4Q13.6 1 16.9 6.6Q13.3 11.3 10 6.4Z"
+      fill="currentColor"
       stroke="currentColor"
-      stroke-width="1.5"
+      stroke-width="1.6"
       stroke-linejoin="round"
     />
-    <circle cx="13.5" cy="7.1" r="1.6" fill="currentColor" />
+    <circle cx="13.5" cy="6.4" r="1.6" fill="var(--outline)" />
   </svg>
 );
 

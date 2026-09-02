@@ -9,8 +9,9 @@ Source of truth is the code, not this document:
 | Layer                       | File                |
 | --------------------------- | ------------------- |
 | Tokens, components, layout  | `web/src/theme.css` |
-| Icons and drawings          | `web/src/doodles.tsx` |
-| Favicon (hand-copied mark)  | `web/index.html`    |
+| Icons, drawings, wordmark   | `web/src/doodles.tsx` |
+| Favicon (separate 16px cut) | `web/index.html`    |
+| README lockup (standalone)  | `docs/lockup.svg`   |
 
 ---
 
@@ -129,10 +130,12 @@ border: none`). The identity yields to the content, always.
 | `--muted`     | `#b3aea0` | `#6f6a5b` | Labels, hints, secondary         |
 | `--outline`   | `#0b0d14` | `#26222e` | **The crayon line.** Every border. |
 | `--angry-lit` | `#ff6b6b` | `#c22f2f` | Red **text** (see below)          |
+| `--brand-a`   | crayon-blue | `#2f62a8` | Wordmark "Janja" — the screen  |
+| `--brand-b`   | angry-lit | angry-lit | Wordmark "Cast" — the signal     |
 | `--focus`     | yellow    | `#6b3fd4` | Focus ring                       |
 | `--hover-wash`| chalk 10% | ink 8%    | Hover tint inside controls       |
 
-**Two colours exist only because of contrast maths.**
+**Three token pairs exist only because of contrast maths.**
 
 - `--angry` (`#d93a3a`) is a great crayon red and a poor text colour: 3.5:1 on
   the dark surface, 4.45:1 on cream — both under WCAG 2.2 SC 1.4.3's 4.5:1.
@@ -142,6 +145,17 @@ border: none`). The identity yields to the content, always.
 - `--focus` is yellow on dark (11:1 against the surface) but yellow on cream is
   1.6:1 — effectively invisible, and SC 1.4.11 wants 3:1 for a focus
   indicator. On cream it becomes purple (4.5:1).
+- `--brand-a` is the wordmark's blue and is **semantic, not a crayon**, for the
+  same reason: `--crayon-blue` is 6.5:1 on the dark ground but 2.3:1 on cream,
+  and `--crayon-blue-deep` still only reaches 4.1:1. The cream page moves it to
+  a deeper ink (6.1:1). `--brand-b` just follows `--angry-lit`.
+
+  Note the resulting split inside the lockup: the mark's antenna is `--angry`
+  (a *fill*, which is allowed to be the full-chroma crayon) while the wordmark's
+  "Cast" is `--angry-lit` (*text*, which is not). On the dark ground that makes
+  the letters a touch lighter than the antenna. It is the contrast rule working
+  as intended rather than an inconsistency, and at 20px it is not perceptible —
+  but it is the one place the lockup carries two reds, so it is written down.
 
 ### 3.2 Type
 
@@ -219,72 +233,214 @@ Three, all inline, all cheap.
 The house structural device. A wobbly crayon line under a name, `.u-scribble`.
 
 ```html
-<span class="u-scribble u-scribble--yellow">3 in the room</span>
+<span class="u-scribble u-scribble--yellow">in the room</span>
 ```
 
+**One recipe, no size modifiers.** This is the rule that matters, because the
+failure it prevents is the one the shipped design had: a wave tuned in pixels
+under 20px type looks like a different hand when it is reused under 13.5px
+type — same asset, mismatched amplitude, and the underline stops reading as
+part of the drawing.
+
+So both knobs are in `em`, off the underlined element's own font-size:
+
+| Custom property | Value    | What it is                                    |
+| --------------- | -------- | --------------------------------------------- |
+| `--sc-w`        | `3.8em`  | Wavelength — one tile, four crests            |
+| `--sc-h`        | `0.42em` | Amplitude box, and the element's padding-bottom |
+
+Underline a 13.5px label and a 26px title with the same class and you get the
+same hand at two distances. **A component that needs a different wave is not
+this component.** Do not add `--sm` / `--lg` modifiers; do not override
+`--sc-w` at a call site.
+
 Mechanics: one SVG, painted through `mask` with `background-color`, so a single
-asset serves every colour via `--scribble-ink`. Modifiers: `--blue` (default),
-`--yellow`, `--pink`, `--deep`.
+asset serves every colour via `--scribble-ink`. Colour modifiers only:
+`--blue` (default), `--yellow`, `--pink`, `--deep`.
 
 The wave starts at `x=0` and ends at `x=72` on the same `y`, so repeated tiles
 butt into a continuous line. **If you redraw it, keep the endpoints level** —
-an inset start/end leaves a visible seam every 72px.
+an inset start/end leaves a visible seam every wavelength.
+
+`.error-text` shares the rule rather than copying it (`.u-scribble, .error-text`
+declare the geometry together); it only picks its own ink. Anything else that
+wants the underline should take the class, not re-implement the `::after`.
 
 **Where it goes: names of places, one per region.**
 
-| Region             | Underlined            | Ink    |
-| ------------------ | --------------------- | ------ |
-| Activity header    | the wordmark          | blue   |
-| Activity sidebar   | "N in the room"       | yellow |
-| /share card        | the wordmark          | deep blue |
-| Anywhere           | error text            | red    |
+| Region             | Underlined                  | Ink    |
+| ------------------ | --------------------------- | ------ |
+| Activity header    | the **whole lockup**        | blue   |
+| Activity sidebar   | "in the room" (not the count) | yellow |
+| /share card        | the **whole lockup**        | deep blue |
+| Anywhere           | error text                  | red    |
 
 Not on: body copy, buttons, participant names, hints, stats. If two things in
 one region are underlined, one of them is wrong.
+
+Two of those entries changed in the refinement pass and the reasons are in
+§ 4 (the lockup) and § 5.5 (the roster).
 
 ---
 
 ## 4. The logo
 
-### The mark
+The identity is three objects — mark, wordmark, scribble — and the whole job of
+this section is that they are **one drawing**, not three things standing near
+each other. That is the specific failure the first version shipped with, and
+everything below is the correction.
 
-A crooked crayon television with a red nub on its top-right corner throwing one
-bold wave. `CastMark` in `doodles.tsx`.
+### 4.1 The mark
+
+A crooked crayon television **with a face**, standing on two stubby legs, one
+bold red antenna cocked off its top-right corner. `CastMark` in `doodles.tsx`.
 
 The concept is literal on purpose — a child drawing "a thing that broadcasts"
-draws a TV with signal coming off it, and the two halves of the name land on
-the two halves of the drawing: **Janja**, the blue screen box with its waxy
-glare streak; **Cast**, the red signal. Two crayons, sky blue and angry red,
-which are also the system's two loudest colours: blue is chrome, red is live.
+draws a TV with signal coming off it — and the two halves of the name land on
+the two halves of the drawing: **Janja**, the blue screen; **Cast**, the red
+signal. Blue is chrome, red is live; the mark says so before any UI does.
 
-Optical sizing is part of the design, not an afterthought:
+#### Miniaturisation *is* the design
 
-- **Two concentric waves is the obvious drawing and it does not work.** At
-  20px the gap between the arcs closes and the pair reads as a red smudge. The
-  mark keeps **one** arc and buys back the clearance with a fatter nub.
-- The **favicon variant** (`web/index.html`) is the same drawing with heavier
-  strokes and one highlight streak instead of two, tuned for 16px.
+The mark is used at 28px in the header and 16px in a browser tab. It is never
+used large. So the acceptance test is not "does it look good" — it is **"is it
+still a character at 20px."** Three decisions come from that, and none should
+be undone without re-testing at size:
 
-The mark inherits `--crayon-blue`, `--angry` and `--outline` from CSS, so it
-re-inks itself on the cream page automatically. The favicon cannot — it is a
-data URI — so its colours are hard-coded to the dark-ground values.
+- **The screen carries a face, not texture.** Two dot-eyes and a grin are four
+  marks a reader's face-detection locks onto instantly. The old waxy glare
+  streaks were fine detail, and fine detail is exactly what dissolves first:
+  below ~24px they turned to grey mush across the blue field and the mark read
+  as an indistinct blob. **Personality survives shrinking; texture does not.**
+  The streaks are gone and are not coming back.
+- **One antenna, not concentric waves.** Two arcs close their gap and read as a
+  red smudge (this was already true of the old drawing's nub-plus-arc). A
+  single fat diagonal stem merging into a chunky ball breaks the silhouette
+  out of its bounding box and stays one legible red gesture at every size.
+- **Fewer, heavier strokes.** 2.1–2.8 in a 24 viewBox, so nothing renders
+  thinner than about 1.4px at 20px. The screen face is deliberately large and
+  the legs are long enough to still read as two stubs at 24px.
 
-> **If you change the mark, change it in both places.** `CastMark` and the
-> `<link rel="icon">` data URI are hand-kept in sync; there is no build step.
+#### The favicon is a different cut, not a copy
 
-### The lockup
+At 16px even this drawing softens, so `web/index.html` carries a **separate,
+bolder cut**: every stroke thickened (2.6 box, 2.8 grin, 3.2 stem), fatter
+eyes and ball, and **the legs deleted** — two 1px stubs cost pixels and read as
+dirt at tab size. What survives is the face and the red diagonal, which is the
+whole identity.
 
-Mark, then wordmark in the Hand face, then the blue scribble underline beneath
-the word only — never beneath the mark.
+`CastMark` inherits `--crayon-blue`, `--angry` and `--outline` from CSS, so it
+re-inks itself on the cream page. The favicon cannot — a data URI cannot see
+custom properties — so its colours are hard-coded to the dark-ground values.
 
-- Activity header: `<CastMark size={26} />` + 20px wordmark, whole lockup
-  rotated −1.5°, mark counter-rotated +2° so it doesn't look glued on.
-- `/share` title: `<CastMark size={34} />` + 26px wordmark, with
-  "screen sharing" on a second line in lowercase muted Hand type. The subtitle
-  is a *caption*, not part of the lockup; it never travels with the mark.
+> **If you change the mark, change it in both places**, and re-render at 16 /
+> 20 / 34. `CastMark` and the `<link rel="icon">` data URI are hand-kept in
+> sync; there is no build step. `docs/lockup.svg` is a third copy — see § 4.4.
+
+### 4.2 The wordmark — lettering, not typesetting
+
+`Wordmark` in `doodles.tsx`. The Hand face is the raw material; the craft is
+what is done to it. Picking a font and colouring two halves of it is a font
+choice, not a wordmark, and that is what the first version was.
+
+Every letter is its own span carrying three hand-tuned values:
+
+| Property  | Range        | What it does                     |
+| --------- | ------------ | -------------------------------- |
+| `--wm-r`  | ±3°          | Rotation jitter                  |
+| `--wm-y`  | ±0.09em      | Baseline bounce                  |
+| `--wm-s`  | 0.96–1.05    | Size variance — uneven hand pressure |
+
+They are applied with `transform` only, so the advance widths never change and
+the word keeps the font's kerning while the drawing moves.
+
+**The values are hand-tuned per glyph, never generated.** A formula produces
+*regular* irregularity, and regular irregularity reads as a wobble filter
+applied to type — which is more obviously mechanical than leaving it alone. If
+you add a letter, pick its numbers by eye against its neighbours.
+
+**The two-colour split is the mark's split, spelled.** `Janja` takes
+`--brand-a` (the screen), `Cast` takes `--brand-b` (the signal). Cast is set at
+0.9em and rides slightly higher, echoing how the antenna sits small and high
+off the box. It is not decoration; it is the same idea twice.
+
+`--brand-a` / `--brand-b` are **semantic** tokens, not crayons, because the
+wordmark is *text* and has to clear 4.5:1 on whichever paper it lands on.
+`--crayon-blue` is 6.5:1 on the dark ground but 2.3:1 on cream, and even
+`--crayon-blue-deep` only reaches 4.1:1 — so `.share-page` moves the blue half
+to a deeper ink (`#2f62a8`, 6.1:1) and the red half follows `--angry-lit` down
+to `#c22f2f` (5.5:1).
+
+An ink outline on the letters (`-webkit-text-stroke` + `paint-order`) was tried
+and cut: on the dark ground the ink is the ground, so it did nothing where the
+header actually lives, and pushed far enough to show it started closing the
+Hand face's counters. The jitter, the bounce and the split carry the character
+without it.
+
+The per-letter spans would make a screen reader spell the name out, so the
+accessible name is a single `.u-sr-only` word and the letters are `aria-hidden`.
+
+### 4.3 The lockup
+
+Mark, wordmark and scribble, composed as one object. `.logo` in `theme.css`,
+used by **both** the Activity header and the `/share` title — one class, one
+composition, two sizes.
+
+1. **The scribble runs under the whole lockup**, mark included. It is the
+   ground the television stands on and the line the word is written on, and it
+   is what ties three objects into one gesture. *This reverses the old "never
+   underline the mark" rule* — under that rule the wave was a separate
+   decoration parked beside a logo, which is exactly how it read.
+2. **The mark stands ON the line.** `align-items: flex-end` bottoms it out with
+   the text box; `margin-bottom: -0.2em` then plants its legs in the wave so it
+   is standing rather than floating.
+3. **Everything is `em`, off the lockup's own font-size** — gap, mark offset,
+   wavelength, letter bounce. Set `font-size` and the whole lockup follows;
+   the header and the `/share` title are one artwork at two sizes, not two
+   tunings to keep in sync. Nothing in the lockup is a px nudge.
+4. **The mark is 1.4× the font-size.** 20px type → `<CastMark size={28} />`;
+   26px type → `size={36}`. That ratio is what makes the screen face optically
+   match the cap height once the antenna is discounted, and what makes the
+   `-0.2em` plant land correctly at both sizes. Drift off it and the mark
+   starts floating above the wave or sinking behind it.
+5. **Clear space** is the lockup gap, `0.4em` of the wordmark size, on all
+   sides. The header's 12px flex gap and 16px padding clear it at 20px.
+
+| Site            | font-size    | mark | Ink       |
+| --------------- | ------------ | ---- | --------- |
+| Activity header | `--step-2` 20px | 28 | blue      |
+| `/share` title  | `--step-3` 26px | 36 | deep blue |
+
+The lockup tilts −1.5° (header) / −1° (title) and the mark counter-rotates
++2.5° so it never looks glued on.
+
+On `/share`, "screen sharing" sits on a second line in lowercase muted Hand
+type. It is a *caption*, not part of the lockup; it never travels with the mark.
 
 The mark stands alone at 16–32px (favicon, and any future compact context).
-The wordmark never appears without the mark.
+**The wordmark never appears without the mark.**
+
+### 4.4 The lockup outside the app
+
+`docs/lockup.svg` is the README masthead. It is the same composition, with
+three differences the medium forces:
+
+- **It carries its own cream paper.** GitHub renders it through an `<img>`, so
+  it lands on a white *or* a near-black README with no way to know which, and
+  a dark crayon outline vanishes on `#0d1117`. Its own sheet makes it
+  theme-proof — and construction paper is on-brand anyway.
+- **Literal hex, not tokens** — an `<img>`-rendered SVG cannot see the page's
+  custom properties. It uses the cream-ground values.
+- **The wave is one stretched span, not a tile.** No repeat, so no seam.
+
+The wordmark stays live `<text>` in the Hand stack rather than converted to
+paths, so it remains editable and matches the app wherever Comic Sans (or
+Chalkboard, or Comic Neue) is installed. It is **one** text run — glyph
+advances from the font, rotation from the `rotate` attribute, bounce from
+`tspan dy` deltas, size variance from `tspan font-size`. Hand-placing each
+letter at a guessed `x` was the first attempt and it collided on any machine
+whose metrics differed from the guess. The wave's span is cut to the text's
+*measured* right edge, not an estimated one.
 
 ---
 
@@ -378,8 +534,43 @@ The core breathes (`crayon-pulse`), the waves ripple outward on a stagger
 (`crayon-wave`, `--far` delayed 0.22s). Both stop under reduced motion and the
 drawing stays legible standing still.
 
-**Roster — `.roster` / `.participant`**. Headed by `EyesDoodle` + "N in the
-room" with a yellow scribble underline.
+**Roster heading — `.sidebar-title`**. `EyesDoodle` + the count + "in the
+room", composed as one unit rather than three pieces at cramped spacing.
+
+```html
+<h4 class="sidebar-title">
+  <EyesDoodle class="sidebar-title-icon" />
+  <span class="sidebar-count">3</span>
+  <span class="sidebar-count-label u-scribble u-scribble--yellow">in the room</span>
+</h4>
+```
+
+- **The count is the information, so it gets the size** — `--step-2` (20px)
+  against the label's `--step-0` (13.5px). Previously the number was set at the
+  same weight as the words around it, which buried the one thing the heading
+  exists to report.
+- **Only the label is underlined.** Underlining the count too would make the
+  wave change length every time somebody joins or leaves; anchoring it to the
+  fixed words keeps the drawing still while the number moves. `tabular-nums` on
+  the count holds the label's start position steady from 1 to 25 and beyond.
+- **The three pieces share a baseline** (`align-items: baseline`), so the eyes
+  rest on the same line as the count and the words instead of being vertically
+  centred against a taller neighbour. They sit slightly proud of the numeral's
+  cap, peering over it.
+- **The wave scales itself** — it is the standard `.u-scribble`, and because
+  that recipe is in `em` it comes out proportional to the 13.5px label with no
+  per-site tuning. This is the amplitude mismatch from the shipped version.
+- "in the room" is deliberately count-agnostic copy, so there is no
+  pluralisation branch and 1 reads as well as 25.
+
+`EyesDoodle` is drawn like the mark's face rather than like a line icon:
+**opaque almond, ink pupil.** Outlined-with-matching-pupil is the obvious
+drawing and it fails — at roster size the yellow rim and the yellow pupil close
+their gap and the pair reads as two yellow dots. Filling the almond and
+punching the pupil in `--outline` keeps hard contrast *inside* the shape, the
+same bet `CastMark` makes on its screen.
+
+**Roster rows — `.roster` / `.participant`**.
 
 Rows are **people, not connections.** A user sharing from the companion tab is
 present twice on the wire: as `<id>` ("pedro") and as `<id>:tab` ("pedro
@@ -426,23 +617,41 @@ CSP forbids it, and an icon font would fail the same way.
 
 Drawing rules:
 
-1. **Stroke 1.4–2.4 in a ~24 viewBox, always `stroke-linecap="round"`.** A
-   crayon has a blunt tip; it never ends in a sharp corner.
+1. **Stroke 1.4–2.8 in a ~24 viewBox, always `stroke-linecap="round"`.** A
+   crayon has a blunt tip; it never ends in a sharp corner. The heavy end of
+   that range belongs to drawings that must survive being tiny (`CastMark`).
 2. **Quadratics with uneven control points.** Nothing symmetric, no perfect
    circles, no shape that could be described by a single CSS property.
 3. **Colour comes from the outside.** Use `currentColor` where the icon should
    take its parent's colour (`StickFigure`, `EyesDoodle`, `MegaphoneDoodle`),
    and `var(--…)` where the icon owns its palette (`CastMark`, `OnAirDot`,
    `SunDoodle`). Never a literal hex — it will be wrong on one of the grounds.
+   A `currentColor` drawing may still reach for `--outline` for detail *inside*
+   its own fill, the way `EyesDoodle` punches its pupils.
 4. **`aria-hidden="true"`, always.** The meaning lives in the adjacent text. An
    icon that carries meaning on its own is a bug in the copy, not the icon.
+   The one exception is `Wordmark`, which *is* the text — it pairs hidden
+   letters with a `.u-sr-only` accessible name.
 5. **Design at the size it will be used.** Detail that survives at 34px turns
    to mush at 15px; test before you ship, and cut detail rather than shrink it.
-6. **Optional `size` prop only where a drawing is used at two sizes** (today:
+6. **Prefer a face to a texture** — the corollary of rule 5. Both drawings
+   redrawn in the refinement pass (`CastMark`, `EyesDoodle`) failed the same
+   way: fine detail dissolved at real size while high-contrast features inside
+   a filled shape survived. When a drawing has to shrink, cut the texture and
+   keep — or add — the face.
+7. **Optional `size` prop only where a drawing is used at two sizes** (today:
    `CastMark`). Everything else is fixed.
 
 Current set: `CastMark`, `OnAirDot`, `ScribbleDot`, `StickFigure`, `EyesDoodle`,
-`MegaphoneDoodle`, `CloudDoodle`, `SunDoodle`.
+`MegaphoneDoodle`, `CloudDoodle`, `SunDoodle`. `Wordmark` also lives in
+`doodles.tsx` — it is a drawing made of letters, not a component.
+
+**How to test a drawing at size.** Do not judge it in a design tool at 400%.
+Rasterise it at its real px size onto its real ground, then blow *that bitmap*
+up with nearest-neighbour scaling — scaling the SVG instead just re-renders the
+vector and tells you nothing. That is how the 16 / 20 / 24 / 34 decisions above
+were made, and it is the only way to see that a 1.6-radius pupil is a
+sub-pixel smear at 16px.
 
 Emoji are used sparingly as inline glyphs in copy (🎧 🎥 ✋ ⛔ 🎵) — never as
 component icons, because they render as somebody else's artwork.
@@ -532,6 +741,8 @@ Checklist for a new component:
    ancestor.
 6. Animated? Confirm it still reads under `prefers-reduced-motion`.
 7. New drawing? Follow § 6 and check it at its smallest real size.
-8. Touching the mark? Update `CastMark` **and** the favicon data URI.
+8. Touching the mark? Update **all three** copies — `CastMark`, the favicon
+   data URI in `index.html`, and `docs/lockup.svg` — then re-render at 16, 20
+   and 34px and actually look (see § 6, *How to test a drawing at size*).
 9. Build: `cd web && npm run build` (tsc strict + vite).
 10. Look at it on both `/` and `/share` before you push.

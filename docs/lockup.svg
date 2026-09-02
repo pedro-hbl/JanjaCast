@@ -1,0 +1,76 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="420" height="140" viewBox="0 0 420 140"
+     role="img" aria-labelledby="jc-title">
+  <title id="jc-title">JanjaCast</title>
+
+  <!-- The JanjaCast lockup, as a standalone sticker for the README.
+       ==================================================================
+       Same composition as the in-app lockup (web/src/theme.css, the lockup
+       section): mark, wordmark, and one scribble running under BOTH, so the
+       three pieces read as a single drawing rather than a logo with a
+       decoration parked beside it.
+
+       Three things differ from the app, all forced by the medium:
+
+       1. It carries its own cream paper. GitHub renders this through an img
+          element, so it lands on either a white or a near-black README with
+          no way to know which, and a dark crayon outline vanishes on
+          #0d1117. Giving the drawing its own sheet makes it theme-proof, and
+          a sheet of construction paper is on-brand anyway.
+       2. Colours are literal hex, not tokens. An img-rendered SVG cannot see
+          the page's CSS custom properties. These are the cream-ground values
+          from .share-page: ink #26222e, blue screen #5d9be0, wordmark blue
+          #2f62a8, red #c22f2f, signal red #d93a3a.
+       3. The wave is one stretched span, not a repeating tile. A single span
+          has no repeat, so there is no seam to keep level.
+
+       The wordmark is set in the Hand stack rather than converted to paths,
+       so it stays editable and matches the app wherever Comic Sans (or
+       Chalkboard, or Comic Neue) is installed. It is ONE text run: the glyph
+       advances come from the font, the per-letter rotation from the rotate
+       attribute, the baseline bounce from tspan dy, and the size variance
+       from tspan font-size. Hand-placing each letter at a guessed x is what
+       the first cut did, and it collided on any machine whose metrics did
+       not match the guess.
+
+       Keep in sync with CastMark and Wordmark in web/src/doodles.tsx. -->
+
+  <rect width="420" height="140" rx="10" fill="#f7f1e1"/>
+
+  <g transform="translate(30 14) rotate(-1.5 177 55)">
+
+    <!-- the scribble, drawn first so the television stands on top of it.
+         Seven half-waves of 51, control offset 9.4, stroke 7: the same
+         proportions the em-based CSS recipe produces at this type size. The
+         span is cut to end exactly on the wordmark's right edge (x=357,
+         measured, not guessed) so the wave never trails past the word. -->
+    <path d="M0 92Q25.5 82.6 51 92T102 92T153 92T204 92T255 92T306 92T357 92"
+          fill="none" stroke="#2f62a8" stroke-width="7" stroke-linecap="round"/>
+
+    <!-- the mark (CastMark) at 78px = 1.4x the 56px wordmark, the ratio the
+         app holds; translated down so the legs plant in the wave -->
+    <g transform="translate(0 16) scale(3.25)">
+      <g transform="rotate(2.5 12 13)">
+        <path d="M5.6 19.8 3.9 23.4M13.4 19.4 15.0 22.9"
+              fill="none" stroke="#26222e" stroke-width="2.6" stroke-linecap="round"/>
+        <path d="M2.3 8.6Q1.9 6.8 3.7 6.6L15.1 5.6Q16.9 5.4 17.0 7.2L17.5 18.5Q17.6 20.3 15.8 20.4L3.6 21.2Q1.8 21.3 1.9 19.5Z"
+              fill="#5d9be0" stroke="#26222e" stroke-width="2.1" stroke-linejoin="round"/>
+        <circle cx="6.7" cy="11.4" r="2" fill="#26222e"/>
+        <circle cx="12.7" cy="10.9" r="2" fill="#26222e"/>
+        <path d="M6.9 15.4Q9.8 18.4 12.9 15.0"
+              fill="none" stroke="#26222e" stroke-width="2.3" stroke-linecap="round"/>
+        <path d="M15.6 6.2Q17.6 4.4 19.1 2.9"
+              fill="none" stroke="#d93a3a" stroke-width="2.8" stroke-linecap="round"/>
+        <circle cx="19.8" cy="2.3" r="2.4" fill="#d93a3a" stroke="#26222e" stroke-width="1"/>
+      </g>
+    </g>
+
+    <!-- the wordmark. rotate= carries the per-glyph tilt, one value per glyph
+         in order; tspan dy carries the baseline bounce as deltas, because dy
+         accumulates along the run. Blue Janja, red Cast a notch smaller and
+         riding higher, mirroring the mark's screen/signal split. -->
+    <text x="94" y="74"
+          font-family="'Comic Sans MS','Comic Sans','Chalkboard SE',Chalkboard,'Comic Neue','Bradley Hand','Segoe Print',cursive"
+          font-weight="bold" font-size="56" letter-spacing="0.56"
+          rotate="-3 1.8 -1.4 2.4 -2.2 2.6 -1.8 2.2 -2.6"><tspan fill="#2f62a8" dy="1.1">J</tspan><tspan fill="#2f62a8" dy="-2.8">a</tspan><tspan fill="#2f62a8" dy="3.7">n</tspan><tspan fill="#2f62a8" dy="-2.6">j</tspan><tspan fill="#2f62a8" dy="3.1">a</tspan><tspan fill="#c22f2f" font-size="50" dy="-7.0">C</tspan><tspan fill="#c22f2f" font-size="50" dy="1.1">a</tspan><tspan fill="#c22f2f" font-size="50" dy="-1.6">s</tspan><tspan fill="#c22f2f" font-size="50" dy="2.2">t</tspan></text>
+  </g>
+</svg>

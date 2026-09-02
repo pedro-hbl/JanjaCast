@@ -1,9 +1,13 @@
-# JanjaCast
+<h1 align="center">
+  <img src="docs/lockup.svg" alt="JanjaCast" width="420">
+</h1>
 
-[![ci](https://github.com/pedro-hbl/janjacast/actions/workflows/ci.yml/badge.svg)](https://github.com/pedro-hbl/janjacast/actions/workflows/ci.yml)
-[![release](https://github.com/pedro-hbl/janjacast/actions/workflows/release.yml/badge.svg)](https://github.com/pedro-hbl/janjacast/actions/workflows/release.yml)
-[![container](https://img.shields.io/badge/ghcr.io-pedro--hbl%2Fjanjacast-1D63ED?logo=docker&logoColor=white)](https://github.com/pedro-hbl/janjacast/pkgs/container/janjacast)
-[![license](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+<p align="center">
+  <a href="https://github.com/pedro-hbl/janjacast/actions/workflows/ci.yml"><img src="https://github.com/pedro-hbl/janjacast/actions/workflows/ci.yml/badge.svg" alt="ci"></a>
+  <a href="https://github.com/pedro-hbl/janjacast/actions/workflows/release.yml"><img src="https://github.com/pedro-hbl/janjacast/actions/workflows/release.yml/badge.svg" alt="release"></a>
+  <a href="https://github.com/pedro-hbl/janjacast/pkgs/container/janjacast"><img src="https://img.shields.io/badge/ghcr.io-pedro--hbl%2Fjanjacast-1D63ED?logo=docker&logoColor=white" alt="container"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green.svg" alt="license"></a>
+</p>
 
 **Screen livestreaming as a Discord Activity.** One person shares their
 screen; everyone in the voice call watches live inside the Activity —
