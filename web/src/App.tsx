@@ -179,6 +179,10 @@ const App: Component = () => {
     kbps: number;
     latencyMs?: number | null;
   }>({ fps: 0, kbps: 0 });
+  // Clip UI state
+  const [clipWorking, setClipWorking] = createSignal(false);
+  const [clipUrl, setClipUrl] = createSignal<string | null>(null);
+  const [clipExpires, setClipExpires] = createSignal<number | null>(null);
 
   let canvasRef!: HTMLCanvasElement;
   let stageRef!: HTMLDivElement;
@@ -574,6 +578,11 @@ const App: Component = () => {
       s.onSuperseded = () => setError({ key: "err.superseded" });
       // Stream start/stop stinger — the sharer's own view plays it too.
       s.onStinger = (st) => void playStinger(st);
+      s.onClipReady = (d) => {
+        setClipWorking(false);
+        setClipUrl(d.url);
+        setClipExpires(d.expiresMs);
+      };
       // Somebody was called to the stage. The cue is room-wide on purpose —
       // "é tua!" is something the whole call hears, the way it would be said
       // out loud. It rides the viewer's own volume slider, and the token
@@ -1065,11 +1074,23 @@ const App: Component = () => {
           {/* Instant clip button — edge pinned with the fullscreen control. */}
           <button
             class="fs-btn fs-btn--clip"
-            title={t("clip.button")}
-            onClick={() => session()?.sendControl("clip_request")}
+            title={clipWorking() ? t("clip.working") : t("clip.button")}
+            disabled={clipWorking()}
+            onClick={() => {
+              setClipWorking(true);
+              setClipUrl(null);
+              setClipExpires(null);
+              session()?.requestClip();
+            }}
           >
-            🎬
+            {clipWorking() ? "⏳" : "🎬"}
           </button>
+        </Show>
+        {/* Clip ready toast with external-open to escape CSP */}
+        <Show when={clipUrl()}>
+          <div class="toast clip-toast">
+            {t("clip.ready")} <button class="crayon-btn" onClick={() => openExternal(clipUrl()!)}>{t("clip.download")}</button>
+          </div>
         </Show>
           {/* The empty stage is a drawing, not a sentence: the JanjaCast
               set standing in the grass under a sun, switched off, with the

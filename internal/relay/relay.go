@@ -123,6 +123,8 @@ func (h *Hub) Join(roomID, userID, username string) (*Room, *Client, iter.Seq[Ou
 			stinger:         h.Stinger,
 			stingerStopWait: h.StingerStopDelay,
 			turnWait:        ttl,
+			clips:           make(map[string]clipItem),
+			lastClipAsk:     make(map[*Client]time.Time),
 		}
 		h.rooms[roomID] = r
 	}
@@ -362,6 +364,16 @@ type Room struct {
   clipBuf      [][]byte
   clipBytes    int
   clipStartTs  int64 // microseconds of first chunk in clipBuf; 0 when empty
+  // clip store: token -> bytes with expiry and content type. Guarded by mu.
+  clips map[string]clipItem
+  // per-client cooldown for clip requests.
+  lastClipAsk map[*Client]time.Time
+}
+
+type clipItem struct {
+    data      []byte
+    mime      string
+    expiresAt time.Time
 }
 
 // stageTurn is the person currently being called to the stage.

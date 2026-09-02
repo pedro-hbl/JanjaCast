@@ -92,6 +92,8 @@ export class Session {
   onStageCancel: ((cancel: StageCancelData) => void) | null = null;
   /** The server refused something we asked for, with a code to translate. */
   onServerError: ((code: string) => void) | null = null;
+  /** A clip is ready to download. */
+  onClipReady: ((d: { url: string; expiresMs: number }) => void) | null = null;
 
   constructor(
     private identity: Identity,
@@ -239,6 +241,9 @@ export class Session {
   pauseCinema(): void { this.sendControl("cinema_pause" as any, {}); }
   resumeCinema(): void { this.sendControl("cinema_resume" as any, {}); }
   sendCinemaStroke(d: import('./protocol').CinemaStrokeData): void { this.sendControl("cinema_stroke" as any, d); }
+
+  // Instant clip: viewer requests the relay to cut the last ~30s.
+  requestClip(): void { this.sendControl("clip_request" as any, {}); }
 
   /** Local-only undo: hide this client's most recent stroke. There is no
    *  cinema_undo on the wire, so a later full `cinema_state` (pause/resume)
@@ -413,6 +418,11 @@ export class Session {
           viewers: number;
         };
         this.onRateHint?.(degraded ?? 0, viewers ?? 0);
+        break;
+      }
+      case "clip_ready": {
+        const d = ctrl.data as { url: string; expiresMs: number };
+        if (d && typeof d.url === "string") this.onClipReady?.(d);
         break;
       }
       case "stage_taken": {

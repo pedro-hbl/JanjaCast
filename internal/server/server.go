@@ -671,5 +671,9 @@ func (s *Server) handleControl(room *relay.Room, client *relay.Client, data []by
 				client.SendControl(protocol.CtrlError, protocol.ErrorData{Code: code})
 			}
 		}
+	case protocol.CtrlClip:
+		// Placeholder: remux + token minting wired in Step 3.
+		// For now, refuse silently; UI will show cooldown if needed later.
+		_ = room // keep signature; real impl uses room state under lock
 	}
 }
