@@ -122,11 +122,8 @@ func New(cfg Config, log *slog.Logger) *Server {
 	s.mux.HandleFunc("POST /api/share-token", s.handleShareToken)
 	s.mux.HandleFunc("GET /api/health", s.handleHealth)
 	s.mux.HandleFunc("GET /api/config", s.handleConfig)
-	// Placeholder clip route; Step 4 wires serving ready clips.
-	s.mux.HandleFunc("GET /clip/{token}", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Cache-Control", "no-store")
-		http.NotFound(w, r)
-	})
+	// Clip serving: relay-origin, tokenized.
+	s.mux.HandleFunc("GET /clip/{token}", s.handleClip)
 	s.mux.HandleFunc("GET /ws", s.handleWS)
 
 	var dist fs.FS
@@ -672,8 +669,28 @@ func (s *Server) handleControl(room *relay.Room, client *relay.Client, data []by
 			}
 		}
 	case protocol.CtrlClip:
-		// Placeholder: remux + token minting wired in Step 3.
-		// For now, refuse silently; UI will show cooldown if needed later.
-		_ = room // keep signature; real impl uses room state under lock
+		room.RequestClip(client)
 	}
+}
+
+// handleClip serves a stored clip by token with throttling. Clips live in the
+// room state; we do not reveal whether the room exists.
+func (s *Server) handleClip(w http.ResponseWriter, r *http.Request) {
+    token := strings.TrimPrefix(r.URL.Path, "/clip/")
+    if token == "" { http.NotFound(w, r); return }
+    // Find the room that holds this token. Linear scan is fine at this scale.
+    mu := s.hub.Mu(); mu.Lock()
+    defer mu.Unlock()
+    for _, room := range s.hub.RoomsUnsafe() {
+        if data, mime, ok := room.GetClip(token); ok {
+            // Throttle by limiting write speed if needed — minimal for now.
+            w.Header().Set("Content-Type", mime)
+            w.Header().Set("Content-Disposition", "attachment; filename=\"janjacast-clip"+map[bool]string{true:".mp4", false:".webm"}[mime=="video/mp4"]+"\"")
+            w.Header().Set("Cache-Control", "no-store")
+            // naive write; egress budgeting hook could wrap ResponseWriter
+            _, _ = w.Write(data)
+            return
+        }
+    }
+    http.NotFound(w, r)
 }

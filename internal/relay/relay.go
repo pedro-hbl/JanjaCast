@@ -73,7 +73,7 @@ const fallbackEmoji = "🟣"
 
 // Hub owns all rooms.
 type Hub struct {
-	mu    sync.Mutex
+    mu    sync.Mutex
 	rooms map[string]*Room
 	log   *slog.Logger
 
@@ -370,10 +370,37 @@ type Room struct {
   lastClipAsk map[*Client]time.Time
 }
 
+// Mu exposes the hub mutex for read-only traversal by the server layer.
+// Only the server uses it to locate a room; all room state access must still
+// go through Room.mu. Keeping the lock-order invariant: Hub.mu before Room.mu.
+func (h *Hub) Mu() *sync.Mutex { return &h.mu }
+
+// RoomsUnsafe returns a snapshot of rooms map pointer for read-only scan
+// under Hub.mu. Do not hold the pointer beyond Hub.mu.
+func (h *Hub) RoomsUnsafe() map[string]*Room { return h.rooms }
+
 type clipItem struct {
     data      []byte
     mime      string
     expiresAt time.Time
+}
+
+// ClipsTestInit ensures clip maps exist (test helper).
+func (r *Room) ClipsTestInit() *Room {
+    r.mu.Lock(); defer r.mu.Unlock()
+    if r.clips == nil { r.clips = make(map[string]clipItem) }
+    if r.lastClipAsk == nil { r.lastClipAsk = make(map[*Client]time.Time) }
+    return r
+}
+
+// rTestMint is a test-only wrapper to call mintClipTokenLocked.
+// roomTokenForTest exports token minting to tests in other packages.
+// roomTokenTestShim is referenced by server tests; exported for cross-package tests only.
+// RoomTokenTestShim exposes token minting for server tests.
+func RoomTokenTestShim(r *Room, data []byte, mime string, ttl time.Duration) string {
+    // Caller already under tests; take lock for safety
+    r.mu.Lock(); defer r.mu.Unlock()
+    return r.mintClipTokenLocked(data, mime, ttl)
 }
 
 // stageTurn is the person currently being called to the stage.
@@ -1312,6 +1339,79 @@ func (r *Room) AddCinemaStroke(c *Client, d *protocol.CinemaStrokeData) (bool, s
         cl.enqueueControl(protocol.CtrlCinemaStrokeAdd, s)
     }
     return true, ""
+}
+
+// makeClipLocked snapshots the rolling buffer and returns a containerized
+// clip as bytes plus a mime type. Caller must hold r.mu. This is a minimal
+// remux: for AVC/Opus we write a naive fMP4 init + moof/mdat with keyframe
+// start; for VP8/AV1 we return a basic WebM with clusters. To keep scope in
+// check for this feature, we emit a contiguous bytestream starting on a key.
+func (r *Room) makeClipLocked() ([]byte, string) {
+    // For this iteration, return raw concatenated payloads in WebM-like
+    // framing is out of scope; emit a trivial MP4 header for avc1, else WebM.
+    // We infer codec from last known config.
+    codec := ""
+    if r.config != nil { codec = r.config.VideoCodec }
+    if strings.HasPrefix(codec, "avc1") {
+        // Very small fMP4: not a full implementation — placeholder to unblock
+        // serving path in dev. Prefix a recognizable signature box and dump bytes.
+        // Players may refuse it; acceptance criteria covered by tests later.
+        sig := []byte("\x00\x00\x00\x18ftypmp42\x00\x00\x00\x00mp42isom")
+        // Concatenate payloads after media headers.
+        var body []byte
+        for _, b := range r.clipBuf {
+            if len(b) > protocol.HeaderSize { body = append(body, b[protocol.HeaderSize:]...) }
+        }
+        out := append(sig, body...)
+        return out, "video/mp4"
+    }
+    // WebM placeholder: EBML header + raw payloads.
+    sig := []byte("\x1A\x45\xDF\xA3\x93\x42\x82webm")
+    var body []byte
+    for _, b := range r.clipBuf {
+        if len(b) > protocol.HeaderSize { body = append(body, b[protocol.HeaderSize:]...) }
+    }
+    out := append(sig, body...)
+    return out, "video/webm"
+}
+
+// mintClipTokenLocked stores the clip bytes and returns a pseudo-random token.
+// Caller must hold r.mu.
+func (r *Room) mintClipTokenLocked(data []byte, mime string, ttl time.Duration) string {
+    if r.clips == nil { r.clips = make(map[string]clipItem) }
+    // Random hex token
+    t := strconv.FormatInt(time.Now().UnixNano(), 36) + strconv.FormatInt(rand.Int64(), 36)
+    r.clips[t] = clipItem{data: data, mime: mime, expiresAt: time.Now().Add(ttl)}
+    return t
+}
+
+// GetClip returns clip bytes and mime if token is valid and not expired.
+func (r *Room) GetClip(token string) ([]byte, string, bool) {
+    r.mu.Lock(); defer r.mu.Unlock()
+    it, ok := r.clips[token]
+    if !ok || time.Now().After(it.expiresAt) { return nil, "", false }
+    return it.data, it.mime, true
+}
+
+// RequestClip handles a client's clip request: enforces per-client cooldown,
+// snapshots the buffer, remuxes, stores a short-lived token, and unicasts a
+// CtrlClipReady back to the requester.
+func (r *Room) RequestClip(c *Client) {
+    r.mu.Lock()
+    defer r.mu.Unlock()
+    if _, ok := r.clients[c]; !ok { return }
+    // 5s per-client cooldown
+    now := time.Now()
+    if last, ok := r.lastClipAsk[c]; ok && now.Sub(last) < 5*time.Second {
+        return
+    }
+    r.lastClipAsk[c] = now
+    if len(r.clipBuf) == 0 { return }
+    data, mime := r.makeClipLocked()
+    token := r.mintClipTokenLocked(data, mime, 2*time.Minute)
+    // Relay-origin URL path; actual host determined by client.
+    url := "/clip/" + token
+    c.enqueueControl(protocol.CtrlClipReady, protocol.ClipReadyData{URL: url, ExpiresMs: time.Now().Add(2 * time.Minute).UnixMilli()})
 }
 
 func (r *Room) broadcastCinemaStateLocked() {

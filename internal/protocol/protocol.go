@@ -169,8 +169,14 @@ const (
 
 // Control is the JSON envelope for text messages.
 type Control struct {
-	Type ControlType     `json:"type"`
-	Data json.RawMessage `json:"data,omitempty"`
+    Type ControlType     `json:"type"`
+    Data json.RawMessage `json:"data,omitempty"`
+}
+
+// ClipReadyData is the payload of CtrlClipReady.
+type ClipReadyData struct {
+    URL       string `json:"url"`
+    ExpiresMs int64  `json:"expiresMs"`
 }
 
 // JoinData is the payload of CtrlJoin. Exactly one credential is expected
