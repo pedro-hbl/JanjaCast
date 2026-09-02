@@ -84,6 +84,12 @@ const (
 	// and by the relay itself when it starts dropping a viewer's video.
 	// Debounced per room server-side.
 	CtrlKeyframeRequest ControlType = "keyframe_request"
+	// CtrlStingerPlay asks the server to play a stinger at the whole room
+	// right now — any authenticated member may fire one. The server
+	// validates the names against the asset store, applies a per-client
+	// cooldown, and broadcasts an ordinary CtrlStinger, so the client's
+	// existing overlay needs no new machinery.
+	CtrlStingerPlay ControlType = "stinger_play"
 
 	// Server -> client.
 	CtrlWelcome      ControlType = "welcome"       // join accepted, current room state
@@ -223,9 +229,19 @@ type RateHintData struct {
 // participant should play. Either URL may be empty if the stinger directory
 // holds no file of that kind.
 type StingerData struct {
-	Kind  string `json:"kind"` // "start" | "stop"
+	Kind  string `json:"kind"` // "start" | "stop" | "manual"
 	Image string `json:"image,omitempty"`
 	Audio string `json:"audio,omitempty"`
+}
+
+// StingerPlayData is the payload of CtrlStingerPlay: the asset BASE NAMES
+// (not URLs) the sender wants played. Either may be empty — a picture with no
+// sound, or the reverse. Random asks the server to choose from the enabled
+// pool instead, which is what the panel's dice button sends.
+type StingerPlayData struct {
+	Image  string `json:"image,omitempty"`
+	Audio  string `json:"audio,omitempty"`
+	Random bool   `json:"random,omitempty"`
 }
 
 // MarshalControl encodes a control envelope with its payload.

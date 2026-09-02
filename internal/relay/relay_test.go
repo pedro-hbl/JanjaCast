@@ -508,6 +508,131 @@ func TestStingerStopTimerOnReapedRoom(t *testing.T) {
 	}
 }
 
+// --------------------- manual stinger trigger ------------------------------
+
+func manualStinger() *protocol.StingerData {
+	return &protocol.StingerData{
+		Kind:  "manual",
+		Image: "/stingers/wow.webp",
+		Audio: "/stingers/horn.mp3",
+	}
+}
+
+// TestPlayStingerReachesWholeRoom: any member — not just the publisher — can
+// fire a stinger, and it lands on every client INCLUDING the sender (their own
+// overlay plays it too, exactly like the automatic ones).
+func TestPlayStingerReachesWholeRoom(t *testing.T) {
+	hub := NewHub(discard()) // no Hub.Stinger: the manual path is independent
+	room, alice, aliceOut := hub.Join("r1", "a", "alice")
+	_, bob, bobOut := hub.Join("r1", "b", "bob")
+
+	if !room.PlayStinger(bob, manualStinger()) { // a plain viewer fires it
+		t.Fatal("PlayStinger refused a room member")
+	}
+	hub.Leave(room, alice)
+	hub.Leave(room, bob)
+
+	for name, out := range map[string][]OutMsg{"alice": collect(aliceOut), "bob": collect(bobOut)} {
+		if got := stingersOf(t, out); got["manual"] != 1 {
+			t.Fatalf("%s got stingers %v, want exactly one manual", name, got)
+		}
+	}
+}
+
+// TestPlayStingerCooldown: a client's second trigger inside the budget window
+// is dropped, and the window is PER CLIENT — one spammer must not mute
+// everybody else.
+func TestPlayStingerCooldown(t *testing.T) {
+	hub := NewHub(discard())
+	room, alice, _ := hub.Join("r1", "a", "alice")
+	_, bob, bobOut := hub.Join("r1", "b", "bob")
+
+	if !room.PlayStinger(alice, manualStinger()) {
+		t.Fatal("first trigger refused")
+	}
+	for i := 0; i < 5; i++ {
+		if room.PlayStinger(alice, manualStinger()) {
+			t.Fatal("a second trigger inside the cooldown was honored")
+		}
+	}
+	// Bob has his own budget and is unaffected by alice's spending.
+	if !room.PlayStinger(bob, manualStinger()) {
+		t.Fatal("one client's cooldown blocked another client")
+	}
+
+	// The window is real, not a one-shot latch: rewinding alice's stamp past
+	// it lets her fire again.
+	room.mu.Lock()
+	alice.lastStingerAsk = time.Now().Add(-stingerClientBudget - time.Millisecond)
+	room.mu.Unlock()
+	if !room.PlayStinger(alice, manualStinger()) {
+		t.Fatal("trigger refused after the cooldown elapsed")
+	}
+
+	hub.Leave(room, bob)
+	if got := stingersOf(t, collect(bobOut)); got["manual"] != 3 {
+		t.Fatalf("bob saw %v manual stingers, want 3 (alice, bob, alice again)", got)
+	}
+}
+
+// TestPlayStingerFromGhost: a client that already left must not be able to
+// fire into the room it left — the same membership check TakeStage makes.
+func TestPlayStingerFromGhost(t *testing.T) {
+	hub := NewHub(discard())
+	room, alice, _ := hub.Join("r1", "a", "alice")
+	_, bob, bobOut := hub.Join("r1", "b", "bob")
+
+	hub.Leave(room, alice)
+	if room.PlayStinger(alice, manualStinger()) {
+		t.Fatal("a departed client fired a stinger")
+	}
+	// A nil payload (nothing resolved server-side) is a no-op, not a panic.
+	if room.PlayStinger(bob, nil) {
+		t.Fatal("nil payload was broadcast")
+	}
+	hub.Leave(room, bob)
+
+	if got := stingersOf(t, collect(bobOut)); len(got) != 0 {
+		t.Fatalf("ghost/nil triggers produced stingers: %v", got)
+	}
+}
+
+// TestPlayStingerConcurrent hammers the manual path against join/leave churn
+// and the automatic stinger timers, which is where a lock-order or
+// send-on-closed-channel mistake would show up. Run with -race.
+func TestPlayStingerConcurrent(t *testing.T) {
+	hub := stingerHub(time.Millisecond)
+
+	var wg sync.WaitGroup
+	for g := 0; g < 8; g++ {
+		wg.Add(1)
+		go func(g int) {
+			defer wg.Done()
+			for i := 0; i < 300; i++ {
+				id := fmt.Sprintf("m%d-%d", g, i)
+				room, c, seq := hub.Join("contested", id, id)
+				done := make(chan struct{})
+				go func() {
+					seq(func(OutMsg) bool { return true })
+					close(done)
+				}()
+				if g%3 == 0 {
+					room.TakeStage(c)
+				}
+				room.PlayStinger(c, manualStinger())
+				hub.Leave(room, c)
+				room.PlayStinger(c, manualStinger()) // after leaving: must no-op
+				<-done
+			}
+		}(g)
+	}
+	wg.Wait()
+
+	if n := hub.Rooms(); n != 0 {
+		t.Fatalf("%d rooms leaked after all clients left", n)
+	}
+}
+
 // TestStingerDisabled: a nil Hub.Stinger (feature off) must fire nothing and
 // arm no timers.
 func TestStingerDisabled(t *testing.T) {

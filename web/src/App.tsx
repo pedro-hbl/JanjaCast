@@ -11,6 +11,7 @@ import {
   apiPath,
   captureAllowed,
   fetchPublicOrigin,
+  fetchStingersEnabled,
   openExternal,
   setupIdentity,
   type Identity,
@@ -27,6 +28,7 @@ import {
   OnAirDot,
   StickFigure,
 } from "./doodles";
+import { StingerPanel } from "./stingers";
 import "./theme.css";
 
 /** One row of the sidebar roster — one *person*, not one connection. */
@@ -314,6 +316,17 @@ const App: Component = () => {
     setCompanionOpened(true);
   };
 
+  // --- stinger management panel --------------------------------------------
+  // A drawer over the sidebar side (never over the video). The button is
+  // hidden entirely unless the server actually has an asset store.
+  const [stingersOn, setStingersOn] = createSignal(false);
+  const [stingerPanel, setStingerPanel] = createSignal(false);
+  onMount(() => {
+    void fetchStingersEnabled()
+      .then(setStingersOn)
+      .catch(() => setStingersOn(false));
+  });
+
   const [confirmTakeover, setConfirmTakeover] = createSignal(false);
 
   /** Entry point for the Share button: if someone else is live, ask before
@@ -593,10 +606,30 @@ const App: Component = () => {
           <span class="seg-unit">fps</span>
         </div>
 
+        <Show when={stingersOn()}>
+          <button
+            type="button"
+            class="crayon-btn crayon-btn--chalk"
+            aria-expanded={stingerPanel()}
+            title="Add, curate and fire the room's stingers"
+            onClick={() => setStingerPanel((v) => !v)}
+          >
+            🎺 Stingers
+          </button>
+        </Show>
+
         <Show when={error()}>
           <span class="error-text">{error()}</span>
         </Show>
       </footer>
+
+      <Show when={stingerPanel()}>
+        <StingerPanel
+          token={identity()?.accessToken}
+          onClose={() => setStingerPanel(false)}
+          onPlay={(opts) => session()?.playStinger(opts)}
+        />
+      </Show>
 
       <Show when={confirmTakeover()}>
         <div class="modal-scrim">

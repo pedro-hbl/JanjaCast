@@ -274,6 +274,11 @@ const kfDebounce = 2 * time.Second
 // at the room-wide debounce rate.
 const kfClientBudget = 3 * time.Second
 
+// stingerClientBudget bounds how often one client may fire a manual stinger
+// at the whole room. Any member can press the button, so the only thing
+// standing between a bored friend and a strobe light is this.
+const stingerClientBudget = 3 * time.Second
+
 // maxGOPChunks keeps the late-join cache small enough to replay into a
 // fresh client queue (sendBuffer slots, minus room for control messages).
 // A GOP that outgrows this is dropped; joiners fall back to
@@ -302,6 +307,9 @@ type Client struct {
 	// lastKFAsk budgets this client's own keyframe requests. Guarded by
 	// Room.mu.
 	lastKFAsk time.Time
+	// lastStingerAsk budgets this client's own manual stinger triggers.
+	// Guarded by Room.mu.
+	lastStingerAsk time.Time
 	// superseded records that this connection was replaced by a newer
 	// session — the transport layer closes it with a distinct code so the
 	// client treats even a lost in-band signal as terminal. Guarded by
@@ -369,6 +377,36 @@ func (r *Room) RequestKeyframeFrom(c *Client) {
 	}
 	c.lastKFAsk = now
 	r.requestKeyframeLocked()
+}
+
+// PlayStinger broadcasts a caller-supplied stinger to the whole room on
+// behalf of client c, applying the per-client cooldown. It reports whether
+// the stinger was actually sent.
+//
+// Shaped exactly like RequestKeyframeFrom, and for the same reasons: the
+// payload is resolved by the caller OUTSIDE every relay lock (name lookup is
+// filesystem I/O and must never run under r.mu — that is also why Hub.Stinger
+// stays a pure pick), this takes only r.mu, never Hub.mu, so the
+// Hub.mu-before-Room.mu order is untouched, and the fan-out is
+// enqueueControl, which is non-blocking on a channel that is never closed.
+func (r *Room) PlayStinger(c *Client, d *protocol.StingerData) bool {
+	if d == nil {
+		return false
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.clients[c]; !ok {
+		return false // a departed client must not be able to fire into a room
+	}
+	now := time.Now()
+	// Zero value means "never asked": now.Sub(zero) is enormous, so the first
+	// request passes without a special case (same trick as lastKFAsk).
+	if now.Sub(c.lastStingerAsk) < stingerClientBudget {
+		return false
+	}
+	c.lastStingerAsk = now
+	r.broadcastStingerLocked(d)
+	return true
 }
 
 // gateViewersLocked puts every non-publisher behind the keyframe gate —

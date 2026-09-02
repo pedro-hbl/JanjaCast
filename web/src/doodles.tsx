@@ -263,6 +263,69 @@ export const CloudDoodle: Component<{ class?: string }> = (props) => (
   </svg>
 );
 
+/**
+ * A crooked die, for "surprise the room" — the random-stinger button.
+ *
+ * Drawn at 18px, which is where it lives: the pips are three fat dots rather
+ * than a five-pip face, because five dots at 18px is a grey smear. It owns
+ * its palette (a yellow crayon die with ink pips) so it reads as an object
+ * being thrown rather than as a glyph in the button's text.
+ */
+export const DiceDoodle: Component<{ class?: string }> = (props) => (
+  <svg
+    class={props.class}
+    width="18"
+    height="18"
+    viewBox="0 0 24 24"
+    aria-hidden="true"
+  >
+    <path
+      d="M5.4 6.2q6-1.5 12.4-1.1.9 6.2.6 12.5-6.3 1.3-12.6.6-.9-6.1-.4-12Z"
+      fill="var(--yellow)"
+      stroke="var(--outline)"
+      stroke-width="2"
+      stroke-linejoin="round"
+    />
+    <path
+      d="M9 9.2h.01M15 9.4h.01M12 12.6h.01M9.2 15.6h.01M15.2 15.4h.01"
+      fill="none"
+      stroke="var(--outline)"
+      stroke-width="2.4"
+      stroke-linecap="round"
+    />
+  </svg>
+);
+
+/**
+ * A scribbled starburst — the Stingers panel's title mark. The idea is "a
+ * noise happened", which is what a stinger is: five uneven spikes and a
+ * lopsided core, no radial symmetry anywhere.
+ */
+export const BoomDoodle: Component<{ class?: string }> = (props) => (
+  <svg
+    class={props.class}
+    width="20"
+    height="20"
+    viewBox="0 0 24 24"
+    aria-hidden="true"
+  >
+    <path
+      d="M12 3.4 14.4 8l5.2-1.1-2.3 4.7 3.3 3.6-4.9.9-.6 4.6-4-2.9-4.3 2.4.3-4.6L3 14.2l3.6-3.1L4.9 6.6l5 1Z"
+      fill="var(--redorange)"
+      stroke="var(--outline)"
+      stroke-width="1.8"
+      stroke-linejoin="round"
+    />
+    <path
+      d="M10.4 10.8q1.6 1.4 3.3.4"
+      fill="none"
+      stroke="var(--outline)"
+      stroke-width="1.6"
+      stroke-linecap="round"
+    />
+  </svg>
+);
+
 /** Crayon sun for the corner of the /share paper page. */
 export const SunDoodle: Component<{ class?: string }> = (props) => (
   <svg
