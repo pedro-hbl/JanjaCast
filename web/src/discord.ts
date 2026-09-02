@@ -37,12 +37,14 @@ export function captureAllowed(): boolean {
 
 /** Open a URL in the user's real browser. Inside Discord this must go
  *  through the SDK (the iframe cannot window.open). */
-export async function openExternal(url: string): Promise<void> {
+/** true = opened, false = the user dismissed Discord's confirmation (or a
+ *  popup blocker ate window.open), null = old client, can't tell. */
+export async function openExternal(url: string): Promise<boolean | null> {
   if (sdkInstance) {
-    await sdkInstance.commands.openExternalLink({ url });
-  } else {
-    window.open(url, "_blank", "noopener");
+    const { opened } = await sdkInstance.commands.openExternalLink({ url });
+    return opened;
   }
+  return window.open(url, "_blank", "noopener") !== null;
 }
 
 interface ServerConfig {

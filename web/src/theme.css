@@ -1924,9 +1924,9 @@ label.fps-label {
 /* A scatter of crayon sparkles; each twinkles on its own beat. */
 .scene-star {
   position: absolute;
-  width: clamp(10px, 2vw, 16px);
+  width: clamp(20px, 3.2vw, 34px);
   height: auto;
-  opacity: 0.55;
+  opacity: 0.75;
   animation: scene-twinkle 3.4s ease-in-out infinite;
 }
 .scene-star--a { top: 18%; left: 24%; }
@@ -1935,8 +1935,8 @@ label.fps-label {
 .scene-star--d { top: 52%; left: 66%; animation-delay: 2.4s; }
 .scene-star--e { top: 28%; left: 8%; animation-delay: 1.2s; }
 @keyframes scene-twinkle {
-  0%, 100% { opacity: 0.25; transform: scale(0.85) rotate(-6deg); }
-  50% { opacity: 0.8; transform: scale(1.1) rotate(8deg); }
+  0%, 100% { opacity: 0.5; transform: scale(0.85) rotate(-6deg); }
+  50% { opacity: 0.95; transform: scale(1.1) rotate(8deg); }
 }
 
 .scene-grass {

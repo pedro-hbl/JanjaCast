@@ -560,12 +560,28 @@ const App: Component = () => {
     clearInterval(clockTimer);
     clearInterval(paintTimer);
     clearStinger();
+    clearInterval(lateTimer);
     capture()?.stop();
     player?.close();
     session()?.close();
   });
 
   const [companionOpened, setCompanionOpened] = createSignal(false);
+  // Companion-tab phase (ISSUE.md §3). Keep `companionOpened` as a derived
+  // alias so concurrent work keeps compiling.
+  type CompanionPhase = "idle" | "opening" | "late" | "joined" | "failed";
+  const [phase, setPhase] = createSignal<CompanionPhase>("idle");
+  const [openedAt, setOpenedAt] = createSignal(0);
+  /** The companion tab is a connection, not a guess: the relay puts it in
+   *  room_state as "<me>:tab" the instant it joins. */
+  const companionJoined = () => {
+    const meId = session()?.selfId();
+    if (!meId) return false;
+    const tabId = `${baseId(meId)}:tab`;
+    return (session()?.participants().participants ?? []).some((p) => p.userId === tabId);
+  };
+  const companionPhase = (): CompanionPhase => (companionJoined() ? "joined" : phase());
+  const companionOpenedAlias = () => companionPhase() !== "idle";
 
   /** Discord's iframe denies display-capture, so sharing happens in a
    *  companion tab in the user's real browser (same room, direct origin).
@@ -600,9 +616,22 @@ const App: Component = () => {
     // it cannot see this origin's localStorage. Hand it the language on the
     // URL and it opens already speaking it.
     url.searchParams.set("lang", localeParam());
-    await openExternal(url.toString());
-    setCompanionOpened(true);
+    // Fresh token every time — do not memoize (stale token → 1008).
+    const opened = await openExternal(url.toString());
+    setOpenedAt(Date.now());
+    setPhase(opened === false ? "failed" : "opening");
+    setCompanionOpened(true); // legacy alias
   };
+
+  // Promote opening → late after 20 s.
+  const lateTimer = setInterval(() => {
+    if (phase() === "opening" && Date.now() - openedAt() > 20_000) setPhase("late");
+  }, 1000);
+
+  // When a live share ends, return to idle so the hero CTA comes back.
+  createEffect(() => {
+    if (!live()) setPhase("idle");
+  });
 
   // --- stinger management panel --------------------------------------------
   // A drawer over the sidebar side (never over the video). The button is
@@ -885,7 +914,7 @@ const App: Component = () => {
             <div class="stage-scene">
               <StageBackdrop />
               <Show
-                when={companionOpened()}
+                when={companionPhase() !== "idle"}
                 fallback={
                   <div class="scene-stack">
                     <SceneTv class="scene-tv" />
@@ -898,11 +927,27 @@ const App: Component = () => {
                   </div>
                 }
               >
-                {/* The companion tab is open in the real browser: point at
-                    it rather than describing it. */}
+                {/* One <Show>, four faces. */}
                 <div class="scene-stack">
                   <BrowserTabDoodle class="scene-tab" />
-                  <p class="scene-line">{t("stage.companionOpen")}</p>
+                  <Show when={companionPhase() === "opening"}>
+                    <p class="scene-line">{t("stage.companionOpening")}</p>
+                  </Show>
+                  <Show when={companionPhase() === "late"}>
+                    <p class="scene-line">{t("stage.companionLate")}</p>
+                    <button onClick={shareClicked} class="crayon-btn crayon-btn--go scene-cta">
+                      {t("stage.openAgain")}
+                    </button>
+                  </Show>
+                  <Show when={companionPhase() === "joined"}>
+                    <p class="scene-line">{t("stage.companionOpen")}</p>
+                  </Show>
+                  <Show when={companionPhase() === "failed"}>
+                    <p class="scene-line">{t("stage.companionFailed")}</p>
+                    <button onClick={shareClicked} class="crayon-btn crayon-btn--go scene-cta">
+                      {t("stage.openAgain")}
+                    </button>
+                  </Show>
                 </div>
               </Show>
             </div>
@@ -1016,12 +1061,12 @@ const App: Component = () => {
                 // the footer keeps quiet. It comes back the moment the
                 // stage has a picture on it — or a companion tab to
                 // re-open — so the action is never unreachable.
-                <Show when={live() || companionOpened()}>
+                <Show when={live()}>
                   <button
                     onClick={shareClicked}
                     class="crayon-btn crayon-btn--go"
                   >
-                    {live() ? t("footer.takeStage") : t("stage.shareScreen")}
+                    {t("footer.takeStage")}
                   </button>
                 </Show>
               }

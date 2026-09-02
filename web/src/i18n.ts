@@ -78,6 +78,10 @@ const en = {
   "stage.fsTitle": "Fullscreen · F (T for theater mode)",
   "stage.shareScreen": "Share screen",
   "stage.companionOpen": "Start sharing in the new tab.",
+  "stage.companionOpening": "Opening the sharing tab…",
+  "stage.companionLate": "Tab didn't open? Open again.",
+  "stage.companionFailed": "The tab didn't open.",
+  "stage.openAgain": "Open again",
 
   // --- privacy blank (the panic button) ----------------------------
   // Sharer-side labels are full verbs — this is a control somebody presses
@@ -273,6 +277,10 @@ const ptBR: Record<MessageKey, Message> = {
   "stage.fsTitle": "Tela cheia · F (T pro modo cinema)",
   "stage.shareScreen": "Compartilhar tela",
   "stage.companionOpen": "Comece a transmitir na aba nova.",
+  "stage.companionOpening": "Abrindo a aba de transmissão…",
+  "stage.companionLate": "A aba não abriu? Abre de novo.",
+  "stage.companionFailed": "A aba não abriu.",
+  "stage.openAgain": "Abrir de novo",
 
   // "Sumir" is what a Brazilian actually says about vanishing on purpose
   // ("sumi da call"); "Ocultar tela" is what a settings dialog says. The
