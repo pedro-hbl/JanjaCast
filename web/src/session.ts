@@ -240,6 +240,19 @@ export class Session {
   resumeCinema(): void { this.sendControl("cinema_resume" as any, {}); }
   sendCinemaStroke(d: import('./protocol').CinemaStrokeData): void { this.sendControl("cinema_stroke" as any, d); }
 
+  /** Local-only undo: hide this client's most recent stroke. There is no
+   *  cinema_undo on the wire, so a later full `cinema_state` (pause/resume)
+   *  may bring it back for a moment — resume clears everything anyway. */
+  undoOwnCinemaStroke(): void {
+    const me = this.selfId();
+    this.setCinemaStrokes((xs) => {
+      for (let i = xs.length - 1; i >= 0; i--) {
+        if (xs[i]!.userId === me) return [...xs.slice(0, i), ...xs.slice(i + 1)];
+      }
+      return xs;
+    });
+  }
+
   /** Publisher side: engage or lift the privacy blank for the whole room.
    *  The relay honors it from the current publisher only, and answers with
    *  a `blank_state` to everybody. This is the *relay's* gate — the encoder

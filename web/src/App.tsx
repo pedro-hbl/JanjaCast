@@ -186,20 +186,15 @@ const App: Component = () => {
 
   // --- cinema scribbles (local-only helpers) ------------------------------
   const ownStrokes = () => (session()?.cinemaStrokes() ?? []).filter(s => s.userId === session()?.selfId());
-  const undoLocal = () => {
-    // Local-only: hide last of own strokes by dropping it from the local list.
-    const s = session() as any;
-    if (!s) return;
-    const list = s.cinemaStrokes();
-    const idx = [...list].reverse().findIndex(x => x.userId === s.selfId());
-    if (idx < 0) return;
-    const cut = list.length - 1 - idx;
-    s.setCinemaStrokes?.(list.filter((_: unknown, i: number) => i !== cut));
-  };
+  const undoLocal = () => session()?.undoOwnCinemaStroke();
 
   const sendStroke = (color: string, pts: {x:number;y:number;}[]) => {
     session()?.sendCinemaStroke({ color, points: pts });
   };
+
+  /** The crayon in hand. Lives at App scope so the swatch row and the
+   *  drawing surface hold the same one — both send and preview use it. */
+  const [ink, setInk] = createSignal<string>("redorange");
 
   const ColorSwatches: Component = () => {
     const colors = [
@@ -210,17 +205,16 @@ const App: Component = () => {
       ["--pink","cinema.colorPink","pink"],
       ["--purple","cinema.colorPurple","purple"],
     ] as const;
-    const [picked, setPicked] = createSignal<string>(colors[0][2]);
     return (
       <div style={{ display: "inline-flex", gap: "6px" }}>
         {colors.map(([varName, key, wire]) => (
           <button
             type="button"
             class="color-swatch"
-            aria-pressed={picked() === wire}
+            aria-pressed={ink() === wire}
             aria-label={t(key as any)}
             style={{ background: `var(${varName})` }}
-            onClick={() => setPicked(wire as string)}
+            onClick={() => setInk(wire as string)}
           />
         ))}
       </div>
@@ -265,8 +259,7 @@ const App: Component = () => {
       if (!drawing()) return;
       setDrawing(false);
       (e.currentTarget as Element).releasePointerCapture(e.pointerId);
-      const color = "redorange"; // placeholder: hook up picked swatch if needed
-      if (pts.length>=2) sendStroke(color, pts.slice());
+      if (pts.length>=2) sendStroke(ink(), pts.slice());
       setPath("");
     };
     return (
@@ -300,7 +293,7 @@ const App: Component = () => {
           )}
         </For>
         {/* in-progress */}
-        <path d={path()} fill="none" stroke="var(--crayon-blue)" stroke-width="6" stroke-linecap="round"/>
+        <path d={path()} fill="none" stroke={`var(--${ink()})`} stroke-width="6" stroke-linecap="round"/>
       </svg>
     );
   };
