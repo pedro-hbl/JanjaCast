@@ -201,10 +201,14 @@ func TestTemporalSheddingBeforeFreeze(t *testing.T) {
 	_, bob, _ := hub.Join("r1", "b", "bob")
 
 	// Prime bob past needKeyframe, then fill his queue to exactly capacity
-	// with base-layer traffic (no overflow yet). His queue already holds two
-	// control messages from joining: welcome + room_state.
+	// with base-layer traffic (no overflow yet). Filled by watching the
+	// channel rather than by counting: joining also queues control messages
+	// (welcome, stage_queue, room_state) and that set grows over time.
 	room.ForwardMedia(alice, mediaMsgTL(true, 0))
-	for i := 0; i < sendBuffer-3; i++ {
+	for i := 0; len(bob.out) < sendBuffer; i++ {
+		if i > sendBuffer {
+			t.Fatal("could not fill the viewer queue")
+		}
 		room.ForwardMedia(alice, mediaMsgTL(false, 0))
 	}
 
@@ -620,8 +624,20 @@ func TestPlayStingerConcurrent(t *testing.T) {
 					room.TakeStage(c)
 				}
 				room.PlayStinger(c, manualStinger())
+				// The queue rides the same hammer: request, mode flip,
+				// pass and extend all take r.mu against live join/leave
+				// churn and both AfterFunc timers.
+				room.RequestStage(c)
+				if g%4 == 0 {
+					room.SetStageMode(c, protocol.ModeRodizio)
+				}
+				room.PassStage(c)
+				room.ExtendStage(c)
+				room.WithdrawStage(c)
 				hub.Leave(room, c)
 				room.PlayStinger(c, manualStinger()) // after leaving: must no-op
+				room.RequestStage(c)                 // ditto
+				room.PassStage(c)
 				<-done
 			}
 		}(g)
