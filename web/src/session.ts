@@ -19,7 +19,8 @@ export type SessionStatus =
   | "open"
   | "reconnecting"
   | "closed"
-  | "unauthorized"; // fatal: the server refused our credentials — no retry
+  | "unauthorized" // fatal: the server refused our credentials — no retry
+  | "superseded"; // fatal: this identity joined from a newer session
 
 export interface Credentials {
   accessToken?: string;
@@ -39,6 +40,7 @@ export class Session {
   private closedByUser = false;
   private reconnectAttempt = 0;
   private pingTimer: ReturnType<typeof setInterval> | null = null;
+  private earlyPings: ReturnType<typeof setTimeout>[] = [];
   private clockOffsets: number[] = []; // serverTime - localTime estimates
 
   private setStatus;
@@ -57,6 +59,8 @@ export class Session {
   onStageTaken: ((byName: string) => void) | null = null;
   /** Publisher side: relay congestion feedback (degraded/total viewers). */
   onRateHint: ((degraded: number, viewers: number) => void) | null = null;
+  /** This identity joined from a newer session; this one is done. */
+  onSuperseded: (() => void) | null = null;
 
   constructor(
     private identity: Identity,
@@ -83,7 +87,9 @@ export class Session {
 
     ws.onopen = () => {
       const reconnected = this.reconnectAttempt > 0;
-      this.reconnectAttempt = 0;
+      // The attempt counter resets on "welcome" (a *successful* join), not
+      // here — a server that accepts the socket and closes immediately
+      // would otherwise loop at the minimum backoff forever.
       this.sendControl("join", {
         room: this.identity.room,
         userId: this.identity.userId,
@@ -140,14 +146,15 @@ export class Session {
     this.stopPinging();
     const ping = () => this.sendControl("ping", { t: performance.now() });
     ping();
-    setTimeout(ping, 500); // a couple of quick early samples
-    setTimeout(ping, 1500);
+    this.earlyPings = [setTimeout(ping, 500), setTimeout(ping, 1500)];
     this.pingTimer = setInterval(ping, PING_INTERVAL_MS);
   }
 
   private stopPinging(): void {
     if (this.pingTimer) clearInterval(this.pingTimer);
     this.pingTimer = null;
+    for (const t of this.earlyPings) clearTimeout(t);
+    this.earlyPings = [];
   }
 
   /** Current estimate of the server's wall clock, in Unix milliseconds. */
@@ -219,11 +226,20 @@ export class Session {
   private handleControl(ctrl: Control): void {
     switch (ctrl.type) {
       case "welcome": {
+        this.reconnectAttempt = 0; // join actually succeeded
         const welcome = (ctrl.data ?? {}) as WelcomeData;
         if (welcome.selfId) this.assignedId = welcome.selfId;
         this.setStage(welcome);
         break;
       }
+      case "superseded":
+        // This identity joined from a newer session; retrying from here
+        // would kick that session in an endless fight. Terminal.
+        this.closedByUser = true;
+        this.setStatus("superseded");
+        this.onSuperseded?.();
+        this.ws?.close();
+        break;
       case "stage_state":
         this.setStage((ctrl.data ?? {}) as StageStateData);
         break;

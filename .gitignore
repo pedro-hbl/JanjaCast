@@ -15,3 +15,4 @@ web/dist/*
 .claude/
 *~
 *.exe
+server.log

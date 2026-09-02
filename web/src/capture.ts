@@ -8,9 +8,10 @@
 import { KIND_AUDIO, KIND_VIDEO, packMedia, type ConfigData } from "./protocol";
 
 // Safety-net keyframe cadence. Recovery and late-join are driven by
-// keyframe-on-demand requests from the relay, so this only bounds the worst
-// case — a long interval saves substantial bitrate on static screen content.
-const KEYFRAME_INTERVAL_US = 10_000_000;
+// keyframe-on-demand requests from the relay; this bounds the worst case
+// AND keeps a full GOP small enough (≤240 chunks at 60fps) to fit a fresh
+// client's 256-slot queue, so the late-join cache stays replayable.
+const KEYFRAME_INTERVAL_US = 4_000_000;
 
 // Adaptive bitrate: when the WebSocket send buffer backs up the uplink can't
 // keep pace — step the encoder down; after a sustained clear period, step
@@ -249,8 +250,9 @@ export async function startCapture(
       clearSeconds = 0;
       if (next < bitrate) {
         bitrate = next;
+        // No forced IDR here: pushing the largest possible frame into an
+        // already-congested uplink defeats the point of stepping down.
         videoEncoder.configure({ ...chosen.config, bitrate });
-        keyframeWanted = true; // reconfigure can reset reference state
       }
     } else if (backlog < ABR_LOW_WATER && bitrate < targetBitrate) {
       clearSeconds++;

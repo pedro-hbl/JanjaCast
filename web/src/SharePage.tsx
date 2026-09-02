@@ -49,6 +49,13 @@ const SharePage: Component = () => {
     capture()?.applyRateHint(degraded, viewers);
   // If someone takes the stage, say so instead of silently reverting.
   session.onStageTaken = (byName) => setTakenBy(byName);
+  // A newer share session replaced this tab (e.g. Share clicked again in
+  // Discord): stop capturing here, terminally.
+  session.onSuperseded = () => {
+    capture()?.stop();
+    setCapture(null);
+    setError("This share was replaced by a newer sharing tab — you can close this one.");
+  };
 
   // Remote stop: if we held the stage and it is no longer ours (the user
   // clicked Stop in the Activity, or someone took over), end capture here.

@@ -248,3 +248,53 @@ func TestTemporalSheddingBeforeFreeze(t *testing.T) {
 		t.Fatal("viewer not frozen after base-layer overflow")
 	}
 }
+
+// TestSessionTakeoverNewestWins: the same identity joining again replaces
+// the old connection — no ghost roster entries — and the old connection is
+// told it was superseded (terminally) rather than just dropped.
+func TestSessionTakeoverNewestWins(t *testing.T) {
+	hub := NewHub(discard())
+	room, first, firstOut := hub.Join("r1", "u1:tab", "pedro (sharing)")
+	room.TakeStage(first)
+
+	room2, second, _ := hub.Join("r1", "u1:tab", "pedro (sharing)")
+	if room2 != room {
+		t.Fatal("takeover produced a different room")
+	}
+
+	// The old connection's sequence must terminate (done closed) after
+	// delivering the superseded control.
+	sawSuperseded := false
+	for _, m := range collect(firstOut) {
+		if m.Binary() {
+			continue
+		}
+		var ctrl protocol.Control
+		if err := json.Unmarshal(m.Payload(), &ctrl); err == nil &&
+			ctrl.Type == protocol.CtrlSuperseded {
+			sawSuperseded = true
+		}
+	}
+	if !sawSuperseded {
+		t.Fatal("old connection was not told it was superseded")
+	}
+
+	// Roster holds exactly one entry for the identity, and the stage was
+	// freed (the old publisher is gone; the new session re-takes it).
+	room.mu.Lock()
+	count := len(room.clients)
+	pub := room.publisher
+	room.mu.Unlock()
+	if count != 1 {
+		t.Fatalf("roster has %d clients after takeover, want 1", count)
+	}
+	if pub != nil {
+		t.Fatalf("stage still held after its holder was superseded")
+	}
+
+	// And the new session works normally.
+	room.TakeStage(second)
+	if got := stageOf(room).PublisherID; got != "u1:tab" {
+		t.Fatalf("new session cannot take the stage (publisher %q)", got)
+	}
+}

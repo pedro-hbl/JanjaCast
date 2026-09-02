@@ -70,18 +70,28 @@ func (a *authn) verifyDiscordToken(ctx context.Context, token string) (identity,
 
 	id, err := a.fetchDiscordIdentity(ctx, token)
 
+	// Transport failures (Discord down, network blip) are NOT verdicts —
+	// caching them would brick every client that connects during the blip.
+	if errors.Is(err, errAuthUnavailable) {
+		return id, err
+	}
+
 	a.mu.Lock()
 	if len(a.cache) > 4096 { // crude bound; entries expire anyway
 		clear(a.cache)
 	}
 	ttl := 10 * time.Minute
 	if err != nil {
-		ttl = 30 * time.Second // negative cache
+		ttl = 30 * time.Second // negative cache: actual rejections only
 	}
 	a.cache[key] = cachedIdentity{id: id, err: err, expireAt: time.Now().Add(ttl)}
 	a.mu.Unlock()
 	return id, err
 }
+
+// errAuthUnavailable marks verification failures that say nothing about the
+// token itself — the caller must treat them as transient, not as rejection.
+var errAuthUnavailable = errors.New("auth backend unavailable")
 
 func (a *authn) fetchDiscordIdentity(ctx context.Context, token string) (identity, error) {
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
@@ -91,9 +101,12 @@ func (a *authn) fetchDiscordIdentity(ctx context.Context, token string) (identit
 	req.Header.Set("Authorization", "Bearer "+token)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return identity{}, fmt.Errorf("discord unreachable: %w", err)
+		return identity{}, fmt.Errorf("%w: %v", errAuthUnavailable, err)
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode >= 500 || resp.StatusCode == http.StatusTooManyRequests {
+		return identity{}, fmt.Errorf("%w: discord returned %d", errAuthUnavailable, resp.StatusCode)
+	}
 	if resp.StatusCode != http.StatusOK {
 		return identity{}, fmt.Errorf("discord rejected token: %d", resp.StatusCode)
 	}

@@ -46,6 +46,16 @@ const App: Component = () => {
       s.onSync = (sync) => player?.setSync(sync);
       // Fast recovery: when video stalls waiting for a keyframe, ask for one.
       player.onNeedKeyframe = () => s.requestKeyframe();
+      // Publisher-side plumbing for the local-capture path (plain-browser
+      // dev / any future in-iframe capture): same wiring SharePage has.
+      s.onKeyframeRequest = () => capture()?.forceKeyframe();
+      s.onRateHint = (d, v) => capture()?.applyRateHint(d, v);
+      s.onStageTaken = (byName) => {
+        if (capture()) {
+          stopSharing();
+          setError(`✋ ${byName} took the stage.`);
+        }
+      };
       s.connect();
       setSession(s);
     } catch (e) {
@@ -89,7 +99,14 @@ const App: Component = () => {
       fetch(apiPath("/api/share-token"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ accessToken: id.accessToken, room: id.room }),
+        body: JSON.stringify({
+          accessToken: id.accessToken,
+          room: id.room,
+          // Honored only by anonymous dev servers, so ownsStage()/remote
+          // stop work in the plain-browser flow too.
+          userId: id.userId,
+          username: id.username,
+        }),
       }),
     ]);
     if (!tokenResp.ok) throw new Error(`share token refused: ${tokenResp.status}`);
@@ -128,8 +145,12 @@ const App: Component = () => {
       return;
     }
     try {
-      const handle = await startCapture(fps(), (buf) => s.sendMedia(buf));
+      const handle = await startCapture(fps(), (buf) => s.sendMedia(buf), {
+        backpressure: () => s.bufferedAmount(),
+        contentHint: "text",
+      });
       handle.onended = stopSharing;
+      handle.onconfigchange = (cfg) => s.announceConfig(cfg);
       setCapture(handle);
       s.takeStage();
       s.announceConfig(handle.config);

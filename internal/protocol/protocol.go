@@ -99,6 +99,11 @@ const (
 	// Server -> displaced publisher.
 	CtrlStageTaken ControlType = "stage_taken" // someone took your stage
 
+	// Server -> replaced connection: the same identity joined again
+	// (newest wins). Terminal — the receiver must NOT reconnect, or the
+	// two sessions would kick each other forever.
+	CtrlSuperseded ControlType = "superseded"
+
 	// Server -> publisher: congestion feedback from the fan-out side. The
 	// publisher's uplink signal (bufferedAmount) cannot see relay->viewer
 	// pressure; this closes that loop.

@@ -59,6 +59,28 @@ func (h *Hub) Join(roomID, userID, username string) (*Room, *Client, iter.Seq[Ou
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
+	// Session takeover, newest wins: the same identity joining again (a
+	// restarted share, a reconnect racing its own half-open predecessor)
+	// replaces the old connection instead of accumulating ghost roster
+	// entries. The superseded control is terminal client-side, so an old
+	// tab left open does not reconnect-fight the new one.
+	for old := range r.clients {
+		if old.UserID != userID {
+			continue
+		}
+		old.enqueueControl(protocol.CtrlSuperseded, struct{}{})
+		delete(r.clients, old)
+		old.closeOnce.Do(func() { close(old.done) })
+		if r.publisher == old {
+			r.publisher = nil
+			r.config = nil
+			r.clearGOPLocked()
+			r.gateViewersLocked()
+			r.broadcastStageStateLocked()
+		}
+		r.log.Info("superseded", "user", username, "id", userID)
+	}
+
 	c := &Client{
 		UserID:       userID,
 		Username:     username,
