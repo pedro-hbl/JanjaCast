@@ -1,24 +1,29 @@
-import { createEffect, createMemo, createSignal, onCleanup } from "solid-js";
+import { createEffect, createMemo, createSignal } from "solid-js";
 import { ReactionEmojis, type ReactionEmoji, type ReactionBurstData } from "./protocol";
 import { t } from "./i18n";
-import { Session } from "./session";
+import type { Session } from "./session";
 
-// Edge-pinned reaction bar and float sprites layer. No center overlay.
+// Edge-pinned reaction bar, hype meter and float-sprite layer. Everything
+// lives INSIDE .stage so absolute positions are stage-relative, and nothing
+// ever spawns over the center safe-zone — sprites hug the side gutters.
 
-export function ReactionBar() {
-  const s = (window as any)._jcSession as Session | undefined; // fallback binding set in App
+export function ReactionBar(props: { session: () => Session | null }) {
   const [density, setDensity] = createSignal(0);
-  const [lastBurst, setLastBurst] = createSignal<ReactionBurstData | null>(null);
+  let floatLayer: HTMLDivElement | undefined;
 
-  // Wire WS control listener.
-  if (s) {
-    s.onReactionBurst = (d) => { setLastBurst(d as any); setDensity((d as any).density ?? 0); spawnSprites(d as any); };
-  }
+  // The session arrives after mount (identity setup is async), so the
+  // listener is wired reactively — a bare read at component creation would
+  // leave the bar deaf forever.
+  createEffect(() => {
+    const s = props.session();
+    if (!s) return;
+    s.onReactionBurst = (d) => {
+      setDensity(d.density ?? 0);
+      if (floatLayer) spawnSprites(floatLayer, d as ReactionBurstData);
+    };
+  });
 
-  const send = (e: ReactionEmoji) => {
-    // private send hook: same shape Session uses internally
-    (s as any)?.sendControl?.("reaction", { emoji: e });
-  };
+  const send = (e: ReactionEmoji) => props.session()?.sendReaction(e);
 
   const hype = createMemo(() => {
     const d = density();
@@ -28,17 +33,28 @@ export function ReactionBar() {
   });
 
   return (
-    <div class="reaction-ui">
-      <div class="reaction-bar" role="group" aria-label={t("reactions.bar.label")}> 
-        {ReactionEmojis.map((e) => (
-          <button type="button" class="seg-btn reaction-btn" aria-label={t(`reactions.aria.${e}` as any)} onClick={() => send(e)}>
-            <span class={`rx rx-${e}`} aria-hidden="true">{emojiChar(e)}</span>
-          </button>
-        ))}
+    <>
+      <div class="reaction-float" ref={floatLayer} aria-hidden="true" />
+      <div class="reaction-ui">
+        <div class="reaction-bar" role="group" aria-label={t("reactions.bar.label")}>
+          {ReactionEmojis.map((e) => (
+            <button
+              type="button"
+              class="reaction-btn"
+              aria-label={t(`reactions.aria.${e}` as never)}
+              onClick={() => send(e)}
+            >
+              <span class={`rx rx-${e}`} aria-hidden="true">{emojiChar(e)}</span>
+            </button>
+          ))}
+        </div>
+        <HypeMeter
+          value={density()}
+          label={hype()}
+          publisher={Boolean(props.session()?.isPublisher())}
+        />
       </div>
-      <HypeMeter value={density()} label={hype()} publisher={Boolean(s?.isPublisher())} />
-      <div class="reaction-float" aria-hidden="true" />
-    </div>
+    </>
   );
 }
 
@@ -63,25 +79,19 @@ function emojiChar(e: ReactionEmoji): string {
   }
 }
 
-// Spawn float sprites along edges; capped per burst.
-function spawnSprites(d: ReactionBurstData) {
-  const layer = document.querySelector(".reaction-float");
-  if (!layer) return;
-  const rect = (document.querySelector(".stage-scene, .stage-canvas") as HTMLElement) || document.body;
-  const safe = rect.getBoundingClientRect();
+/** Spawn rising sprites in the two side gutters of the stage (never the
+ *  center band). Positions are percentages of the layer itself, so this
+ *  needs no viewport math and survives fullscreen/theater. */
+function spawnSprites(layer: HTMLDivElement, d: ReactionBurstData) {
   const cap = 12;
-  const entries = Object.entries(d.counts);
-  for (const [e, n] of entries) {
-    const count = Math.min(n, cap);
-    for (let i = 0; i < count; i++) {
+  for (const [e, n] of Object.entries(d.counts)) {
+    for (let i = 0; i < Math.min(n, cap); i++) {
       const el = document.createElement("div");
       el.className = `rx-float rx-${e}`;
       el.textContent = emojiChar(e as ReactionEmoji);
-      // Edge: left or right; avoid center band horizontally.
       const side = Math.random() < 0.5 ? "left" : "right";
-      const y = safe.bottom - 20 + Math.random() * 10;
-      el.style.setProperty(side, "8px");
-      el.style.setProperty("top", `${y}px`);
+      el.style.setProperty(side, `${2 + Math.random() * 6}%`);
+      el.style.top = `${65 + Math.random() * 20}%`;
       el.style.animationDelay = `${Math.random() * 0.2}s`;
       el.addEventListener("animationend", () => el.remove());
       layer.appendChild(el);

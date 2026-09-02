@@ -244,6 +244,10 @@ export class Session {
   resumeCinema(): void { this.sendControl("cinema_resume" as any, {}); }
   sendCinemaStroke(d: import('./protocol').CinemaStrokeData): void { this.sendControl("cinema_stroke" as any, d); }
 
+  /** One reaction tap. The relay validates the emoji, applies the per-client
+   *  cooldown, and answers the whole room with aggregated bursts. */
+  sendReaction(emoji: string): void { this.sendControl("reaction" as any, { emoji }); }
+
   /** Local-only undo: hide this client's most recent stroke. There is no
    *  cinema_undo on the wire, so a later full `cinema_state` (pause/resume)
    *  may bring it back for a moment — resume clears everything anyway. */

@@ -27,7 +27,7 @@ import {
 } from "./i18n";
 import { LangToggle } from "./LangToggle";
 import { Session, type SessionStatus } from "./session";
-import Lobby from "./lobby";
+
 import type { StageMode, StageTurnData, StingerData, PlacarStateData } from "./protocol";
 import { playTurnCue } from "./cue";
 import { startCapture, type CaptureHandle } from "./capture";
@@ -1105,14 +1105,64 @@ const App: Component = () => {
               ⛶
             </button>
           </Show>
-          {/* Lobby replaces the old empty-stage scene. Presence stays in sidebar. */}
+          {/* The empty stage is a drawing, not a sentence: the JanjaCast
+              set standing in the grass under a sun, switched off, with the
+              one thing you can do about it planted in front of it. The
+              lobby's presence line rides along under the TV — the room is
+              a place even before anybody turns the set on. */}
           <Show when={!live()}>
-            <Lobby session={session()} canCapture={captureAllowed()} onShare={shareClicked} />
+            <div class="stage-scene">
+              <StageBackdrop />
+              <Show
+                when={companionPhase() !== "idle"}
+                fallback={
+                  <div class="scene-stack">
+                    <SceneTv class="scene-tv" />
+                    <p class="scene-line">
+                      {roster().length > 1
+                        ? t("lobby.here", { count: roster().length })
+                        : t("lobby.alone")}
+                    </p>
+                    <button
+                      onClick={shareClicked}
+                      class="crayon-btn crayon-btn--go scene-cta"
+                    >
+                      {t("stage.shareScreen")}
+                    </button>
+                  </div>
+                }
+              >
+                {/* One <Show>, four faces. */}
+                <div class="scene-stack">
+                  <BrowserTabDoodle class="scene-tab" />
+                  <Show when={companionPhase() === "opening"}>
+                    <p class="scene-line">{t("stage.companionOpening")}</p>
+                  </Show>
+                  <Show when={companionPhase() === "late"}>
+                    <p class="scene-line">{t("stage.companionLate")}</p>
+                    <button onClick={shareClicked} class="crayon-btn crayon-btn--go scene-cta">
+                      {t("stage.openAgain")}
+                    </button>
+                  </Show>
+                  <Show when={companionPhase() === "joined"}>
+                    <p class="scene-line">{t("stage.companionOpen")}</p>
+                  </Show>
+                  <Show when={companionPhase() === "failed"}>
+                    <p class="scene-line">{t("stage.companionFailed")}</p>
+                    <button onClick={shareClicked} class="crayon-btn crayon-btn--go scene-cta">
+                      {t("stage.openAgain")}
+                    </button>
+                  </Show>
+                </div>
+              </Show>
+            </div>
           </Show>
-        </div>
 
-        {/* Edge UI: reactions + hype, never over center safe-zone */}
-        <ReactionBar />
+          {/* Edge UI: reactions + hype. Inside .stage so the bar pins to the
+              stage corner and sprites rise in its gutters — but only chrome,
+              never over the center safe-zone. */}
+          <ReactionBar session={session} />
+        </div>
 
         <aside class="sidebar">
           {/* count and label are separate spans so the number can carry the
