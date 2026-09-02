@@ -25,7 +25,75 @@ export type ControlType =
   | "superseded"
   | "stinger"
   | "stinger_play"
+  | "stage_request"
+  | "stage_withdraw"
+  | "stage_pass"
+  | "stage_mode"
+  | "stage_extend"
+  | "stage_queue"
+  | "stage_turn"
+  | "stage_cancel"
   | "error";
+
+/* ---------------------------- the stage queue ----------------------------
+ * "Pedir a vez": a visible FIFO line beside the roster, and — in rodízio
+ * mode — a clock on each turn. Mirrors internal/protocol/protocol.go. */
+
+/** The room's turn-taking mode. Livre is the default: the line exists, the
+ *  sharer hands it on whenever. Rodízio adds the clock and the wheel. */
+export type StageMode = "livre" | "rodizio";
+
+/** Why a pending turn ended. */
+export type StageCancelReason =
+  | "timeout"
+  | "left"
+  | "accepted"
+  | "stage_changed";
+
+/** How the next person was chosen. "wheel" is the one that gets an
+ *  animation — it is a real draw, so the spin is not a lie. */
+export type StageTurnMethod = "queue" | "wheel";
+
+/** One person waiting. `initialsEmoji` is computed server-side so every
+ *  client draws the same chip. */
+export interface QueueEntry {
+  userId: string;
+  username: string;
+  initialsEmoji: string;
+}
+
+/** The whole "who is next" state in one message.
+ *
+ *  `timerStartMs` / `turnEndsMs` are SERVER wall clock (Unix ms) — read them
+ *  against `session.serverNow()`, never `Date.now()`. `turnLenMs` already
+ *  includes the +5 once `extended` is true, so the client never repeats that
+ *  maths. */
+export interface StageQueueData {
+  queue: QueueEntry[];
+  mode: StageMode;
+  timerStartMs?: number; // 0/absent = the stage is free
+  turnLenMs: number;
+  extended?: boolean;
+  turnUserId?: string;
+  turnEndsMs?: number;
+}
+
+export interface StageModeData {
+  mode: StageMode;
+}
+
+/** "É tua!" — one person has `ttlMs` to claim the stage. */
+export interface StageTurnData {
+  userId: string;
+  username: string;
+  ttlMs: number;
+  method: StageTurnMethod;
+}
+
+export interface StageCancelData {
+  userId: string;
+  reason: StageCancelReason;
+}
 
 /** Server-chosen stinger: the same image + sound pair (same-origin URLs under
  *  /stingers/) for every participant. "start"/"stop" are the automatic stream

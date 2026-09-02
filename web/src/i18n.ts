@@ -96,11 +96,52 @@ const en = {
   "footer.stingers": "🎺 Stingers",
   "footer.stingersTitle": "Add, curate and fire the room's stingers",
 
+  // --- the stage queue ("pedir a vez") -----------------------------
+  // The line is the feature; rodízio is the clock layered on top of it.
+  // Informal where the app narrates ("it's yours!"), full verbs on every
+  // control — docs/i18n.md § 3.
+  "queue.title": "Up next",
+  "queue.request": "Ask for a turn",
+  "queue.withdraw": "Leave the line",
+  "queue.pass": "Pass it on",
+  "queue.empty": "Nobody in line yet.",
+  "queue.position": "{name} — #{n} in line",
+  "queue.chipTitle": "{name} is waiting",
+  "queue.modeLabel": "Turns",
+  "queue.modeLivre": "Free",
+  "queue.modeRodizio": "Rodízio",
+  "queue.modeTitle":
+    "Free: hand the stage on whenever. Rodízio: 20 minutes each, and the app asks who is next.",
+
+  // The call itself — the moment the whole room hears the cue.
+  "turn.yours": "It's yours!",
+  // Careful not to promise the stage is empty: a turn survives somebody else
+  // grabbing the stage mid-call, and taking it from them is exactly what the
+  // turn authorises. So the line says what to DO, not what the stage is.
+  "turn.yoursBody": "Go on — take the stage before the {s}s run out.",
+  "turn.take": "Take the stage",
+  "turn.pill": "Yours for {s}s",
+  "turn.someone": "🎤 {name} is up next.",
+  "turn.wheel": "🎡 The wheel picked {name}!",
+  "turn.missed": "⏱ Nobody took it — moving on.",
+
+  // Rodízio clock, in the companion tab.
+  "rodizio.left": "{m}m {s}s left",
+  "rodizio.oneMinute": "⏰ One minute left on stage.",
+  "rodizio.upTitle": "Your turn's up!",
+  "rodizio.upBody":
+    "That flew by, huh? Pass it on, or grab five more minutes.",
+  "rodizio.extend": "+5 min",
+
   // --- errors ------------------------------------------------------
   "err.tookStage": "✋ {name} took the stage.",
   "err.superseded":
     "Opened elsewhere — this view is disconnected. Close and reopen the Activity here to take over.",
   "err.shareToken": "Share token refused ({status}).",
+  // Server refusals. The key is `err.` + the code in ErrorData.Code.
+  "err.stage.noNext": "⛔ Nobody to hand it to — get someone in line first.",
+  "err.stage.extended": "⛔ You already took your +5.",
+  "err.stage.cooldown": "⛔ Hold on a second before passing again.",
 
   // --- takeover modal ----------------------------------------------
   "modal.kick": "✋ Kick {name} off the stage?",
@@ -239,10 +280,49 @@ const ptBR: Record<MessageKey, Message> = {
   "footer.stingers": "🎺 Stingers",
   "footer.stingersTitle": "Adicione, escolha e dispare os stingers da sala",
 
+  // A fila é a coisa; o rodízio é o relógio em cima dela. "Pedir a vez" e
+  // "é tua!" são as frases que as pessoas usam de verdade — docs/i18n.md § 3.
+  "queue.title": "Fila da vez",
+  "queue.request": "Pedir a vez",
+  "queue.withdraw": "Sair da fila",
+  // "Passar a vez" é o par exato de "Pedir a vez": uma pessoa pede, a outra
+  // passa. "Passar o bastão" é a metáfora de corrida de revezamento e não
+  // combina com "o palco", que é a metáfora da casa.
+  "queue.pass": "Passar a vez",
+  "queue.empty": "Ninguém na fila ainda.",
+  "queue.position": "{name} — {n}º na fila",
+  "queue.chipTitle": "{name} tá esperando",
+  "queue.modeLabel": "Vez",
+  "queue.modeLivre": "Livre",
+  // "Rodízio" é a palavra que todo brasileiro já entende sem explicação.
+  "queue.modeRodizio": "Rodízio",
+  "queue.modeTitle":
+    "Livre: passa o palco quando quiser. Rodízio: 20 minutos pra cada um, e o app pergunta quem é o próximo.",
+
+  "turn.yours": "É tua!",
+  "turn.yoursBody": "Bora — assume o palco antes dos {s}s acabarem.",
+  "turn.take": "Assumir o palco",
+  "turn.pill": "É tua por {s}s",
+  // "{name} é o próximo" would need to agree with the person's gender, and a
+  // display name cannot tell us. "É a vez de {name}" agrees with "a vez" and
+  // is what somebody would actually say out loud.
+  "turn.someone": "🎤 Agora é a vez de {name}.",
+  "turn.wheel": "🎡 A roleta escolheu {name}!",
+  "turn.missed": "⏱ Ninguém pegou — bora pro próximo.",
+
+  "rodizio.left": "faltam {m}m {s}s",
+  "rodizio.oneMinute": "⏰ Falta um minuto no palco.",
+  "rodizio.upTitle": "Tua vez acabou!",
+  "rodizio.upBody": "Passou voando, né? Passa a vez ou pega mais cinco minutos.",
+  "rodizio.extend": "+5 min",
+
   "err.tookStage": "✋ {name} assumiu o palco.",
   "err.superseded":
     "Aberto em outro lugar — esta janela foi desconectada. Feche e abra a Atividade aqui pra assumir.",
   "err.shareToken": "Token de compartilhamento recusado ({status}).",
+  "err.stage.noNext": "⛔ Não tem pra quem passar — chame alguém pra fila primeiro.",
+  "err.stage.extended": "⛔ Você já pegou seus +5.",
+  "err.stage.cooldown": "⛔ Espera um pouquinho antes de passar de novo.",
 
   "modal.kick": "✋ Tirar {name} do palco?",
   "modal.yes": "Bora, minha vez",
@@ -445,6 +525,20 @@ const interpolate = (tpl: string, params?: Params): string =>
  *     t("modal.kick", { name: "pedro" })
  *     t("share.watching", { count: viewers() })
  */
+/**
+ * Map a server error code (`ErrorData.Code`, e.g. `"stage.noNext"`) onto its
+ * dictionary key, or null when the code is one this client does not know.
+ *
+ * The lookup is a membership test against the real dictionary rather than a
+ * cast, so a server that grows a new code renders nothing instead of the raw
+ * identifier — and adding the key here is what makes it appear, in both
+ * languages, with the build enforcing the pair.
+ */
+export function errorKey(code: string): MessageKey | null {
+  const key = `err.${code}`;
+  return key in en ? (key as MessageKey) : null;
+}
+
 export function t(key: MessageKey, params?: Params): string {
   const msg: Message =
     dictionaries[locale()][key] ?? (en[key] as Message) ?? key;

@@ -13,8 +13,8 @@ import {
 import type { Identity } from "./discord";
 import { Session, type SessionStatus } from "./session";
 import { startCapture, type CaptureHandle } from "./capture";
-import { CastMark, OnAirDot, SunDoodle, Wordmark } from "./doodles";
-import { t, type MessageKey, type Params } from "./i18n";
+import { CastMark, HandUpDoodle, OnAirDot, SunDoodle, Wordmark } from "./doodles";
+import { errorKey, t, type MessageKey, type Params } from "./i18n";
 import { LangToggle } from "./LangToggle";
 import "./theme.css";
 
@@ -107,6 +107,54 @@ const SharePage: Component = () => {
   const [viewers, setViewers] = createSignal(0);
   const [budgetKbps, setBudgetKbps] = createSignal(0);
 
+  // --- the rodízio clock ----------------------------------------------------
+  // The capture tab is where the sharer is actually looking while they share,
+  // so this is where the clock lives. Everything is derived from the server's
+  // timestamps (session.queue()) against session.serverNow(): a client with a
+  // skewed clock renders a wrong countdown, never a different answer than the
+  // room's. The only local state is "I dismissed the one-minute warning".
+  const [now, setNow] = createSignal(0);
+  const clockTimer = setInterval(() => setNow((n) => n + 1), 500);
+  const [warnDismissed, setWarnDismissed] = createSignal(false);
+
+  /** Milliseconds left in this turn, or null when no clock is running. */
+  const msLeft = (): number | null => {
+    now(); // subscribe
+    const q = session.queue();
+    if (q.mode !== "rodizio" || !q.timerStartMs) return null;
+    if (!capture()) return null; // not our turn to be counting
+    return q.timerStartMs + q.turnLenMs - session.serverNow();
+  };
+  const timeLeftLabel = () => {
+    const ms = Math.max(0, msLeft() ?? 0);
+    return t("rodizio.left", {
+      m: Math.floor(ms / 60000),
+      s: Math.floor((ms % 60000) / 1000),
+    });
+  };
+  const oneMinuteLeft = () => {
+    const ms = msLeft();
+    return ms != null && ms > 0 && ms <= 60_000 && !warnDismissed();
+  };
+  const timeUp = () => {
+    const ms = msLeft();
+    return ms != null && ms <= 0;
+  };
+
+  // A fresh turn (or a fresh +5) re-arms the warning: dismissing it once must
+  // not silence it for the rest of the night.
+  createEffect(() => {
+    const q = session.queue();
+    void q.timerStartMs;
+    void q.extended;
+    setWarnDismissed(false);
+  });
+
+  session.onServerError = (code) => {
+    const key = errorKey(code);
+    if (key) setError({ key });
+  };
+
   void fetch("/api/config")
     .then((r) => r.json())
     .then((c: { egressBudgetKbps?: number }) =>
@@ -184,6 +232,7 @@ const SharePage: Component = () => {
   onCleanup(() => {
     clearInterval(statsTimer);
     clearInterval(syncTimer);
+    clearInterval(clockTimer);
     capture()?.stop();
     session.close();
   });
@@ -382,6 +431,37 @@ const SharePage: Component = () => {
             </div>
             <span class="seg-unit">fps</span>
           </div>
+          {/* The rodízio clock. Only visible in rodízio mode — in livre mode
+              there is nothing counting and therefore nothing to show. */}
+          <Show when={msLeft() != null}>
+            <p class="rodizio-line">
+              <span class="stat-pill">{timeLeftLabel()}</span>
+              <button
+                type="button"
+                class="crayon-btn crayon-btn--chalk crayon-btn--tiny"
+                onClick={() => {
+                  setError(null);
+                  session.passStage();
+                }}
+              >
+                {t("queue.pass")}
+              </button>
+            </p>
+          </Show>
+          {/* One minute out: a nudge you can wave away, not a wall. */}
+          <Show when={oneMinuteLeft()}>
+            <p class="rodizio-warn">
+              {t("rodizio.oneMinute")}{" "}
+              <button
+                type="button"
+                class="rodizio-warn-close"
+                aria-label={t("modal.no")}
+                onClick={() => setWarnDismissed(true)}
+              >
+                ×
+              </button>
+            </p>
+          </Show>
           <p class="share-room">
             {t("share.watching", { count: viewers() })} ·{" "}
             {t("share.upload", {
@@ -406,6 +486,46 @@ const SharePage: Component = () => {
           <p class="error-text">{errorText()}</p>
         </Show>
       </div>
+
+      {/* Time's up. Blocking, because this is the one moment the rodízio
+          needs an answer — but it never takes the stage away by itself
+          (there is no forced release), so both buttons are the sharer's own
+          decision. Same `.share-card` modal object as the takeover confirm. */}
+      <Show when={timeUp()}>
+        <div class="modal-scrim">
+          <div class="share-card modal-card">
+            <h2 class="modal-title">
+              <HandUpDoodle class="modal-title-icon" />
+              {t("rodizio.upTitle")}
+            </h2>
+            <p class="modal-msg">{t("rodizio.upBody")}</p>
+            <div class="modal-actions">
+              <button
+                class="crayon-btn crayon-btn--go"
+                onClick={() => {
+                  setError(null);
+                  session.passStage();
+                }}
+              >
+                {t("queue.pass")}
+              </button>
+              <button
+                class="crayon-btn crayon-btn--chalk"
+                disabled={session.queue().extended}
+                onClick={() => {
+                  setError(null);
+                  session.extendStage();
+                }}
+              >
+                {t("rodizio.extend")}
+              </button>
+            </div>
+            <Show when={error()}>
+              <p class="error-text">{errorText()}</p>
+            </Show>
+          </div>
+        </div>
+      </Show>
 
       <div class="grass-strip" aria-hidden="true" />
     </div>

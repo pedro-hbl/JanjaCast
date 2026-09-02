@@ -19,6 +19,7 @@ import {
 } from "./discord";
 import {
   adoptClientLocale,
+  errorKey,
   localeParam,
   t,
   type MessageKey,
@@ -26,7 +27,8 @@ import {
 } from "./i18n";
 import { LangToggle } from "./LangToggle";
 import { Session, type SessionStatus } from "./session";
-import type { StingerData } from "./protocol";
+import type { StageMode, StageTurnData, StingerData } from "./protocol";
+import { playTurnCue } from "./cue";
 import { startCapture, type CaptureHandle } from "./capture";
 import { Player } from "./player";
 import {
@@ -34,6 +36,7 @@ import {
   CastMark,
   CloudDoodle,
   EyesDoodle,
+  HandUpDoodle,
   LinkDot,
   MegaphoneDoodle,
   OnAirDot,
@@ -42,6 +45,7 @@ import {
   ScribbleLoader,
   StickFigure,
   SunDoodle,
+  WheelArrow,
   Wordmark,
 } from "./doodles";
 import { StingerPanel } from "./stingers";
@@ -142,6 +146,30 @@ const App: Component = () => {
   );
   /** Viewer magnification (scroll to zoom, drag to pan — see player.ts). */
   const [zoom, setZoom] = createSignal(1);
+
+  // --- the stage queue ------------------------------------------------------
+  // Who is in line, whose turn it is and how long they have left are all
+  // SERVER state (session.queue()), never mirrored into local signals — a
+  // second copy is a second answer, and this feature's whole job is that
+  // everybody in the room has the same one. The only local state here is the
+  // two things that are genuinely transient: the wheel animation and the
+  // toast that names who was picked.
+  const [wheel, setWheel] = createSignal<StageTurnData | null>(null);
+  const [turnToast, setTurnToast] = createSignal<{
+    key: MessageKey;
+    params?: Params;
+  } | null>(null);
+  /** Ticks the countdowns. Cheap, and one timer for both clocks means the
+   *  turn pill and the rodízio pill never disagree by a frame. */
+  const [tick, setTick] = createSignal(0);
+  let wheelTimer: ReturnType<typeof setTimeout> | null = null;
+  let toastTimer: ReturnType<typeof setTimeout> | null = null;
+
+  const flashToast = (key: MessageKey, params?: Params) => {
+    setTurnToast({ key, params });
+    if (toastTimer) clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => setTurnToast(null), 4500);
+  };
   const [stats, setStats] = createSignal<{
     fps: number;
     kbps: number;
@@ -330,6 +358,40 @@ const App: Component = () => {
       s.onSuperseded = () => setError({ key: "err.superseded" });
       // Stream start/stop stinger — the sharer's own view plays it too.
       s.onStinger = (st) => void playStinger(st);
+      // Somebody was called to the stage. The cue is room-wide on purpose —
+      // "é tua!" is something the whole call hears, the way it would be said
+      // out loud. It rides the viewer's own volume slider, and the token
+      // makes a duplicated control message a no-op rather than a double beep.
+      s.onStageTurn = (turn) => {
+        playTurnCue(volume() / 100);
+        if (turn.method === "wheel") {
+          // A real draw just happened, so the spin is showing something
+          // rather than dressing up a decided outcome (design.md § 8).
+          setWheel(turn);
+          if (wheelTimer) clearTimeout(wheelTimer);
+          wheelTimer = setTimeout(() => setWheel(null), 3200);
+        }
+        // Compare against the CALL's own id, not session.hasTurn(): the
+        // relay sends this control before the state broadcast that sets
+        // turnUserId, so hasTurn() is still answering about the last turn
+        // here — and the person being called would get told about
+        // themselves in the third person.
+        if (baseId(turn.userId) !== baseId(s.selfId())) {
+          flashToast(turn.method === "wheel" ? "turn.wheel" : "turn.someone", {
+            name: turn.username,
+          });
+        }
+      };
+      s.onStageCancel = (cancel) => {
+        if (cancel.reason === "timeout") flashToast("turn.missed");
+      };
+      // A refusal the person can act on ("nobody to hand it to") lands on the
+      // footer's error line as a descriptor, so it follows the language
+      // toggle like every other error (docs/i18n.md § "Writing messages").
+      s.onServerError = (code) => {
+        const key = errorKey(code);
+        if (key) setError({ key });
+      };
       s.connect();
       setSession(s);
     } catch (e) {
@@ -385,11 +447,18 @@ const App: Component = () => {
     }
   }, 150);
 
+  // Drives both countdowns. 500ms is twice the rate a per-second readout
+  // needs, so the digits never look like they skipped one.
+  const clockTimer = setInterval(() => setTick((n) => n + 1), 500);
+
   onCleanup(() => {
     document.removeEventListener("keydown", onKey);
     document.removeEventListener("fullscreenchange", onFsChange);
     if (overlayTimer) clearTimeout(overlayTimer);
+    if (wheelTimer) clearTimeout(wheelTimer);
+    if (toastTimer) clearTimeout(toastTimer);
     clearInterval(statsTimer);
+    clearInterval(clockTimer);
     clearInterval(paintTimer);
     clearStinger();
     capture()?.stop();
@@ -455,9 +524,11 @@ const App: Component = () => {
   const kickParts = () => t("modal.kick").split("{name}");
 
   /** Entry point for the Share button: if someone else is live, ask before
-   *  kicking them off the stage. */
+   *  kicking them off the stage — unless the stage was just handed to us,
+   *  in which case there is nobody to kick and asking would be the app
+   *  double-checking a decision it made ten seconds ago. */
   const shareClicked = () => {
-    if (live() && !session()?.ownsStage()) {
+    if (live() && !session()?.ownsStage() && !session()?.hasTurn()) {
       setConfirmTakeover(true);
       return;
     }
@@ -499,6 +570,30 @@ const App: Component = () => {
 
   const stage = () => session()?.stage() ?? {};
   const live = () => Boolean(stage().publisherId);
+
+  // --- the queue, derived straight off the server's state -------------------
+
+  const me = () => session()?.selfId() ?? "";
+  const queueState = () =>
+    session()?.queue() ?? { queue: [], mode: "livre" as StageMode, turnLenMs: 0 };
+  const queued = () =>
+    queueState().queue.some((e) => baseId(e.userId) === baseId(me()));
+  /** Seconds left on the pending turn, ticking. */
+  const turnSeconds = () => {
+    tick(); // subscribe
+    const ends = queueState().turnEndsMs;
+    const s = session();
+    if (!ends || !s) return 0;
+    return Math.max(0, Math.ceil((ends - s.serverNow()) / 1000));
+  };
+  /** The wheel's candidates — everybody but whoever was passing. Used only
+   *  to draw the circle; the server already decided who won. */
+  const wheelCards = () => {
+    const w = wheel();
+    if (!w) return [];
+    const cards = roster().filter((r) => r.id !== baseId(w.userId));
+    return [{ id: baseId(w.userId), name: w.username }, ...cards].slice(0, 8);
+  };
 
   /** Transport state as a word, in the active language. `undefined` is the
    *  beat before the session exists — that is "starting", not "broken". */
@@ -722,6 +817,50 @@ const App: Component = () => {
               )}
             </For>
           </div>
+
+          {/* The line, as chips. Chrome beside the roster, never over the
+              picture (design.md § 2). One emoji per person keeps five in a
+              186px sidebar; the name lives in the chip's title and, for
+              whoever is actually next, on the line underneath — that is the
+              only bit of it anybody has to read. The heading is NOT
+              underlined: "in the room" above it already spends this
+              region's one scribble (design.md § 3.5). */}
+          <div class="queue-panel">
+            <h4 class="queue-title">
+              <HandUpDoodle class="queue-title-icon" />
+              <span>{t("queue.title")}</span>
+            </h4>
+            <Show
+              when={queueState().queue.length > 0}
+              fallback={<p class="queue-empty">{t("queue.empty")}</p>}
+            >
+              <div class="queue-chips">
+                <For each={queueState().queue}>
+                  {(e, i) => (
+                    <span
+                      class={
+                        i() === 0 ? "queue-chip queue-chip--next" : "queue-chip"
+                      }
+                      title={t("queue.position", {
+                        name: e.username,
+                        n: i() + 1,
+                      })}
+                    >
+                      <span class="queue-chip-emoji" aria-hidden="true">
+                        {e.initialsEmoji}
+                      </span>
+                      <span class="u-sr-only">
+                        {t("queue.position", { name: e.username, n: i() + 1 })}
+                      </span>
+                    </span>
+                  )}
+                </For>
+              </div>
+              <p class="queue-next" aria-hidden="true">
+                {queueState().queue[0]?.username}
+              </p>
+            </Show>
+          </div>
         </aside>
 
         {/* Anchored inside the positioned main row (design.md § 5.8): the
@@ -770,6 +909,48 @@ const App: Component = () => {
           <button onClick={stopSharing} class="crayon-btn crayon-btn--stop">
             {t("footer.stopSharing")}
           </button>
+        </Show>
+
+        {/* "Pedir a vez" / "Passar a vez": one button, whichever side of the
+            handover you are on. Chalk, not grass — the footer's one `--go`
+            is already spent on Share (design.md § 5.1). */}
+        <Show
+          when={session()?.ownsStage()}
+          fallback={
+            <Show when={live() && !session()?.hasTurn()}>
+              <button
+                type="button"
+                class="crayon-btn crayon-btn--chalk"
+                onClick={() =>
+                  queued()
+                    ? session()?.withdrawStage()
+                    : session()?.requestStage()
+                }
+              >
+                {queued() ? t("queue.withdraw") : t("queue.request")}
+              </button>
+            </Show>
+          }
+        >
+          <button
+            type="button"
+            class="crayon-btn crayon-btn--chalk"
+            onClick={() => {
+              setError(null);
+              session()?.passStage();
+            }}
+          >
+            {t("queue.pass")}
+          </button>
+        </Show>
+
+        {/* The countdown on your own turn. A stat pill, because it is a
+            number being read (design.md § 5.6) — it just happens to be an
+            urgent one. */}
+        <Show when={session()?.hasTurn()}>
+          <span class="stat-pill stat-pill--turn">
+            {t("turn.pill", { s: turnSeconds() })}
+          </span>
         </Show>
 
         <Show when={live() && !session()?.ownsStage()}>
@@ -822,6 +1003,36 @@ const App: Component = () => {
           <span class="seg-unit">fps</span>
         </div>
 
+        {/* Livre | Rodízio — a choice with exactly two crayons, so it is
+            `.seg` and nothing else (design.md § 5.2). It is the only setting
+            this whole feature exposes, and it defaults: the line works with
+            nobody touching anything. State lives in `aria-pressed`, and the
+            server's broadcast is what everyone reads back, so all viewers
+            converge on one mode. */}
+        <div class="field">
+          <span class="field-label" id="mode-label" title={t("queue.modeTitle")}>
+            {t("queue.modeLabel")}
+          </span>
+          <div class="seg" role="group" aria-labelledby="mode-label">
+            <button
+              type="button"
+              class="seg-btn"
+              aria-pressed={queueState().mode !== "rodizio"}
+              onClick={() => session()?.setStageMode("livre")}
+            >
+              {t("queue.modeLivre")}
+            </button>
+            <button
+              type="button"
+              class="seg-btn"
+              aria-pressed={queueState().mode === "rodizio"}
+              onClick={() => session()?.setStageMode("rodizio")}
+            >
+              {t("queue.modeRodizio")}
+            </button>
+          </div>
+        </div>
+
         <Show when={stingersOn()}>
           <button
             type="button"
@@ -834,10 +1045,73 @@ const App: Component = () => {
           </button>
         </Show>
 
+        {/* Everybody who is NOT the one being called just gets told who is
+            up. It lives in the footer, beside the error line, rather than
+            floating over the stage: a toast centred on the picture is
+            exactly what design.md § 2 forbids, and the footer is where this
+            app already puts its one transient line. */}
+        <Show when={turnToast()}>
+          <span class="turn-toast" role="status">
+            {t(turnToast()!.key, turnToast()!.params)}
+          </span>
+        </Show>
+
         <Show when={error()}>
           <span class="error-text">{errorText()}</span>
         </Show>
       </footer>
+
+      {/* Somebody was picked and nobody asked: the wheel. It runs over a
+          `.modal-scrim`, which is chrome — the video keeps its own frame and
+          nothing is ever drawn on the picture (design.md § 2). The pick has
+          already happened server-side, so this animation is showing a result
+          rather than deciding one. */}
+      <Show when={wheel()}>
+        <div class="modal-scrim wheel-scrim">
+          <div class="wheel">
+            <For each={wheelCards()}>
+              {(c, i) => (
+                <span
+                  class={i() === 0 ? "wheel-card wheel-card--won" : "wheel-card"}
+                  style={{
+                    "--card-angle": `${(360 * i()) / Math.max(wheelCards().length, 1)}deg`,
+                  }}
+                >
+                  {c.name}
+                </span>
+              )}
+            </For>
+            {/* the winner is card 0, at the top of the circle: the arrow
+                spins two whole turns and comes to rest pointing at it */}
+            <WheelArrow class="wheel-arrow" />
+          </div>
+          <p class="wheel-name">{wheel()?.username}</p>
+        </div>
+      </Show>
+
+      {/* "É tua!" — your own call to the stage. Same modal object as the
+          takeover confirm (`.share-card` § 5.7), because it is the same
+          question asked from the other side. It is driven straight off the
+          server's turn state, so it appears and vanishes with the turn
+          itself and can never be left stranded on screen. */}
+      <Show when={session()?.hasTurn() && !wheel()}>
+        <div class="modal-scrim">
+          <div class="share-card modal-card">
+            <h2 class="modal-title">{t("turn.yours")}</h2>
+            <p class="modal-msg">
+              {t("turn.yoursBody", { s: turnSeconds() })}
+            </p>
+            <div class="modal-actions">
+              <button
+                class="crayon-btn crayon-btn--go"
+                onClick={() => void share()}
+              >
+                {t("turn.take")}
+              </button>
+            </div>
+          </div>
+        </div>
+      </Show>
 
       <Show when={confirmTakeover()}>
         <div class="modal-scrim">
