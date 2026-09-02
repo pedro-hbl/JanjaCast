@@ -13,7 +13,7 @@ import {
 import type { Identity } from "./discord";
 import { Session } from "./session";
 import { startCapture, type CaptureHandle } from "./capture";
-import { ScribbleDot, SunDoodle } from "./doodles";
+import { CastMark, OnAirDot, SunDoodle } from "./doodles";
 import "./theme.css";
 
 const SharePage: Component = () => {
@@ -191,7 +191,13 @@ const SharePage: Component = () => {
       <SunDoodle class="share-sun" />
 
       <div class="share-card">
-        <h1 class="share-title">JanjaCast — screen sharing</h1>
+        <h1 class="share-title">
+          <span class="share-title-lockup">
+            <CastMark class="share-title-mark" size={34} />
+            <span class="u-scribble u-scribble--deep">JanjaCast</span>
+          </span>
+          <span class="share-title-sub">screen sharing</span>
+        </h1>
         <p class="share-room">
           Room <code>{room}</code> · connection: {session.status()}
         </p>
@@ -211,17 +217,30 @@ const SharePage: Component = () => {
               <Show when={takenBy()}>
                 <p class="error-text">✋ {takenBy()} took the stage.</p>
               </Show>
-              <label class="fps-label">
-                Framerate{" "}
-                <select
-                  class="crayon-select"
-                  value={fps()}
-                  onChange={(e) => setFps(Number(e.currentTarget.value) as 30 | 60)}
-                >
-                  <option value={30}>30 fps</option>
-                  <option value={60}>60 fps</option>
-                </select>
-              </label>
+              <div class="field">
+                <span class="field-label" id="share-fps-label">
+                  Framerate
+                </span>
+                <div class="seg" role="group" aria-labelledby="share-fps-label">
+                  <button
+                    type="button"
+                    class="seg-btn"
+                    aria-pressed={fps() === 30}
+                    onClick={() => setFps(30)}
+                  >
+                    30
+                  </button>
+                  <button
+                    type="button"
+                    class="seg-btn"
+                    aria-pressed={fps() === 60}
+                    onClick={() => setFps(60)}
+                  >
+                    60
+                  </button>
+                </div>
+                <span class="seg-unit">fps</span>
+              </div>
               <label class="fps-label">
                 Optimize for{" "}
                 <select
@@ -281,24 +300,43 @@ const SharePage: Component = () => {
           }
         >
           <p class="share-live">
-            <ScribbleDot class="live-dot" /> Live at {fps()} fps — {stats().fps}{" "}
+            <OnAirDot class="live-dot" /> Live at {fps()} fps — {stats().fps}{" "}
             fps · {stats().kbps} kbps (target {stats().targetKbps})
           </p>
-          <label class="fps-label">
-            Framerate{" "}
-            <select
-              class="crayon-select"
-              value={fps()}
-              onChange={(e) => {
-                const v = Number(e.currentTarget.value) as 30 | 60;
-                setFps(v);
-                void capture()?.setFramerate(v);
-              }}
+          <div class="field">
+            <span class="field-label" id="share-live-fps-label">
+              Framerate
+            </span>
+            <div
+              class="seg"
+              role="group"
+              aria-labelledby="share-live-fps-label"
             >
-              <option value={30}>30 fps</option>
-              <option value={60}>60 fps</option>
-            </select>
-          </label>
+              <button
+                type="button"
+                class="seg-btn"
+                aria-pressed={fps() === 30}
+                onClick={() => {
+                  setFps(30);
+                  void capture()?.setFramerate(30);
+                }}
+              >
+                30
+              </button>
+              <button
+                type="button"
+                class="seg-btn"
+                aria-pressed={fps() === 60}
+                onClick={() => {
+                  setFps(60);
+                  void capture()?.setFramerate(60);
+                }}
+              >
+                60
+              </button>
+            </div>
+            <span class="seg-unit">fps</span>
+          </div>
           <p class="share-room">
             {viewers()} watching · total upload ≈{" "}
             {Math.round((stats().kbps * Math.max(viewers(), 1)) / 100) / 10}{" "}

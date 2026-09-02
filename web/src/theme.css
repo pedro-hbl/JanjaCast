@@ -1,14 +1,20 @@
-/* ------------------------------------------------------------------
-   golive — "crayon on dark construction paper" theme
+/* ==================================================================
+   JanjaCast — "crayon on construction paper"
+   ------------------------------------------------------------------
    The Activity view lives inside Discord's dark UI, so the ground is a
-   deep blue-grey paper with the crayon-box palette as accents.  The
-   standalone /share page flips to a cream paper sheet (see .share-page
-   overrides at the bottom).  Everything is self-contained: system
-   fonts, inline SVG, data URIs — no external requests (Discord CSP).
-   ------------------------------------------------------------------ */
+   deep blue-grey paper with the crayon-box palette as accents. The
+   standalone /share page flips to a cream paper sheet by re-declaring
+   the semantic tokens (see .share-page) — every shared class recolors
+   itself, nothing is duplicated.
+
+   Everything is self-contained: system fonts, inline SVG, data URIs.
+   No external requests — Discord's Activity CSP would block them.
+
+   Full rationale, component rules and a/11y notes: docs/design.md
+   ================================================================== */
 
 :root {
-  /* crayon box */
+  /* ---- the crayon box (constant in both contexts) ---------------- */
   --crayon-blue: #5d9be0;
   --crayon-blue-deep: #3e7dc9;
   --grass: #5cb53f;
@@ -20,24 +26,95 @@
   --purple: #8b5fc7;
   --angry: #d93a3a;
 
-  /* semantic (dark construction paper defaults) */
+  /* ---- semantic (dark construction paper defaults) --------------- */
   --ground: #171a24;
   --surface: #1e2231;
   --surface-2: #272c3e;
   --text: #f4efdd;
-  --muted: #b3aeA0;
+  --muted: #b3aea0;
   --outline: #0b0d14;
 
-  --font-hand: "Comic Sans MS", "Comic Sans", "Chalkboard SE", "Comic Neue",
-    "Segoe Print", cursive;
-  --font-body: system-ui, "Segoe UI", sans-serif;
-  --font-num: ui-monospace, "Cascadia Mono", Consolas, "SF Mono", monospace;
+  /* `--angry` is a *fill*. On the dark ground it only reaches 3.5:1 as
+     text, so red words use --angry-lit instead (5.7:1). */
+  --angry-lit: #ff6b6b;
+  /* focus must clear 3:1 against whatever it sits on (WCAG 1.4.11) */
+  --focus: var(--yellow);
+  --hover-wash: rgba(244, 239, 221, 0.1);
+  --shadow-ink: rgba(11, 13, 20, 0.9);
 
-  /* wobbly hand-drawn corner recipes — neighbours never share one */
+  /* ---- type roles ------------------------------------------------ */
+  /* Hand — every piece of chrome a person reads as "JanjaCast said this":
+     labels, buttons, headings, the logo. Never numbers, never prose. */
+  --font-hand: "Comic Sans MS", "Comic Sans", "Chalkboard SE", Chalkboard,
+    "Comic Neue", "Comic Relief", "Bradley Hand", "Marker Felt", "Segoe Print",
+    cursive;
+  /* Body — Trebuchet leads: humanist, slightly informal, present on every
+     Windows and macOS install, and warm enough not to fight the Hand face
+     the way a neutral UI grotesque (system-ui) does. */
+  --font-body: "Trebuchet MS", "Segoe UI", system-ui, "Helvetica Neue",
+    sans-serif;
+  /* Ledger — anything measured. Tabular so per-second stats don't jitter. */
+  --font-num: ui-monospace, "Cascadia Mono", "SF Mono", Menlo, Consolas,
+    "DejaVu Sans Mono", monospace;
+
+  --step--1: 12px; /* meta, stats */
+  --step-0: 13.5px; /* body, list rows */
+  --step-1: 15px; /* buttons, labels, stage copy */
+  --step-2: 20px; /* wordmark */
+  --step-3: 26px; /* share-page title */
+
+  /* ---- wobbly hand-drawn corner recipes -------------------------- */
+  /* Neighbours never share one: two identical "hand-drawn" corners read
+     as a computer pretending. */
   --wobble-a: 255px 15px 225px 15px / 15px 225px 15px 255px;
   --wobble-b: 15px 225px 15px 255px / 225px 15px 255px 15px;
   --wobble-sm: 12px 5px 10px 6px / 6px 10px 5px 12px;
+  --wobble-blob: 46% 54% 50% 48% / 52% 47% 53% 50%;
+
+  /* ---- textures -------------------------------------------------- */
+  /* Waxy crayon streaks. Overlaid on any filled surface; the wash flips
+     white→black on the cream page so it stays visible. */
+  --crayon-streaks: repeating-linear-gradient(
+    -40deg,
+    rgba(255, 255, 255, 0.09) 0 2px,
+    transparent 2px 5px
+  );
+  /* One scribble, painted with `mask` so a single asset serves every
+     colour via --scribble-ink. See .u-scribble.
+     The wave starts at x=0 and ends at x=72 on the same y, so repeated
+     tiles butt into one continuous line — an inset start/end leaves a
+     visible seam every 72px. */
+  --scribble: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='72' height='8' viewBox='0 0 72 8'><path d='M0 5Q9 1.8 18 5T36 5T54 5T72 5' fill='none' stroke='%23000' stroke-width='2.4' stroke-linecap='round'/></svg>");
+  /* Hand-drawn select chevron, one per ground (a background-image can't
+     take currentColor). */
+  --chevron: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='13' height='9' viewBox='0 0 13 9'><path d='M1.6 2Q4.1 4.5 6.4 7 8.9 4.4 11.4 1.9' fill='none' stroke='%23f4efdd' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/></svg>");
 }
+
+/* ------------------------- utilities ----------------------------- */
+
+/* Scribble underline. The house structural device: it marks a thing as
+   *titled by hand*, so it goes on names of places (the app, the room,
+   the page) — never on body copy, never on more than one thing per row. */
+.u-scribble {
+  position: relative;
+  display: inline-block;
+  padding-bottom: 8px;
+}
+.u-scribble::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 8px;
+  background-color: var(--scribble-ink, var(--crayon-blue));
+  -webkit-mask: var(--scribble) repeat-x left bottom / 72px 8px;
+  mask: var(--scribble) repeat-x left bottom / 72px 8px;
+}
+.u-scribble--blue { --scribble-ink: var(--crayon-blue); }
+.u-scribble--yellow { --scribble-ink: var(--yellow); }
+.u-scribble--pink { --scribble-ink: var(--pink); }
+.u-scribble--deep { --scribble-ink: var(--crayon-blue-deep); }
 
 /* --------------------------- app shell --------------------------- */
 
@@ -59,45 +136,96 @@
   background: var(--surface);
 }
 .app-header { border-bottom: 3px solid var(--outline); }
-.app-footer { border-top: 3px solid var(--outline); }
+.app-footer {
+  border-top: 3px solid var(--outline);
+  flex-wrap: wrap;
+  row-gap: 8px;
+}
+
+/* ----------------------------- logo ------------------------------ */
+/* mark + wordmark. The mark alone is the favicon; the pair is the header
+   lockup. They keep a fixed relationship — never re-space them. */
 
 .logo {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  flex: none;
+  transform: rotate(-1.5deg);
+}
+.logo-mark {
+  flex: none;
+  /* the drawing is already crooked; the tilt below is the *lockup* tilt */
+  transform: rotate(2deg);
+}
+.logo-word {
   font-family: var(--font-hand);
-  font-size: 20px;
+  font-size: var(--step-2);
   font-weight: 700;
   letter-spacing: 0.5px;
   color: var(--text);
-  transform: rotate(-1.5deg);
-  padding: 0 2px 6px;
-  background:
-    url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='72' height='7' viewBox='0 0 72 7'><path d='M2 4.5 Q11 1 20 4.5 T38 4.5 T56 4.5 T70 3.5' fill='none' stroke='%235d9be0' stroke-width='2.4' stroke-linecap='round'/></svg>")
-    repeat-x left bottom / 72px 7px;
 }
 
-/* LIVE badge — scribbled pulsing dot drawn in doodles.tsx */
+/* -------------------- on-air / live presence --------------------- */
+
 .live-badge {
   display: inline-flex;
   align-items: center;
   gap: 7px;
+  padding: 2px 11px 3px 8px;
   font-family: var(--font-hand);
+  font-size: 13.5px;
   font-weight: 700;
-  color: var(--angry);
+  color: var(--angry-lit);
+  background: rgba(217, 58, 58, 0.14);
+  border: 2px solid var(--angry);
+  border-radius: var(--wobble-sm);
   transform: rotate(-1deg);
+  min-width: 0;
 }
-.live-dot {
+.live-badge-label {
   flex: none;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+}
+/* the name is the payload — it may be long, so it truncates, not the badge */
+.live-badge-name {
+  color: var(--text);
+  font-weight: 400;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.live-dot { flex: none; }
+.live-dot-core {
+  transform-box: fill-box;
   transform-origin: 50% 50%;
   animation: crayon-pulse 1.5s ease-in-out infinite;
 }
+.live-wave {
+  transform-box: fill-box;
+  transform-origin: 0% 50%;
+  animation: crayon-wave 1.5s ease-out infinite;
+}
+.live-wave--far { animation-delay: 0.22s; }
+
 @keyframes crayon-pulse {
   0%, 100% { transform: scale(1) rotate(-6deg); opacity: 1; }
-  50% { transform: scale(1.3) rotate(8deg); opacity: 0.7; }
+  50% { transform: scale(1.18) rotate(8deg); opacity: 0.78; }
+}
+@keyframes crayon-wave {
+  0% { opacity: 0.15; transform: translateX(-1.5px); }
+  45% { opacity: 1; transform: translateX(0); }
+  100% { opacity: 0.15; transform: translateX(1.5px); }
 }
 
-/* stats stay strictly readable: monospace numbers in a quiet pill */
+/* stats stay strictly readable: tabular numbers in a quiet pill */
 .stat-pill {
   font-family: var(--font-num);
-  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+  font-size: var(--step--1);
   color: var(--muted);
   background: var(--surface-2);
   border: 2px solid var(--outline);
@@ -110,6 +238,7 @@
   margin-left: auto;
   color: var(--muted);
   font-size: 13px;
+  white-space: nowrap;
 }
 
 /* ----------------------------- stage ----------------------------- */
@@ -123,6 +252,7 @@
 /* the video area is the hero: black letterbox with a wobbly crayon
    frame, everything else stays out of its way */
 .stage {
+  position: relative;
   flex: 1;
   min-width: 0;
   display: flex;
@@ -185,13 +315,13 @@
   text-align: center;
   color: var(--muted);
   font-family: var(--font-hand);
-  font-size: 15px;
+  font-size: var(--step-1);
 }
 
 /* --------------------------- sidebar ----------------------------- */
 
 .sidebar {
-  width: 180px;
+  width: 186px;
   flex: none;
   padding: 12px;
   background: var(--surface);
@@ -200,36 +330,105 @@
 }
 
 .sidebar-title {
-  margin: 0 0 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0 0 12px;
   font-family: var(--font-hand);
-  font-size: 15px;
+  font-size: var(--step-1);
+  font-weight: 700;
+  color: var(--text);
   transform: rotate(-1deg);
-  padding-bottom: 6px;
-  display: inline-block;
-  background:
-    url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='72' height='7' viewBox='0 0 72 7'><path d='M2 4.5 Q11 1 20 4.5 T38 4.5 T56 4.5 T70 3.5' fill='none' stroke='%23f2c230' stroke-width='2.4' stroke-linecap='round'/></svg>")
-    repeat-x left bottom / 72px 7px;
+}
+.sidebar-title-icon {
+  flex: none;
+  color: var(--yellow);
+  transform: rotate(-3deg);
+}
+
+.roster {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 
 .participant {
   display: flex;
   align-items: center;
-  gap: 8px;
+  flex-wrap: wrap; /* a long name pushes its tag onto the next line */
+  gap: 4px 8px;
   padding: 3px 0;
-  font-size: 13.5px;
+  font-size: var(--step-0);
   overflow-wrap: anywhere;
 }
 .participant-icon { flex: none; color: var(--crayon-blue); }
 /* rotate every other stick figure the opposite way — kids never draw
    two people standing the same */
-.participant:nth-child(even) .participant-icon { transform: rotate(6deg); }
-.participant:nth-child(odd) .participant-icon { transform: rotate(-5deg); }
+.roster > .participant:nth-child(even) .participant-icon {
+  transform: rotate(6deg);
+}
+.roster > .participant:nth-child(odd) .participant-icon {
+  transform: rotate(-5deg);
+}
+.participant-name { min-width: 0; }
+
+/* the person holding the stage: red figure inside a wobbly red ring, so
+   the row is legible as "a person" first and "the sharer" second */
+.participant-ring {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: var(--wobble-blob);
+}
+.participant--live .participant-ring {
+  border: 2px solid var(--angry);
+  background: rgba(217, 58, 58, 0.15);
+}
+.participant--live .participant-icon {
+  color: var(--angry-lit);
+  transform: rotate(-3deg);
+}
+.participant--live .participant-name {
+  color: var(--text);
+  font-weight: 700;
+}
+
+/* The companion tab joins as "Name (sharing)". Rather than a second
+   identical stick figure, that suffix becomes this tag on the person's
+   own row. */
+.participant-tag {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 7px 2px;
+  font-family: var(--font-hand);
+  font-size: 11.5px;
+  font-weight: 700;
+  line-height: 1.3;
+  color: var(--angry-lit);
+  /* sits immediately after the name — it is that person's suffix, not a
+     column of its own (no `margin-left: auto`) */
+  border: 2px solid var(--angry);
+  border-radius: var(--wobble-sm);
+  transform: rotate(1.5deg);
+  white-space: nowrap;
+}
+.participant-tag-icon { flex: none; transform: rotate(-4deg); }
+.participant-tag--you {
+  color: var(--muted);
+  border-color: var(--muted);
+  transform: rotate(-1.5deg);
+}
 
 /* --------------------------- buttons ----------------------------- */
 
 .crayon-btn {
   font-family: var(--font-hand);
-  font-size: 15px;
+  font-size: var(--step-1);
   font-weight: 700;
   color: var(--outline);
   padding: 8px 18px 9px;
@@ -239,15 +438,10 @@
   transform: rotate(-1deg);
   box-shadow: 2px 3px 0 var(--outline);
   transition: transform 120ms ease, box-shadow 120ms ease;
-  /* waxy crayon streaks */
-  background-image: repeating-linear-gradient(
-    -40deg,
-    rgba(255, 255, 255, 0.09) 0 2px,
-    transparent 2px 5px
-  );
+  background-image: var(--crayon-streaks);
 }
-.crayon-btn:hover { transform: rotate(1deg) scale(1.04); }
-.crayon-btn:active {
+.crayon-btn:hover:not(:disabled) { transform: rotate(1deg) scale(1.04); }
+.crayon-btn:active:not(:disabled) {
   transform: rotate(0deg) translateY(2px);
   box-shadow: 0 1px 0 var(--outline);
 }
@@ -266,7 +460,7 @@
   text-shadow: 0 1px 0 rgba(0, 0, 0, 0.35);
   border-radius: var(--wobble-b);
 }
-.crayon-btn--stop:hover { background-color: #e64b4b; }
+.crayon-btn--stop:hover:not(:disabled) { background-color: #e64b4b; }
 
 .crayon-btn--big {
   font-size: 18px;
@@ -274,38 +468,175 @@
 }
 
 /* --------------------------- controls ---------------------------- */
+/* One control set, three shapes: a segmented toggle for binary choices,
+   a crayon select for lists, a crayon slider for continuous values. */
 
-.fps-label {
+.field {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 34px;
+}
+.fps-label,
+.field-label {
   color: var(--muted);
   font-family: var(--font-hand);
   font-size: 13.5px;
 }
+/* the .fps-label wrapper is also used as a <label> around a control */
+label.fps-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 34px;
+}
 
+/* --- segmented toggle: for a choice with exactly two crayons -------- */
+.seg {
+  display: inline-flex;
+  flex: none;
+  border: 3px solid var(--outline);
+  border-radius: var(--wobble-sm);
+  background: var(--surface-2);
+  box-shadow: 2px 3px 0 var(--outline);
+  overflow: hidden;
+}
+.seg-btn {
+  font-family: var(--font-hand);
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+  background: transparent;
+  border: 0;
+  border-right: 3px solid var(--outline);
+  padding: 4px 12px 5px;
+  min-width: 46px;
+  min-height: 28px; /* + the group's border ⇒ ≥24px target (WCAG 2.5.8) */
+  cursor: pointer;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+.seg-btn:last-child { border-right: 0; }
+.seg-btn:hover:not(:disabled):not([aria-pressed="true"]) {
+  background-color: var(--hover-wash);
+}
+.seg-btn[aria-pressed="true"] {
+  color: var(--outline);
+  background-color: var(--crayon-blue);
+  background-image: var(--crayon-streaks);
+}
+.seg-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+/* keep the focus ring inside the group so it isn't clipped by overflow */
+.seg-btn:focus-visible { outline-offset: -4px; }
+.seg-unit {
+  font-family: var(--font-hand);
+  font-size: 13px;
+  color: var(--muted);
+}
+
+/* --- select: for a choice with more than two crayons ---------------- */
 .crayon-select {
+  -webkit-appearance: none;
+  appearance: none;
   font-family: var(--font-hand);
   font-size: 13.5px;
   color: var(--text);
-  background: var(--surface-2);
+  background-color: var(--surface-2);
+  background-image: var(--chevron), var(--crayon-streaks);
+  background-repeat: no-repeat, repeat;
+  background-position: right 9px center, 0 0;
+  background-size: 13px 9px, auto;
   border: 2px solid var(--outline);
   border-radius: var(--wobble-sm);
-  padding: 4px 8px;
+  padding: 5px 30px 6px 10px;
+  min-height: 30px;
+  max-width: 100%;
   cursor: pointer;
+  transition: transform 120ms ease;
 }
+.crayon-select:hover:not(:disabled) { transform: rotate(-0.6deg); }
 .crayon-select:disabled { opacity: 0.55; cursor: not-allowed; }
+/* the popup list is drawn by the OS — at least give it our paper */
+.crayon-select option {
+  background-color: var(--surface-2);
+  color: var(--text);
+}
+
+/* --- slider: for a continuous value -------------------------------- */
+/* Vendor track/thumb pseudo-elements can't be grouped: one unknown
+   selector drops the whole rule. Hence the duplication below. */
+.crayon-range {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 96px;
+  height: 22px;
+  background: transparent;
+  cursor: pointer;
+  vertical-align: middle;
+}
+.crayon-range::-webkit-slider-runnable-track {
+  height: 9px;
+  background-color: var(--surface-2);
+  background-image: var(--crayon-streaks);
+  border: 2px solid var(--outline);
+  border-radius: 7px 3px 6px 3px / 3px 6px 3px 7px;
+}
+.crayon-range::-moz-range-track {
+  height: 9px;
+  background-color: var(--surface-2);
+  background-image: var(--crayon-streaks);
+  border: 2px solid var(--outline);
+  border-radius: 7px 3px 6px 3px / 3px 6px 3px 7px;
+}
+.crayon-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 17px;
+  height: 17px;
+  margin-top: -6px;
+  background-color: var(--grass);
+  border: 2px solid var(--outline);
+  border-radius: var(--wobble-blob);
+}
+.crayon-range::-moz-range-thumb {
+  width: 17px;
+  height: 17px;
+  background-color: var(--grass);
+  border: 2px solid var(--outline);
+  border-radius: var(--wobble-blob);
+}
+.crayon-range:focus-visible { outline-offset: 4px; }
+
+/* ----------------------------- errors ---------------------------- */
 
 .error-text {
-  color: var(--angry);
+  display: inline-block;
+  position: relative;
+  margin: 0;
+  color: var(--angry-lit);
   font-family: var(--font-hand);
   font-size: 14px;
-  padding-bottom: 4px;
-  background:
-    url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='72' height='7' viewBox='0 0 72 7'><path d='M2 4.5 Q11 1 20 4.5 T38 4.5 T56 4.5 T70 3.5' fill='none' stroke='%23d93a3a' stroke-width='2' stroke-linecap='round'/></svg>")
-    repeat-x left bottom / 72px 7px;
+  padding-bottom: 8px;
+  --scribble-ink: var(--angry);
+}
+.error-text::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 8px;
+  background-color: var(--scribble-ink);
+  -webkit-mask: var(--scribble) repeat-x left bottom / 72px 8px;
+  mask: var(--scribble) repeat-x left bottom / 72px 8px;
 }
 
-:focus-visible {
-  outline: 3px dashed var(--yellow);
-  outline-offset: 2px;
+/* --------------------------- focus ------------------------------- */
+/* Dashed, because a dashed line is a drawn cut-line — on-brand *and*
+   distinguishable from the solid crayon outlines it sits next to. */
+
+:where(a, button, input, select, textarea, [tabindex]):focus-visible {
+  outline: 3px dashed var(--focus);
+  outline-offset: 3px;
 }
 
 /* ------------------------- /share page --------------------------- */
@@ -320,10 +651,21 @@
   --text: #2b2a33;
   --muted: #6f6a5b;
   --outline: #26222e;
+  /* on cream, red must go *darker* to clear 4.5:1, not lighter */
+  --angry-lit: #c22f2f;
+  /* yellow is invisible on cream (1.6:1) — focus flips to purple (4.5:1) */
+  --focus: #6b3fd4;
+  --hover-wash: rgba(38, 34, 46, 0.08);
+  --crayon-streaks: repeating-linear-gradient(
+    -40deg,
+    rgba(0, 0, 0, 0.055) 0 2px,
+    transparent 2px 5px
+  );
+  --chevron: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='13' height='9' viewBox='0 0 13 9'><path d='M1.6 2Q4.1 4.5 6.4 7 8.9 4.4 11.4 1.9' fill='none' stroke='%2326222e' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/></svg>");
 
   position: relative;
   height: 100%;
-  overflow: hidden;
+  overflow: auto;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -331,8 +673,7 @@
   padding: 24px 24px 70px;
   text-align: center;
   background:
-    radial-gradient(rgba(60, 40, 20, 0.05) 1px, transparent 1.3px)
-      0 0 / 5px 5px,
+    radial-gradient(rgba(60, 40, 20, 0.05) 1px, transparent 1.3px) 0 0 / 5px 5px,
     var(--ground);
   color: var(--text);
   font-family: var(--font-body);
@@ -362,15 +703,32 @@
   transform: rotate(-0.6deg);
 }
 
+/* the title is the logo lockup at display size, plus a quiet second line */
 .share-title {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
   margin: 0;
   font-family: var(--font-hand);
-  font-size: 26px;
+  font-size: var(--step-3);
+  font-weight: 700;
+  line-height: 1.15;
+}
+.share-title-lockup {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
   transform: rotate(-1deg);
-  padding-bottom: 8px;
-  background:
-    url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='72' height='7' viewBox='0 0 72 7'><path d='M2 4.5 Q11 1 20 4.5 T38 4.5 T56 4.5 T70 3.5' fill='none' stroke='%233e7dc9' stroke-width='2.6' stroke-linecap='round'/></svg>")
-    repeat-x left bottom / 72px 7px;
+}
+.share-title-mark { flex: none; transform: rotate(2deg); }
+.share-title-sub {
+  font-family: var(--font-hand);
+  font-size: 14px;
+  font-weight: 400;
+  letter-spacing: 1.5px;
+  text-transform: lowercase;
+  color: var(--muted);
 }
 
 .share-room {
@@ -392,6 +750,7 @@
   gap: 9px;
   margin: 0;
   font-family: var(--font-num);
+  font-variant-numeric: tabular-nums;
   font-size: 16px;
 }
 
@@ -400,6 +759,25 @@
   max-width: 420px;
   color: var(--muted);
   font-size: 13.5px;
+}
+
+/* /share stacks four labelled controls. Left to themselves they size to
+   their own content and the column reads as an accident rather than a
+   drawing. One shared right edge fixes it: labels ragged-left against the
+   control, every control ending on the same line. */
+.share-card .fps-label,
+.share-card .field {
+  width: 100%;
+  max-width: 452px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px 10px;
+}
+/* wide enough for the longest option ("App sound — no call echo
+   (recommended)") to clear the chevron */
+.share-card .crayon-select {
+  width: 344px;
+  max-width: 100%;
 }
 
 /* scribble-textured grass with crayon flowers along the bottom edge */
@@ -415,20 +793,7 @@
     repeat-x left bottom / 220px 48px;
 }
 
-/* ------------------------ accessibility -------------------------- */
-
-@media (prefers-reduced-motion: reduce) {
-  * {
-    animation: none !important;
-    transition: none !important;
-  }
-}
-
-/* --- fullscreen / theater mode -------------------------------------- */
-
-.stage {
-  position: relative;
-}
+/* --------------- fullscreen / theater mode ----------------------- */
 
 .fs-btn {
   position: absolute;
@@ -439,7 +804,7 @@
   height: 42px;
   font-size: 20px;
   line-height: 1;
-  color: var(--chalk, #f4efdd);
+  color: #f4efdd;
   background: rgba(11, 13, 20, 0.65);
   border: 2px solid currentColor;
   border-radius: 45% 55% 50% 48% / 52% 46% 54% 50%; /* wobbly crayon circle */
@@ -447,7 +812,8 @@
   opacity: 0.55;
   transition: opacity 0.15s ease, transform 0.15s ease;
 }
-.fs-btn:hover {
+.fs-btn:hover,
+.fs-btn:focus-visible {
   opacity: 1;
   transform: rotate(-3deg) scale(1.08);
 }
@@ -484,11 +850,76 @@
   right: 14px;
   z-index: 6;
   padding: 6px 14px;
-  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  font-family: var(--font-num);
+  font-variant-numeric: tabular-nums;
   font-size: 13px;
-  color: var(--chalk, #f4efdd);
+  color: #f4efdd;
   background: rgba(11, 13, 20, 0.72);
   border: 2px solid rgba(244, 239, 221, 0.35);
   border-radius: 14px 18px 15px 17px / 17px 14px 18px 15px;
   pointer-events: none;
+}
+
+/* ---------------------- takeover confirm ------------------------- */
+/* Reuses .share-card so the "sheet of paper" object is one component,
+   not two. Inside .app it picks up the dark tokens automatically. */
+
+.modal-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(0, 0, 0, 0.55);
+}
+.modal-card {
+  max-width: 340px;
+  padding: 24px;
+  gap: 18px;
+  text-align: center;
+  color: var(--text);
+}
+.modal-msg {
+  margin: 0;
+  font-family: var(--font-hand);
+  font-size: 16px;
+  line-height: 1.4;
+}
+.modal-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+/* --------------------- narrow Activity panel --------------------- */
+/* Discord docks the Activity into a panel that can get very narrow.
+   The roster is the first thing to go — the picture never is. */
+
+@media (max-width: 620px) {
+  .sidebar { width: 148px; padding: 10px 8px; }
+  .participant-tag { margin-left: 0; }
+  .status-line { display: none; }
+}
+@media (max-width: 460px) {
+  .sidebar { display: none; }
+  .app-header, .app-footer { padding: 6px 10px; gap: 8px; }
+}
+
+/* ------------------------ accessibility -------------------------- */
+/* Reduced motion: collapse rather than delete, so animation-fill states
+   still resolve. Every animated drawing is legible standing still. */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+  .live-wave { opacity: 1; }
 }

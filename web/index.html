@@ -4,10 +4,13 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>JanjaCast</title>
-    <!-- crayon-scribbled LIVE dot, fully inline (Discord CSP: no external assets) -->
+    <!-- The JanjaCast mark (see src/doodles.tsx → CastMark): a crooked crayon
+         television throwing two scribbled broadcast waves. Optically sized
+         for 16px — thicker strokes and one highlight streak instead of two.
+         Fully inline; Discord's Activity CSP forbids external assets. -->
     <link
       rel="icon"
-      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M16 3.5C22.8 2.6 28.8 8 28.2 16.2 27.7 23.4 22.3 29 15.2 28.4 8.4 27.9 3.2 22.6 3.9 15 4.5 8 9.4 4.4 16 3.5Z' fill='%23D93A3A' stroke='%230b0d14' stroke-width='2.6'/%3E%3Cpath d='M10.5 11.8c3.4-3 9-2.6 10.9 1.8M10 17.5c2 3.4 7 3.8 9.8 1.4' fill='none' stroke='%23ffb3a8' stroke-width='2' stroke-linecap='round'/%3E%3C/svg%3E"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M7.1 18.4 5.9 21.6M13.4 18 14.6 21.1' fill='none' stroke='%230b0d14' stroke-width='2.2' stroke-linecap='round'/%3E%3Cpath d='M3.2 7.2Q3 6 4.3 5.9L15.2 5.1Q16.5 5 16.6 6.3L17.2 16.6Q17.3 17.9 16 18L4.4 18.9Q3.1 19 3 17.7Z' fill='%235d9be0' stroke='%230b0d14' stroke-width='2.2' stroke-linejoin='round'/%3E%3Cpath d='M5.6 9.6Q9.4 8.4 13.2 9.4' fill='none' stroke='%23ffffff' stroke-opacity='.55' stroke-width='1.8' stroke-linecap='round'/%3E%3Ccircle cx='16.4' cy='5.2' r='2' fill='%23d93a3a' stroke='%230b0d14' stroke-width='1'/%3E%3Cpath d='M19.4 2.2Q23 5.4 19.9 8.8' fill='none' stroke='%23d93a3a' stroke-width='2.8' stroke-linecap='round'/%3E%3C/svg%3E"
     />
     <style>
       /* Base ground only — the crayon theme proper lives in src/theme.css.
@@ -20,7 +23,7 @@
         margin: 0;
         background: #171a24;
         color: #f4efdd;
-        font: 14px/1.4 system-ui, "Segoe UI", sans-serif;
+        font: 14px/1.4 "Trebuchet MS", "Segoe UI", system-ui, sans-serif;
       }
       #root {
         height: 100vh;

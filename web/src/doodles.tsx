@@ -1,9 +1,81 @@
 // Purely presentational hand-drawn inline SVG doodles for the crayon
 // theme. No logic lives here — just pictures.
+//
+// House rules (see docs/design.md § Iconography):
+//  - Everything is inline SVG so it inherits CSS custom properties and
+//    `currentColor`; nothing is fetched (Discord's Activity CSP forbids it).
+//  - Strokes are 1.4–2.4 in a 24-ish viewBox, always `stroke-linecap="round"`:
+//    a crayon has a blunt tip and never ends in a sharp corner.
+//  - Curves are quadratics with deliberately uneven control points. Nothing
+//    is symmetric, nothing is a perfect circle.
+//  - Every icon is `aria-hidden`; the meaning lives in the adjacent text.
 
 import type { Component } from "solid-js";
 
-/** Scribbled-in LIVE dot (pulses via the .live-dot CSS class). */
+/**
+ * The JanjaCast mark: a crooked crayon television with two scribbled
+ * broadcast waves coming off its top-right corner.
+ *
+ * Reads at 20px (header) and at 32px (favicon — the same drawing is
+ * hard-coded as a data URI in index.html, keep the two in sync).
+ */
+export const CastMark: Component<{ class?: string; size?: number }> = (
+  props,
+) => (
+  <svg
+    class={props.class}
+    width={props.size ?? 22}
+    height={props.size ?? 22}
+    viewBox="0 0 24 24"
+    aria-hidden="true"
+  >
+    {/* two little legs, drawn first so the box sits on top of them */}
+    <path
+      d="M7.1 18.4 5.9 21.6M13.4 18 14.6 21.1"
+      fill="none"
+      stroke="var(--outline)"
+      stroke-width="1.8"
+      stroke-linecap="round"
+    />
+    {/* the screen: a rectangle a child would draw, so none of it is square */}
+    <path
+      d="M3.2 7.2Q3 6 4.3 5.9L15.2 5.1Q16.5 5 16.6 6.3L17.2 16.6Q17.3 17.9 16 18L4.4 18.9Q3.1 19 3 17.7Z"
+      fill="var(--crayon-blue)"
+      stroke="var(--outline)"
+      stroke-width="1.8"
+      stroke-linejoin="round"
+    />
+    {/* waxy highlight — the streak you get pressing a crayon on glass */}
+    <path
+      d="M5.6 9.5Q8.6 8.5 11.5 9.1M5.4 12.4Q9.6 11.2 13.7 12.2"
+      fill="none"
+      stroke="rgba(255,255,255,.5)"
+      stroke-width="1.4"
+      stroke-linecap="round"
+    />
+    {/* the "cast": a red nub on the corner throwing one bold wave.
+        Two concentric waves is the obvious drawing, but at 20px the gap
+        between them closes and the pair reads as a smudge — so the mark
+        keeps one arc and buys the clearance with a fatter nub. */}
+    <circle
+      cx="16.4"
+      cy="5.2"
+      r="1.8"
+      fill="var(--angry)"
+      stroke="var(--outline)"
+      stroke-width="1"
+    />
+    <path
+      d="M19.4 2.2Q23 5.4 19.9 8.8"
+      fill="none"
+      stroke="var(--angry)"
+      stroke-width="2.4"
+      stroke-linecap="round"
+    />
+  </svg>
+);
+
+/** Scribbled-in dot. Kept for reuse; the on-air badge uses OnAirDot. */
 export const ScribbleDot: Component<{ class?: string }> = (props) => (
   <svg
     class={props.class}
@@ -25,6 +97,46 @@ export const ScribbleDot: Component<{ class?: string }> = (props) => (
       stroke-width="1.1"
       stroke-linecap="round"
     />
+  </svg>
+);
+
+/**
+ * On-air indicator: the scribbled dot plus the mark's own broadcast waves.
+ * The dot breathes and the waves ripple outwards (CSS `.live-dot`, both
+ * silenced under prefers-reduced-motion — the drawing still reads static).
+ */
+export const OnAirDot: Component<{ class?: string }> = (props) => (
+  <svg
+    class={props.class}
+    width="24"
+    height="16"
+    viewBox="0 0 26 18"
+    aria-hidden="true"
+  >
+    <g class="live-dot-core">
+      <path
+        d="M8 3.2C11.4 2.6 14.3 5 13.9 8.8 13.5 12.4 10.9 14.9 7.5 14.4 4.3 13.9 2 11.4 2.5 8 2.9 5.1 5.1 3.7 8 3.2Z"
+        fill="var(--angry)"
+        stroke="var(--outline)"
+        stroke-width="1.4"
+      />
+      <path
+        d="M5.2 7.2C6.6 5.6 9.6 5.4 11 7.4M5 9.8c1.8 2 4.6 2 6.2.4"
+        fill="none"
+        stroke="rgba(255,255,255,.55)"
+        stroke-width="1.1"
+        stroke-linecap="round"
+      />
+    </g>
+    <g
+      fill="none"
+      stroke="var(--angry)"
+      stroke-width="1.9"
+      stroke-linecap="round"
+    >
+      <path class="live-wave live-wave--near" d="M16.6 5.4Q18.8 8.6 16.8 12" />
+      <path class="live-wave live-wave--far" d="M20 3.2Q23.6 8.6 20.4 14.2" />
+    </g>
   </svg>
 );
 
@@ -54,6 +166,67 @@ export const StickFigure: Component<{ class?: string }> = (props) => (
     />
     <path
       d="M7 7v5M7 8.4 3.4 10.6M7 8.4l3.6 2.2M7 12l-2.8 4.6M7 12l2.8 4.6"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="1.6"
+      stroke-linecap="round"
+    />
+  </svg>
+);
+
+/** Two wonky eyes — heads the room roster ("N in the room"). */
+export const EyesDoodle: Component<{ class?: string }> = (props) => (
+  <svg
+    class={props.class}
+    width="19"
+    height="14"
+    viewBox="0 0 18 14"
+    aria-hidden="true"
+  >
+    <path
+      d="M1.1 7.3Q4.4 2.1 7.9 7Q4.6 12.3 1.1 7.3Z"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="1.5"
+      stroke-linejoin="round"
+    />
+    <circle cx="4.5" cy="7.1" r="1.6" fill="currentColor" />
+    <path
+      d="M10.1 7Q13.5 1.8 16.9 7.2Q13.4 12 10.1 7Z"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="1.5"
+      stroke-linejoin="round"
+    />
+    <circle cx="13.5" cy="7.1" r="1.6" fill="currentColor" />
+  </svg>
+);
+
+/** Crayon megaphone — badges the person currently holding the stage. */
+export const MegaphoneDoodle: Component<{ class?: string }> = (props) => (
+  <svg
+    class={props.class}
+    width="15"
+    height="13"
+    viewBox="0 0 18 16"
+    aria-hidden="true"
+  >
+    <path
+      d="M4.6 9.5 5.3 13.5Q5.5 14.8 6.8 14.3 7.2 14.1 7 12.8L6.6 10.4Z"
+      fill="currentColor"
+      stroke="var(--outline)"
+      stroke-width="1.1"
+      stroke-linejoin="round"
+    />
+    <path
+      d="M2.1 6.3 9.3 3Q10.4 2.5 10.5 3.9L11 11.5Q11.1 12.9 9.9 12.3L2.6 9.4Q1.4 8.9 1.4 7.9 1.4 6.8 2.1 6.3Z"
+      fill="currentColor"
+      stroke="var(--outline)"
+      stroke-width="1.1"
+      stroke-linejoin="round"
+    />
+    <path
+      d="M13.2 5.4Q15 7.9 13.5 10.5M15.5 3.7Q18.2 7.9 15.8 12"
       fill="none"
       stroke="currentColor"
       stroke-width="1.6"

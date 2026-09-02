@@ -18,8 +18,28 @@ import {
 import { Session } from "./session";
 import { startCapture, type CaptureHandle } from "./capture";
 import { Player } from "./player";
-import { ScribbleDot, StickFigure, CloudDoodle } from "./doodles";
+import {
+  CastMark,
+  CloudDoodle,
+  EyesDoodle,
+  MegaphoneDoodle,
+  OnAirDot,
+  StickFigure,
+} from "./doodles";
 import "./theme.css";
+
+/** One row of the sidebar roster — one *person*, not one connection. */
+interface RosterRow {
+  id: string;
+  name: string;
+  sharing: boolean;
+  isSelf: boolean;
+}
+
+/** A companion capture tab joins as "<id>:tab" / "<name> (sharing)". Both
+ *  belong to one person, so presentation collapses them onto one row. */
+const baseId = (id: string) => (id.endsWith(":tab") ? id.slice(0, -4) : id);
+const plainName = (n: string) => n.replace(/\s*\(sharing\)\s*$/i, "");
 
 const App: Component = () => {
   const [identity, setIdentity] = createSignal<Identity | null>(null);
@@ -238,13 +258,48 @@ const App: Component = () => {
   const stage = () => session()?.stage() ?? {};
   const live = () => Boolean(stage().publisherId);
 
+  /** Presentation-only view of the participant list: one row per person,
+   *  flagged with who is on the stage and which one is you. */
+  const roster = (): RosterRow[] => {
+    const list = session()?.participants().participants ?? [];
+    const pid = stage().publisherId;
+    const me = session()?.selfId();
+    const rows = new Map<string, RosterRow>();
+    for (const p of list) {
+      const key = baseId(p.userId);
+      const fromTab = p.userId.endsWith(":tab");
+      const row = rows.get(key);
+      if (row) {
+        // the person's own connection wins the display name over the tab's
+        if (!fromTab) row.name = p.username;
+      } else {
+        rows.set(key, {
+          id: key,
+          name: fromTab ? plainName(p.username) : p.username,
+          sharing: false,
+          isSelf: me != null && baseId(me) === key,
+        });
+      }
+      if (pid != null && baseId(pid) === key) {
+        const r = rows.get(key);
+        if (r) r.sharing = true;
+      }
+    }
+    return [...rows.values()];
+  };
+
   return (
     <div class={theater() ? "app theater" : "app"}>
       <header class="app-header">
-        <strong class="logo">JanjaCast</strong>
+        <strong class="logo">
+          <CastMark class="logo-mark" size={26} />
+          <span class="logo-word u-scribble u-scribble--blue">JanjaCast</span>
+        </strong>
         <Show when={live()}>
           <span class="live-badge">
-            <ScribbleDot class="live-dot" /> LIVE — {stage().publisherName}
+            <OnAirDot class="live-dot" />
+            <span class="live-badge-label">On air</span>
+            <span class="live-badge-name">{stage().publisherName}</span>
           </span>
           <span class="stat-pill">
             {stats().fps} fps · {stats().kbps} kbps
@@ -319,15 +374,39 @@ const App: Component = () => {
         </div>
 
         <aside class="sidebar">
-          <h4 class="sidebar-title">In the room</h4>
-          <For each={session()?.participants().participants ?? []}>
-            {(p) => (
-              <div class="participant">
-                <StickFigure class="participant-icon" />
-                <span class="participant-name">{p.username}</span>
-              </div>
-            )}
-          </For>
+          <h4 class="sidebar-title">
+            <EyesDoodle class="sidebar-title-icon" />
+            <span class="u-scribble u-scribble--yellow">
+              {roster().length} in the room
+            </span>
+          </h4>
+          <div class="roster">
+            <For each={roster()}>
+              {(p) => (
+                <div
+                  class={
+                    p.sharing ? "participant participant--live" : "participant"
+                  }
+                >
+                  <span class="participant-ring">
+                    <StickFigure class="participant-icon" />
+                  </span>
+                  <span class="participant-name">{p.name}</span>
+                  <Show when={p.sharing}>
+                    <span class="participant-tag">
+                      <MegaphoneDoodle class="participant-tag-icon" />
+                      sharing
+                    </span>
+                  </Show>
+                  <Show when={p.isSelf && !p.sharing}>
+                    <span class="participant-tag participant-tag--you">
+                      you
+                    </span>
+                  </Show>
+                </div>
+              )}
+            </For>
+          </div>
         </aside>
       </main>
 
@@ -362,6 +441,7 @@ const App: Component = () => {
           <label class="fps-label" title="On speakers, your mic feeds the stream back into the call — headphones avoid it.">
             🎧 Volume{" "}
             <input
+              class="crayon-range"
               type="range"
               min="0"
               max="100"
@@ -376,27 +456,36 @@ const App: Component = () => {
                   /* private mode */
                 }
               }}
-              style={{
-                "vertical-align": "middle",
-                width: "90px",
-                "accent-color": "#5cb53f",
-              }}
             />
           </label>
         </Show>
 
-        <label class="fps-label">
-          Framerate{" "}
-          <select
-            class="crayon-select"
-            value={fps()}
-            disabled={Boolean(capture()) || session()?.ownsStage()}
-            onChange={(e) => setFps(Number(e.currentTarget.value) as 30 | 60)}
-          >
-            <option value={30}>30 fps</option>
-            <option value={60}>60 fps</option>
-          </select>
-        </label>
+        <div class="field">
+          <span class="field-label" id="fps-label">
+            Framerate
+          </span>
+          <div class="seg" role="group" aria-labelledby="fps-label">
+            <button
+              type="button"
+              class="seg-btn"
+              aria-pressed={fps() === 30}
+              disabled={Boolean(capture()) || session()?.ownsStage()}
+              onClick={() => setFps(30)}
+            >
+              30
+            </button>
+            <button
+              type="button"
+              class="seg-btn"
+              aria-pressed={fps() === 60}
+              disabled={Boolean(capture()) || session()?.ownsStage()}
+              onClick={() => setFps(60)}
+            >
+              60
+            </button>
+          </div>
+          <span class="seg-unit">fps</span>
+        </div>
 
         <Show when={error()}>
           <span class="error-text">{error()}</span>
@@ -404,22 +493,12 @@ const App: Component = () => {
       </footer>
 
       <Show when={confirmTakeover()}>
-        <div
-          style={{
-            position: "fixed",
-            inset: "0",
-            display: "flex",
-            "align-items": "center",
-            "justify-content": "center",
-            background: "rgba(0,0,0,0.55)",
-            "z-index": "10",
-          }}
-        >
-          <div class="share-card" style={{ "max-width": "340px", padding: "24px" }}>
-            <p style={{ "font-size": "16px", margin: "0 0 16px" }}>
+        <div class="modal-scrim">
+          <div class="share-card modal-card">
+            <p class="modal-msg">
               ✋ Kick <strong>{stage().publisherName}</strong> off the stage?
             </p>
-            <div style={{ display: "flex", gap: "12px", "justify-content": "center" }}>
+            <div class="modal-actions">
               <button
                 class="crayon-btn crayon-btn--go"
                 onClick={() => {
