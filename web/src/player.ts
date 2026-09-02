@@ -33,7 +33,11 @@ export class Player {
   private audioDecoder: AudioDecoder | null = null;
   private audioCtx: AudioContext | null = null;
   private gain: GainNode | null = null;
-  private volume = 1;
+  // Default below unity: the Activity's output is OUTSIDE Discord's echo
+  // canceller (it plays via the OS, not Discord's audio engine), so viewer
+  // speakers feed it back into the call via their mics. Lower gain lowers
+  // that loop's strength; the user slider overrides.
+  private volume = 0.7;
   private audioPlayhead = 0;
   /** Maps audio chunk timestamps (µs) to AudioContext time (s). */
   private audioAnchor: { chunkTsUs: number; ctxTime: number } | null = null;

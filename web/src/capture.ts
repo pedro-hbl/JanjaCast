@@ -42,6 +42,15 @@ export interface CaptureOptions {
   /** "av1" prefers hardware AV1 (30-40% fewer bits at equal quality on
    *  screen content; requires a modern GPU, falls back to H.264). */
   codecPref?: "auto" | "av1";
+  /** What sound rides along with the share:
+   *  - "app" (default): the captured tab/window's OWN audio only
+   *    (windowAudio:"window", Chrome 141+). The Discord call can never
+   *    leak into the stream, so nobody hears themselves echoed.
+   *  - "system": whole-device loopback (screen shares) — includes the
+   *    Discord call unless the sharer routes Discord to another output
+   *    device. Advanced, echo-prone; the UI warns.
+   *  - "none": video only. */
+  audioMode?: "app" | "system" | "none";
 }
 
 export interface CaptureSample {
@@ -51,6 +60,10 @@ export interface CaptureSample {
 
 export interface CaptureHandle {
   config: ConfigData;
+  /** What the sharer picked: "monitor" | "window" | "browser" (tab). */
+  displaySurface?: string;
+  /** Whether an audio track is actually being streamed. */
+  hasAudio: boolean;
   stop(): void;
   /** Rolling one-second output stats (encoded frames/s, kbit/s). */
   stats(): CaptureStats;
@@ -143,18 +156,32 @@ export async function startCapture(
   sendChunk: (buf: ArrayBuffer) => void,
   opts: CaptureOptions = {},
 ): Promise<CaptureHandle> {
+  const audioMode = opts.audioMode ?? "app";
   const stream = await navigator.mediaDevices.getDisplayMedia({
     video: { frameRate: { ideal: framerate } },
-    audio: {
-      echoCancellation: false,
-      noiseSuppression: false,
-      autoGainControl: false,
-    },
-    // Chromium extras (typed loosely on purpose): reliably capture system
-    // audio, keep this tab out of its own picker, and let the sharer switch
-    // the shared surface without restarting the stream.
+    audio:
+      audioMode === "none"
+        ? false
+        : {
+            // AEC/NS/AGC stay off: Chrome's echo canceller has no useful
+            // reference signal for loopback captures (verified against
+            // Chromium source) — echo avoidance happens by *scoping* the
+            // capture instead, below.
+            echoCancellation: false,
+            noiseSuppression: false,
+            autoGainControl: false,
+            // Chrome 141+ (Win/Mac): on a monitor capture, drop THIS
+            // browser's own audio from the mix. No-op elsewhere.
+            ...(audioMode === "system" ? { restrictOwnAudio: true } : {}),
+          },
+    // Chromium extras (typed loosely on purpose). The load-bearing echo
+    // fix: windowAudio "window" captures the selected window's OWN
+    // (per-application) audio, and system loopback is only offered when
+    // the sharer explicitly chose the advanced whole-screen-sound mode.
     ...({
-      systemAudio: "include",
+      systemAudio: audioMode === "system" ? "include" : "exclude",
+      windowAudio: audioMode === "none" ? "exclude" : "window",
+      audioSelection: "preferred", // Chrome 152+: pre-check the picker's audio toggle
       selfBrowserSurface: "exclude",
       surfaceSwitching: "include",
     } as object),
@@ -366,6 +393,8 @@ export async function startCapture(
   }
 
   const handle: CaptureHandle = {
+    displaySurface: (settings as { displaySurface?: string }).displaySurface,
+    hasAudio: Boolean(audioTrack),
     applyRateHint(degraded, viewers) {
       hintDegraded = degraded;
       hintViewers = viewers;

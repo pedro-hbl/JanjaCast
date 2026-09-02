@@ -73,6 +73,7 @@ const SharePage: Component = () => {
   const [error, setError] = createSignal<string | null>(null);
   const [hint, setHint] = createSignal<"text" | "motion">("text");
   const [codec, setCodec] = createSignal<"auto" | "av1">("auto");
+  const [audioMode, setAudioMode] = createSignal<"app" | "system" | "none">("app");
   const [takenBy, setTakenBy] = createSignal<string | null>(null);
   const [viewers, setViewers] = createSignal(0);
   const [budgetKbps, setBudgetKbps] = createSignal(0);
@@ -167,6 +168,7 @@ const SharePage: Component = () => {
         contentHint: hint(),
         egressBudgetKbps: budgetKbps(),
         codecPref: codec(),
+        audioMode: audioMode(),
       });
       handle.onended = stop;
       handle.onconfigchange = (cfg) => session.announceConfig(cfg);
@@ -242,6 +244,27 @@ const SharePage: Component = () => {
                   <option value="av1">AV1 — sharper per bit (modern GPU)</option>
                 </select>
               </label>
+              <label class="fps-label">
+                Sound{" "}
+                <select
+                  class="crayon-select"
+                  value={audioMode()}
+                  onChange={(e) =>
+                    setAudioMode(e.currentTarget.value as "app" | "system" | "none")
+                  }
+                >
+                  <option value="app">🎵 App sound — no call echo (recommended)</option>
+                  <option value="system">🔊 Whole-screen sound (echo-prone!)</option>
+                  <option value="none">🔇 No sound</option>
+                </select>
+              </label>
+              <p class="share-hint">
+                {audioMode() === "app"
+                  ? "Pick a window or a browser tab — only that app's sound is shared, so the Discord call is never re-broadcast."
+                  : audioMode() === "system"
+                    ? "⚠ Shares everything on your speakers, INCLUDING the Discord call — everyone will hear themselves unless Discord uses a different output device (Windows: Settings → Sound → Volume mixer → Discord → Output)."
+                    : "Video only; the voice call carries the commentary."}
+              </p>
               <button
                 onClick={start}
                 disabled={session.status() !== "open"}

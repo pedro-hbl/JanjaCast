@@ -27,6 +27,16 @@ const App: Component = () => {
   const [session, setSession] = createSignal<Session | null>(null);
   const [capture, setCapture] = createSignal<CaptureHandle | null>(null);
   const [fps, setFps] = createSignal<30 | 60>(30);
+  const [volume, setVolume] = createSignal(
+    (() => {
+      try {
+        const v = localStorage.getItem("jc-volume");
+        return v !== null ? Math.min(100, Math.max(0, Number(v))) : 70;
+      } catch {
+        return 70;
+      }
+    })(),
+  );
   const [stats, setStats] = createSignal<{
     fps: number;
     kbps: number;
@@ -77,6 +87,7 @@ const App: Component = () => {
       setIdentity(id);
       const s = new Session(id, { accessToken: id.accessToken });
       player = new Player(canvasRef, () => s.serverNow());
+      player.setVolume(volume() / 100);
       s.onMedia = (buf) => player?.push(buf);
       s.onSync = (sync) => player?.setSync(sync);
       // Fast recovery: when video stalls waiting for a keyframe, ask for one.
@@ -306,16 +317,23 @@ const App: Component = () => {
         </Show>
 
         <Show when={live() && !session()?.ownsStage()}>
-          <label class="fps-label">
-            Volume{" "}
+          <label class="fps-label" title="On speakers, your mic feeds the stream back into the call — headphones avoid it.">
+            🎧 Volume{" "}
             <input
               type="range"
               min="0"
               max="100"
-              value="100"
-              onInput={(e) =>
-                player?.setVolume(Number(e.currentTarget.value) / 100)
-              }
+              value={volume()}
+              onInput={(e) => {
+                const v = Number(e.currentTarget.value);
+                setVolume(v);
+                player?.setVolume(v / 100);
+                try {
+                  localStorage.setItem("jc-volume", String(v));
+                } catch {
+                  /* private mode */
+                }
+              }}
               style={{
                 "vertical-align": "middle",
                 width: "90px",
