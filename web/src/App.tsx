@@ -37,6 +37,8 @@ const App: Component = () => {
       }
     })(),
   );
+  /** Viewer magnification (scroll to zoom, drag to pan — see player.ts). */
+  const [zoom, setZoom] = createSignal(1);
   const [stats, setStats] = createSignal<{
     fps: number;
     kbps: number;
@@ -92,6 +94,7 @@ const App: Component = () => {
       s.onSync = (sync) => player?.setSync(sync);
       // Fast recovery: when video stalls waiting for a keyframe, ask for one.
       player.onNeedKeyframe = () => s.requestKeyframe();
+      player.onZoomChange = setZoom;
       // Publisher-side plumbing for the local-capture path (plain-browser
       // dev / any future in-iframe capture): same wiring SharePage has.
       s.onKeyframeRequest = () => capture()?.forceKeyframe();
@@ -254,6 +257,11 @@ const App: Component = () => {
               🎥 You are live at {fps()} fps
               {capture() ? "." : " from your browser tab."}
             </p>
+          </Show>
+          <Show when={live() && !session()?.ownsStage() && zoom() > 1.001}>
+            <span class="zoom-pill" title="Scroll to zoom · drag to pan">
+              {zoom().toFixed(1)}x
+            </span>
           </Show>
           <Show when={live() && !session()?.ownsStage()}>
             <button

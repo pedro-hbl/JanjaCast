@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Player render harness</title>
+    <!-- Dev-only rig for the viewer render path (web/src/player.ts).
+         Run `npm run dev` and open http://localhost:5173/harness.html.
+         Vite's production build only takes index.html as an entry, so this
+         page never ships in dist/.
+
+         It drives the REAL Player through the REAL wire format: a synthetic
+         test pattern -> VideoEncoder(vp8) -> packMedia -> player.push(), so
+         it exercises decode, presentation scheduling and drawFrame exactly
+         as a viewer does. What it is for:
+           1. resize mid-stream WITHOUT a config announcement (the squash /
+              stretch bug) — the picture must stay round;
+           2. zoom + pan via wheel / drag, aspect ratio preserved. -->
+    <link rel="stylesheet" href="/src/theme.css" />
+    <style>
+      body { margin: 0; background: #171a24; color: #f4efdd;
+             font: 13px/1.5 system-ui, sans-serif; }
+      .rig { display: flex; gap: 12px; padding: 12px; height: calc(100vh - 24px);
+             box-sizing: border-box; }
+      .panel { width: 300px; flex: none; display: flex; flex-direction: column;
+               gap: 8px; overflow-y: auto; }
+      .panel button { display: block; width: 100%; text-align: left; padding: 6px 8px;
+                      cursor: pointer; }
+      .app-main { flex: 1; min-width: 0; }
+      #readout { font-family: ui-monospace, monospace; font-size: 12px;
+                 white-space: pre-wrap; background: #1e2231; padding: 8px;
+                 border: 1px solid #0b0d14; }
+      .ok { color: #5cb53f; } .bad { color: #d93a3a; }
+      #src { border: 1px solid #444; width: 100%; height: auto; }
+    </style>
+  </head>
+  <body>
+    <div class="rig">
+      <div class="panel">
+        <strong>source → encoder → Player</strong>
+        <button data-w="640" data-h="360">start / resize 640x360 (16:9)</button>
+        <button data-w="960" data-h="360">resize 960x360 (8:3) — no configure()</button>
+        <button data-w="1280" data-h="720">resize 1280x720 (16:9) — no configure()</button>
+        <button data-w="480" data-h="640">resize 480x640 (portrait) — no configure()</button>
+        <button id="announce">…then call player.configure() (announce path)</button>
+        <button id="stop">stop</button>
+        <div id="readout">idle</div>
+        <em>Wheel over the stage to zoom (1x–8x), drag to pan. Double-click
+        still toggles fullscreen.</em>
+        <canvas id="src"></canvas>
+      </div>
+      <main class="app-main">
+        <div class="stage" id="stage" ondblclick="this.requestFullscreen?.()">
+          <canvas class="stage-canvas" id="out" style="display:block"></canvas>
+          <span class="zoom-pill" id="pill" hidden>1.0x</span>
+        </div>
+      </main>
+    </div>
+
+    <script type="module">
+      import { Player } from "/src/player.ts";
+      import { packMedia, KIND_VIDEO } from "/src/protocol.ts";
+
+      const out = document.getElementById("out");
+      const src = document.getElementById("src");
+      const pill = document.getElementById("pill");
+      const readout = document.getElementById("readout");
+      const sctx = src.getContext("2d");
+
+      const player = new Player(out);
+      player.onZoomChange = (z) => {
+        pill.hidden = z <= 1.001;
+        pill.textContent = z.toFixed(1) + "x";
+      };
+
+      let encoder = null, timer = null, seq = 0, tsUs = 0, forceKey = true;
+      let w = 0, h = 0, t = 0;
+
+      /** Test pattern: a true circle (an ellipse == distortion), a square
+       *  grid (rectangles == distortion) and the source dimensions. */
+      function paint() {
+        t += 1;
+        sctx.fillStyle = "#101820";
+        sctx.fillRect(0, 0, w, h);
+        const r = Math.min(w, h) * 0.38;
+        sctx.strokeStyle = "#5d9be0";
+        sctx.lineWidth = 6;
+        sctx.beginPath();
+        sctx.arc(w / 2, h / 2, r, 0, Math.PI * 2);
+        sctx.stroke();
+        // squares, 40px on a side, anchored at the centre
+        sctx.strokeStyle = "rgba(242,194,48,0.55)";
+        sctx.lineWidth = 1;
+        sctx.beginPath();
+        for (let x = (w / 2) % 40; x < w; x += 40) { sctx.moveTo(x, 0); sctx.lineTo(x, h); }
+        for (let y = (h / 2) % 40; y < h; y += 40) { sctx.moveTo(0, y); sctx.lineTo(w, y); }
+        sctx.stroke();
+        // a moving marker so a frozen pipeline is obvious
+        sctx.fillStyle = "#e85d3a";
+        sctx.beginPath();
+        sctx.arc(w / 2 + r * Math.cos(t / 20), h / 2 + r * Math.sin(t / 20), 9, 0, 7);
+        sctx.fill();
+        sctx.fillStyle = "#f4efdd";
+        sctx.font = "bold 22px monospace";
+        sctx.fillText(`${w}x${h}`, 12, 30);
+        // fine text: a legibility check for imageSmoothingQuality when zoomed
+        sctx.font = "9px monospace";
+        for (let i = 0; i < 6; i++) sctx.fillText("tiny 9px text 0123456789", 12, h - 60 + i * 11);
+      }
+
+      async function setSize(nw, nh) {
+        w = nw; h = nh;
+        src.width = w; src.height = h;
+        if (!encoder || encoder.state === "closed") {
+          encoder = new VideoEncoder({
+            output: (chunk) => {
+              const buf = new ArrayBuffer(chunk.byteLength);
+              chunk.copyTo(new Uint8Array(buf));
+              player.push(
+                packMedia(KIND_VIDEO, chunk.type === "key", 0, seq++ & 0xffff,
+                          chunk.timestamp, new Uint8Array(buf)),
+              );
+            },
+            error: (e) => console.error("encoder", e),
+          });
+        }
+        // Reconfiguring for a new resolution mid-stream is exactly what the
+        // sharer does when its captured window is resized.
+        encoder.configure({ codec: "vp8", width: w, height: h,
+                            bitrate: 3_000_000, framerate: 30,
+                            latencyMode: "realtime" });
+        forceKey = true;
+        // NOTE: player.configure() is deliberately NOT called here — this is
+        // the racing/debounced-announce case the fix has to survive.
+        if (!timer) {
+          // First run only: the decoder still needs its codec set up once.
+          player.configure({ videoCodec: "vp8", width: w, height: h, framerate: 30 });
+          timer = setInterval(tick, 1000 / 30);
+        }
+      }
+
+      function tick() {
+        paint();
+        const frame = new VideoFrame(src, { timestamp: (tsUs += 33333) });
+        encoder.encode(frame, { keyFrame: forceKey });
+        forceKey = false;
+        frame.close();
+        report();
+      }
+
+      function report() {
+        const box = out.getBoundingClientRect();
+        const srcAr = w / h, canAr = out.width / out.height;
+        const ok = Math.abs(srcAr - canAr) < 0.01;
+        readout.innerHTML =
+          `source      ${w}x${h}  (ar ${srcAr.toFixed(4)})\n` +
+          `canvas.w/h  ${out.width}x${out.height}  (ar ${canAr.toFixed(4)})\n` +
+          `css box     ${box.width.toFixed(1)}x${box.height.toFixed(1)}\n` +
+          `zoom        ${player.zoom().toFixed(2)}x\n` +
+          `fps/kbps    ${player.stats().fps} / ${player.stats().kbps}\n` +
+          (ok ? `<span class="ok">PASS aspect ratio matches</span>`
+              : `<span class="bad">FAIL canvas AR != source AR (distorted)</span>`);
+      }
+
+      for (const b of document.querySelectorAll("[data-w]")) {
+        b.onclick = () => setSize(+b.dataset.w, +b.dataset.h);
+      }
+      document.getElementById("announce").onclick = () =>
+        player.configure({ videoCodec: "vp8", width: w, height: h, framerate: 30 });
+      document.getElementById("stop").onclick = () => {
+        clearInterval(timer); timer = null;
+        encoder?.close(); encoder = null; player.close();
+      };
+      window.__harness = { player, setSize, report };
+    </script>
+  </body>
+</html>
