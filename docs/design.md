@@ -601,7 +601,28 @@ hard offset shadow, rotated −0.6°. Used for the `/share` panel **and** the
 takeover modal — one paper object, two contexts. Inside `.app` it picks up the
 dark tokens with no extra CSS.
 
-### 5.8 Errors — `.error-text`
+### 5.8 Stingers drawer — `.stinger-drawer`
+
+The one panel in the app. It slides over the **sidebar side** of `.app-main`,
+never over the middle of the picture, and it is anchored to the main row so it
+covers neither the header lockup nor the footer controls. Full behaviour and
+API in `docs/stingers.md`.
+
+Two things it adds to the inventory:
+
+- **`.crayon-btn--chalk`** — a neutral crayon button (surface-2 fill,
+  `--wobble-sm`). It exists because the *one `--go` per screen* rule is real:
+  the footer already spends the grass crayon on *Share screen*, so every
+  button inside the drawer is chalk.
+- **`.stinger-chip`** — a small pressable chip carrying `aria-pressed`. Used
+  where a thing has **several independent switches** (an asset is in the start
+  pool, in the stop pool, and on/off). This is *not* `.seg`: a segmented group
+  says "pick one of these", and pressing one of these must not release the
+  others. Pressed is blue (chrome) except the master `on` switch, which is
+  grass. Disabled assets also drop to 55% opacity and read `aria-pressed
+  ="false"` — never colour alone.
+
+### 5.9 Errors — `.error-text`
 
 Hand face in `--angry-lit` with a red scribble underline. Errors in this app
 lead with a glyph and say what to do (`✋ pedro took the stage.`,

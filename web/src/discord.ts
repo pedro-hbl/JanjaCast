@@ -48,6 +48,8 @@ export async function openExternal(url: string): Promise<void> {
 interface ServerConfig {
   publicOrigin: string;
   clientId?: string;
+  /** Whether the server has a stinger asset store at all. */
+  stingers?: boolean;
 }
 
 async function fetchConfig(): Promise<ServerConfig> {
@@ -60,6 +62,12 @@ async function fetchConfig(): Promise<ServerConfig> {
  *  tab must point, since the Activity itself lives on Discord's proxy. */
 export async function fetchPublicOrigin(): Promise<string> {
   return (await fetchConfig()).publicOrigin;
+}
+
+/** Whether JANJACAST_STINGER_DIR is configured. False hides the Stingers
+ *  button entirely rather than opening a panel onto 404s. */
+export async function fetchStingersEnabled(): Promise<boolean> {
+  return Boolean((await fetchConfig()).stingers);
 }
 
 /** Prefix for same-origin API/WS paths: Discord routes activity traffic

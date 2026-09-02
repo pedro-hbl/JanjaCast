@@ -1022,6 +1022,305 @@ label.fps-label {
   flex-wrap: wrap;
 }
 
+/* ------------------------- stingers panel ------------------------ */
+/* Drop-in memes and airhorns the whole room plays. The panel is a DRAWER
+   anchored to the main row's right edge — the sidebar's side — so it never
+   sits over the middle of the picture and never covers the header lockup or
+   the footer controls. See docs/stingers.md § 6. */
+
+/* the drawer's containing block; the stage keeps its own stacking context */
+.app-main { position: relative; }
+
+/* Neutral crayon button. The system allows exactly one `--go` per screen and
+   the footer already spends it on "Share screen", so every button in here is
+   chalk: a surface-filled crayon object rather than a coloured one. */
+.crayon-btn--chalk {
+  background-color: var(--surface-2);
+  color: var(--text);
+  border-radius: var(--wobble-sm);
+}
+.crayon-btn--chalk:hover:not(:disabled) { background-color: #313850; }
+
+.stinger-drawer {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 8;
+  width: min(348px, 100%);
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border-left: 3px solid var(--outline);
+  box-shadow: -6px 0 0 rgba(11, 13, 20, 0.35);
+}
+
+.stinger-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+  padding: 10px 12px;
+  border-bottom: 3px solid var(--outline);
+}
+.stinger-head-icon { flex: none; transform: rotate(-6deg); }
+.stinger-title {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-family: var(--font-hand);
+  font-size: var(--step-1);
+  font-weight: 700;
+  color: var(--text);
+  transform: rotate(-1deg);
+}
+.stinger-close {
+  flex: none;
+  width: 30px;
+  height: 30px;
+  font-size: 15px;
+  line-height: 1;
+  color: var(--text);
+  background: var(--surface-2);
+  border: 2px solid var(--outline);
+  border-radius: var(--wobble-blob);
+  cursor: pointer;
+}
+.stinger-close:hover { background: var(--hover-wash); }
+
+.stinger-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* --- the drop zone: a torn-out patch of paper waiting for a drawing --- */
+.stinger-drop {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 12px;
+  text-align: center;
+  background: var(--surface-2);
+  border: 3px dashed var(--outline);
+  border-radius: var(--wobble-a);
+  transition: background-color 120ms ease, transform 120ms ease;
+}
+.stinger-drop--over {
+  background-color: var(--hover-wash);
+  border-color: var(--grass);
+  transform: rotate(-0.8deg) scale(1.01);
+}
+.stinger-drop-msg {
+  margin: 0;
+  font-family: var(--font-hand);
+  font-size: var(--step-1);
+  color: var(--text);
+}
+.stinger-choose { transform: rotate(1deg); }
+.stinger-file { display: none; }
+.stinger-hint {
+  margin: 0;
+  font-size: var(--step--1);
+  color: var(--muted);
+  line-height: 1.4;
+}
+
+.stinger-dice {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  align-self: center;
+  /* opposite lean to the Choose-files button above it: two hand-drawn
+     objects never share a tilt */
+  transform: rotate(-1.4deg);
+}
+.stinger-dice-icon { flex: none; }
+
+.stinger-error { margin: 0; }
+.stinger-empty {
+  margin: 0;
+  font-family: var(--font-hand);
+  font-size: var(--step-0);
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.stinger-group {
+  margin: 4px 0 0;
+  font-family: var(--font-hand);
+  font-size: var(--step-0);
+  font-weight: 700;
+  color: var(--muted);
+  transform: rotate(-0.8deg);
+}
+
+/* --- pictures: a contact sheet ---------------------------------------- */
+.stinger-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 10px;
+}
+.stinger-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin: 0;
+  padding: 7px;
+  background: var(--surface-2);
+  border: 3px solid var(--outline);
+  border-radius: var(--wobble-sm);
+}
+/* switched off: still visible, still editable, obviously not in play */
+.stinger-tile--off,
+.stinger-row--off {
+  opacity: 0.55;
+}
+.stinger-thumb {
+  width: 100%;
+  height: 74px;
+  object-fit: contain;
+  background: #000;
+  border: 2px solid var(--outline);
+  border-radius: 8px 4px 7px 5px / 5px 7px 4px 8px;
+}
+
+/* --- sounds: a list, because a waveform thumbnail would be a lie ------ */
+.stinger-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.stinger-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  padding: 7px 8px;
+  background: var(--surface-2);
+  border: 3px solid var(--outline);
+  border-radius: var(--wobble-sm);
+}
+.stinger-preview {
+  flex: none;
+  width: 30px;
+  height: 30px;
+  font-size: 12px;
+  line-height: 1;
+  color: var(--text);
+  background: transparent;
+  border: 2px solid var(--outline);
+  border-radius: var(--wobble-blob);
+  cursor: pointer;
+}
+.stinger-preview:hover { background: var(--hover-wash); }
+.stinger-preview[aria-pressed="true"] {
+  color: var(--outline);
+  background: var(--yellow);
+}
+
+.stinger-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--step-0);
+  color: var(--text);
+}
+/* In a sound row the name competes with a preview button, a size, three
+   chips and two actions. Give it a floor so the flex line WRAPS instead of
+   crushing every filename down to "ah-lu…" — a stinger is chosen by name. */
+.stinger-row .stinger-name { min-width: 116px; }
+.stinger-size {
+  flex: none;
+  font-family: var(--font-num);
+  font-size: var(--step--1);
+  color: var(--muted);
+}
+
+/* --- the three switches ----------------------------------------------- */
+/* NOT a segmented control: these are three INDEPENDENT toggles, so they get
+   three separate pressable chips rather than one group where pressing one
+   would imply releasing the others. */
+.stinger-flags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+}
+.stinger-chip {
+  font-family: var(--font-hand);
+  font-size: var(--step--1);
+  font-weight: 700;
+  color: var(--muted);
+  background: transparent;
+  padding: 3px 7px 4px;
+  min-height: 24px; /* WCAG 2.5.8 */
+  border: 2px solid var(--muted);
+  border-radius: var(--wobble-sm);
+  cursor: pointer;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+.stinger-chip:hover { background-color: var(--hover-wash); }
+.stinger-chip[aria-pressed="true"] {
+  color: var(--outline);
+  border-color: var(--outline);
+  background-color: var(--crayon-blue);
+  background-image: var(--crayon-streaks);
+}
+/* "on" is the master switch, so it gets the go crayon rather than chrome
+   blue — state is never colour-only, but colour still carries meaning */
+.stinger-chip--on[aria-pressed="true"] { background-color: var(--grass); }
+
+/* --- per-asset actions ------------------------------------------------- */
+.stinger-row-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+}
+.stinger-act {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--font-hand);
+  font-size: var(--step--1);
+  color: var(--text);
+  background: transparent;
+  padding: 3px 8px 4px;
+  min-height: 24px;
+  border: 2px solid var(--outline);
+  border-radius: var(--wobble-sm);
+  cursor: pointer;
+}
+.stinger-act:hover { background: var(--hover-wash); }
+.stinger-act--danger {
+  color: var(--angry-lit);
+  border-color: var(--angry);
+}
+.stinger-act-label { font-size: var(--step--1); }
+.stinger-confirm { flex-wrap: wrap; }
+.stinger-confirm-msg {
+  font-family: var(--font-hand);
+  font-size: var(--step--1);
+  color: var(--angry-lit);
+  white-space: nowrap;
+}
+/* in a tile the question takes its own line rather than breaking in half */
+.stinger-tile .stinger-confirm-msg { flex-basis: 100%; }
+/* the tiles are narrow — drop the words and keep the glyphs */
+.stinger-tile .stinger-act-label { display: none; }
+.stinger-tile .stinger-row-actions { margin-left: 0; }
+
 /* --------------------- narrow Activity panel --------------------- */
 /* Discord docks the Activity into a panel that can get very narrow.
    The roster is the first thing to go — the picture never is. */
@@ -1034,6 +1333,11 @@ label.fps-label {
 @media (max-width: 460px) {
   .sidebar { display: none; }
   .app-header, .app-footer { padding: 6px 10px; gap: 8px; }
+  /* Below this the drawer cannot both fit and leave the picture alone. The
+     user opened it deliberately and one tap closes it, so it takes the row
+     and gives the stage back on close. */
+  .stinger-drawer { width: 100%; }
+  .stinger-grid { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); }
 }
 
 /* ------------------------ accessibility -------------------------- */

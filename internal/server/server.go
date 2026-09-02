@@ -23,6 +23,7 @@ import (
 
 	"github.com/pedro-hbl/janjacast/internal/protocol"
 	"github.com/pedro-hbl/janjacast/internal/relay"
+	"github.com/pedro-hbl/janjacast/internal/stinger"
 	"github.com/pedro-hbl/janjacast/web"
 )
 
@@ -65,7 +66,11 @@ type Server struct {
 	mux  *http.ServeMux
 	auth       *authn
 	rl         *rateLimiter
+	uploadRL   *rateLimiter
 	wsPatterns []string
+	// stingers is the asset store; nil when JANJACAST_STINGER_DIR is unset,
+	// which disables the whole feature (no routes, no Hub.Stinger).
+	stingers stinger.Store
 	// instanceID lets a companion tab recognize "the server behind this
 	// tunnel is running on MY machine" and hop to loopback, taking the
 	// capture stream off the shared uplink entirely.
@@ -84,6 +89,7 @@ func New(cfg Config, log *slog.Logger) *Server {
 		mux:   http.NewServeMux(),
 		auth:  newAuthn(cfg.TokenSecret, cfg.DiscordClientID),
 		rl:         newRateLimiter(60, time.Minute), // per-IP budget for auth endpoints
+		uploadRL:   newRateLimiter(20, time.Minute), // uploads are far more expensive
 		wsPatterns: originPatterns(cfg),
 		instanceID: newInstanceID(),
 		conns:      make(map[*websocket.Conn]struct{}),
@@ -96,10 +102,20 @@ func New(cfg Config, log *slog.Logger) *Server {
 	}
 
 	if cfg.StingerDir != "" {
-		// Installed before the hub serves any traffic; called under Room.mu,
-		// so it must stay pure I/O (see pickStinger).
-		s.hub.Stinger = s.pickStinger
-		s.mux.HandleFunc("GET /stingers/{name}", s.handleStinger)
+		store, err := stinger.NewDiskStore(cfg.StingerDir, log)
+		if err != nil {
+			log.Warn("stinger directory unusable — stingers disabled", "dir", cfg.StingerDir, "err", err)
+		} else {
+			s.stingers = store
+			// Installed before the hub serves any traffic; called under
+			// Room.mu, so it must stay a pure pick (see pickStinger).
+			s.hub.Stinger = s.pickStinger
+			s.mux.HandleFunc("GET /stingers/{name}", s.handleStinger)
+			s.mux.HandleFunc("GET /api/stingers", s.handleStingerList)
+			s.mux.HandleFunc("POST /api/stingers", s.handleStingerUpload)
+			s.mux.HandleFunc("PATCH /api/stingers/{name}", s.handleStingerPatch)
+			s.mux.HandleFunc("DELETE /api/stingers/{name}", s.handleStingerDelete)
+		}
 	}
 
 	s.mux.HandleFunc("POST /api/token", s.handleToken)
@@ -163,6 +179,9 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 		"instance":         s.instanceID,
 		"localPort":        port,
 		"egressBudgetKbps": s.cfg.EgressBudgetKbps,
+		// Whether the asset store exists at all — the client hides the
+		// Stingers button entirely rather than opening a panel onto 404s.
+		"stingers": s.stingers != nil,
 	})
 }
 
@@ -598,5 +617,10 @@ func (s *Server) handleControl(room *relay.Room, client *relay.Client, data []by
 		room.ForwardControl(client, protocol.CtrlSync, ctrl.Data)
 	case protocol.CtrlKeyframeRequest:
 		room.RequestKeyframeFrom(client)
+	case protocol.CtrlStingerPlay:
+		var play protocol.StingerPlayData
+		if err := json.Unmarshal(ctrl.Data, &play); err == nil {
+			s.playStingerFor(room, client, play)
+		}
 	}
 }

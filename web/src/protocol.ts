@@ -24,14 +24,36 @@ export type ControlType =
   | "token_refresh"
   | "superseded"
   | "stinger"
+  | "stinger_play"
   | "error";
 
-/** Server-chosen stream start/stop stinger: the same random image + sound
- *  pair (same-origin URLs under /stingers/) for every participant. */
+/** Server-chosen stinger: the same image + sound pair (same-origin URLs under
+ *  /stingers/) for every participant. "start"/"stop" are the automatic stream
+ *  transitions; "manual" is somebody pressing a button in the panel. */
 export interface StingerData {
-  kind: "start" | "stop";
+  kind: "start" | "stop" | "manual";
   image?: string;
   audio?: string;
+}
+
+/** One stinger asset as the management API reports it. `url` is
+ *  origin-relative and must go through apiPath() before it is fetched. */
+export interface StingerAsset {
+  name: string;
+  type: "image" | "audio";
+  contentType: string;
+  size: number;
+  url: string;
+  enabled: boolean;
+  playOnStart: boolean;
+  playOnStop: boolean;
+}
+
+/** GET /api/stingers. */
+export interface StingerListData {
+  assets: StingerAsset[];
+  max: number;
+  maxBytes: number;
 }
 
 /** Publisher clock-sync mark: capture timestamp (µs) ↔ server wall clock

@@ -198,6 +198,14 @@ export class Session {
     this.sendControl("keyframe_request", {});
   }
 
+  /** Fire a stinger at the whole room. Names are asset base names (not
+   *  URLs); omit both and the server picks a random enabled pair. The server
+   *  validates the names and applies a ~3s per-client cooldown, so a rejected
+   *  trigger is silent by design — there is nothing useful to retry. */
+  playStinger(opts: { image?: string; audio?: string; random?: boolean } = {}): void {
+    this.sendControl("stinger_play", opts);
+  }
+
   sendMedia(buf: ArrayBuffer): void {
     if (this.ws?.readyState === WebSocket.OPEN) this.ws.send(buf);
   }
