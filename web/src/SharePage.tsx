@@ -7,6 +7,7 @@ import {
   createEffect,
   createSignal,
   onCleanup,
+  onMount,
   Show,
   type Component,
 } from "solid-js";
@@ -104,6 +105,9 @@ const SharePage: Component = () => {
   const [hint, setHint] = createSignal<"auto" | "text" | "motion">("auto");
   const [audioMode, setAudioMode] = createSignal<"app" | "system" | "none">("app");
   const [takenBy, setTakenBy] = createSignal<string | null>(null);
+  /** Privacy panic. Mirrors capture's own gate so the UI can label itself
+   *  without reaching into the encoder every render. */
+  const [blanked, setBlanked] = createSignal(false);
   const [viewers, setViewers] = createSignal(0);
   const [budgetKbps, setBudgetKbps] = createSignal(0);
 
@@ -128,6 +132,7 @@ const SharePage: Component = () => {
   session.onSuperseded = () => {
     capture()?.stop();
     setCapture(null);
+    setBlanked(false);
     setError({ key: "share.replaced" });
   };
 
@@ -151,6 +156,7 @@ const SharePage: Component = () => {
       if (c) {
         c.stop();
         setCapture(null);
+        setBlanked(false);
       }
     }
   });
@@ -163,6 +169,11 @@ const SharePage: Component = () => {
       graceUntil = performance.now() + 3000;
       session.takeStage();
       session.announceConfig(c.config);
+      // Taking the stage clears the room's blank (a fresh stream must never
+      // inherit a stale one — internal/relay/relay.go). If we are still
+      // hidden, say so again immediately, or a reconnect would silently
+      // un-hide the sharer. The local encoder gate never lapsed.
+      if (c.isBlanked()) session.setBlank(true);
     }
   };
 
@@ -181,7 +192,48 @@ const SharePage: Component = () => {
     });
   }, 1000);
 
+  /**
+   * The panic button. Order is the whole design here, and it is different
+   * in each direction:
+   *
+   *   Hiding — the encoder gate goes first, synchronously, so the frame
+   *   being read right now is already refused before the control message
+   *   has even been serialized. Nothing waits on a round trip.
+   *
+   *   Coming back — the relay's gate is lifted first. A WebSocket keeps
+   *   text and binary in one order, so telling the relay before un-gating
+   *   the encoder guarantees the un-blank is processed ahead of our first
+   *   chunk; the other order would have the relay drop the recovery
+   *   keyframe and leave the room staring at the card.
+   */
+  const toggleBlank = () => {
+    const c = capture();
+    if (!c) return;
+    const next = !c.isBlanked();
+    if (next) {
+      c.setBlanked(true);
+      session.setBlank(true);
+    } else {
+      session.setBlank(false);
+      c.setBlanked(false); // also forces the recovery keyframe
+    }
+    setBlanked(next);
+  };
+
+  // Ctrl+Shift+B — a deliberate three-key chord, because an accidental
+  // blank is worse than the risk it guards against. No focus-change
+  // auto-blank ships anywhere in this file, by design.
+  const onKey = (e: KeyboardEvent) => {
+    if (!e.ctrlKey || !e.shiftKey || e.altKey || e.metaKey) return;
+    if (e.key !== "b" && e.key !== "B") return;
+    if (!capture()) return;
+    e.preventDefault();
+    toggleBlank();
+  };
+  onMount(() => document.addEventListener("keydown", onKey));
+
   onCleanup(() => {
+    document.removeEventListener("keydown", onKey);
     clearInterval(statsTimer);
     clearInterval(syncTimer);
     capture()?.stop();
@@ -201,6 +253,12 @@ const SharePage: Component = () => {
       handle.onended = stop;
       handle.onconfigchange = (cfg) => session.announceConfig(cfg);
       setCapture(handle);
+      setBlanked(false);
+      // Verification hook for the blank gates: a devtools console can read
+      // __janjacast.blankStats() and confirm sentChunks does not move while
+      // hidden, without instrumenting the wire. Debug surface only — nothing
+      // in the app reads it.
+      (globalThis as { __janjacast?: unknown }).__janjacast = handle;
       session.takeStage();
       session.announceConfig(handle.config);
     } catch (e) {
@@ -211,6 +269,7 @@ const SharePage: Component = () => {
   const stop = () => {
     capture()?.stop();
     setCapture(null);
+    setBlanked(false);
     session.leaveStage();
   };
 
@@ -339,6 +398,29 @@ const SharePage: Component = () => {
             </>
           }
         >
+          {/* The panic button sits directly under the live line and above
+              everything else: when it is needed it is needed *now*, and the
+              first thing the eye lands on after "you are live" should be the
+              way to stop being live. Its own badge rides beside it so the
+              armed state is never one glance away from being forgotten. */}
+          <div class="blank-row">
+            <button
+              type="button"
+              class="crayon-btn crayon-btn--panic crayon-btn--big"
+              aria-pressed={blanked()}
+              title={t("blank.hotkey.hint")}
+              onClick={toggleBlank}
+            >
+              {blanked() ? t("blank.button.off") : t("blank.button.on")}
+            </button>
+            <Show when={blanked()}>
+              <span class="blank-badge" role="status">
+                {t("blank.badge.blanked")}
+              </span>
+            </Show>
+          </div>
+          <p class="share-hint">{t("blank.hotkey.hint")}</p>
+
           <p class="share-live">
             <OnAirDot class="live-dot" />{" "}
             {t("share.liveLine", {

@@ -33,6 +33,7 @@ import {
   BrowserTabDoodle,
   CastMark,
   CloudDoodle,
+  CoveredTv,
   EyesDoodle,
   LinkDot,
   MegaphoneDoodle,
@@ -251,23 +252,105 @@ const App: Component = () => {
     };
   };
 
-  // Fullscreen when the iframe permits it; otherwise "theater mode" —
-  // maximize the stage inside the Activity by hiding all chrome.
+  // --- one focus system: fullscreen, theater, lights-out -------------------
+  //
+  // Three settings, one ladder, and they compose rather than compete:
+  //
+  //   fullscreen  the OS gives us the whole display (iframe permitting)
+  //   theater     the stage takes the whole Activity, chrome *hidden*
+  //   lights-out  the chrome that is still there is *dimmed*, and the HUD
+  //               fades after 3s of stillness
+  //
+  // Lights-out is a state class on the same root as theater and reuses the
+  // same idle timer that already governed the hover-stats overlay — there
+  // is deliberately no third parallel mode and no second timer.
   const [theater, setTheater] = createSignal(false);
   const [isFullscreen, setIsFullscreen] = createSignal(false);
   const onFsChange = () => setIsFullscreen(Boolean(document.fullscreenElement));
   document.addEventListener("fullscreenchange", onFsChange);
 
-  // In fullscreen/theater the header (and its stats) is hidden — surface
-  // the stats as a hover overlay on the stage instead, auto-hiding after a
-  // short idle so they never burn into the movie.
-  const [overlayOn, setOverlayOn] = createSignal(false);
-  let overlayTimer: ReturnType<typeof setTimeout> | null = null;
-  const pokeOverlay = () => {
-    setOverlayOn(true);
-    if (overlayTimer) clearTimeout(overlayTimer);
-    overlayTimer = setTimeout(() => setOverlayOn(false), 2500);
+  /** Lights-out. Per-session only (sessionStorage, matching `jc-lang`'s
+   *  naming): it is a mood for tonight's film, not a preference. */
+  const CINEMA_KEY = "jc-cinema";
+  const [cinema, setCinema] = createSignal(
+    (() => {
+      try {
+        return sessionStorage.getItem(CINEMA_KEY) === "1";
+      } catch {
+        return false; // private mode
+      }
+    })(),
+  );
+
+  // The HUD-idle timer. It drove the stats overlay before lights-out
+  // existed; now it drives every fading surface. Nothing that reports a
+  // *problem* is on it — errors and the connection dot are pinned visible
+  // in theme.css, so a hidden HUD can never hide bad news.
+  const HUD_IDLE_MS = 3000;
+  const [hudVisible, setHudVisible] = createSignal(true);
+  let hudTimer: ReturnType<typeof setTimeout> | null = null;
+  const pokeHud = () => {
+    setHudVisible(true);
+    if (hudTimer) clearTimeout(hudTimer);
+    hudTimer = setTimeout(() => setHudVisible(false), HUD_IDLE_MS);
   };
+  pokeHud(); // arm it once: stillness from the very first second counts
+
+  // Jitter-proof reveal. A resting hand on a touchpad emits 1–2px tremors
+  // for minutes; treating those as "the user moved" would strobe the HUD
+  // through the whole film. Only cumulative travel past 6px inside a 200ms
+  // window counts as a deliberate movement.
+  const REVEAL_PX = 6;
+  const REVEAL_WINDOW_MS = 200;
+  let travel = 0;
+  let travelSince = 0;
+  let lastX: number | null = null;
+  let lastY: number | null = null;
+  const onPointerMove = (e: MouseEvent) => {
+    const now = performance.now();
+    if (now - travelSince > REVEAL_WINDOW_MS) {
+      travel = 0;
+      travelSince = now;
+      // A new window starts from where the pointer is now, so the gap
+      // across the idle period is not counted as travel.
+      lastX = e.clientX;
+      lastY = e.clientY;
+      return;
+    }
+    if (lastX !== null && lastY !== null) {
+      travel += Math.abs(e.clientX - lastX) + Math.abs(e.clientY - lastY);
+    }
+    lastX = e.clientX;
+    lastY = e.clientY;
+    if (travel > REVEAL_PX) {
+      travel = 0;
+      travelSince = now;
+      pokeHud();
+    }
+  };
+
+  const toggleCinema = () => {
+    const next = !cinema();
+    setCinema(next);
+    try {
+      sessionStorage.setItem(CINEMA_KEY, next ? "1" : "0");
+    } catch {
+      /* private mode: the choice lasts for this page load */
+    }
+    pokeHud(); // never hand someone a dark room and a hidden way out
+  };
+
+  /** The root's state classes. `cinema-idle` is the transient half —
+   *  `cinema` dims, `cinema-idle` fades — so CSS can treat "lights are
+   *  down" and "nobody has moved" as the separate things they are. */
+  const appClass = () => {
+    const c = ["app"];
+    if (theater()) c.push("theater");
+    if (cinema()) c.push("cinema");
+    if (cinema() && !hudVisible()) c.push("cinema-idle");
+    return c.join(" ");
+  };
+
   const toggleFullscreen = async () => {
     if (document.fullscreenElement) {
       await document.exitFullscreen().catch(() => {});
@@ -285,6 +368,18 @@ const App: Component = () => {
   };
 
   const onKey = (e: KeyboardEvent) => {
+    // Reveal keys are handled before the text-field guard, and Tab is never
+    // swallowed: a hidden HUD must not become a keyboard trap. Revealing on
+    // keydown means the browser's own focus move lands on a control that is
+    // already visible, so the focus ring is where docs/design.md § 7 wants it.
+    if (
+      e.key === "Tab" ||
+      e.key === "ArrowUp" ||
+      e.key === "h" ||
+      e.key === "H"
+    ) {
+      pokeHud();
+    }
     const t = e.target as HTMLElement;
     if (
       t instanceof HTMLInputElement ||
@@ -295,7 +390,11 @@ const App: Component = () => {
     }
     if (e.key === "f" || e.key === "F") void toggleFullscreen();
     if (e.key === "t" || e.key === "T") setTheater((v) => !v);
-    if (e.key === "Escape") setTheater(false);
+    // Escape is the one way out of every focus mode at once.
+    if (e.key === "Escape") {
+      setTheater(false);
+      if (cinema()) toggleCinema();
+    }
   };
   document.addEventListener("keydown", onKey);
 
@@ -388,7 +487,7 @@ const App: Component = () => {
   onCleanup(() => {
     document.removeEventListener("keydown", onKey);
     document.removeEventListener("fullscreenchange", onFsChange);
-    if (overlayTimer) clearTimeout(overlayTimer);
+    if (hudTimer) clearTimeout(hudTimer);
     clearInterval(statsTimer);
     clearInterval(paintTimer);
     clearStinger();
@@ -499,6 +598,24 @@ const App: Component = () => {
 
   const stage = () => session()?.stage() ?? {};
   const live = () => Boolean(stage().publisherId);
+  /** The sharer hit the panic button (or a late-join welcome said so). No
+   *  frames are coming; render the card instead of the video. */
+  const blanked = () => stage().blanked === true;
+  /** Is there a moving picture on the canvas right now? Everything that may
+   *  sit over the stage keys off this, so nothing decorates live video. */
+  const watching = () => live() && !blanked() && !session()?.ownsStage();
+
+  // The privacy blank replaces the picture, so the picture must actually be
+  // gone: resetting the backing store wipes the last real frame that would
+  // otherwise sit under the card. Clearing `painted` then makes the unblank
+  // keyframe — not a stale pixel — what brings the stage back, with the
+  // ordinary "waiting for the picture" loader covering the one-chunk gap.
+  createEffect(() => {
+    if (!blanked()) return;
+    canvasRef.width = BLANK_W;
+    canvasRef.height = 150;
+    setPainted(false);
+  });
 
   /** Transport state as a word, in the active language. `undefined` is the
    *  beat before the session exists — that is "starting", not "broken". */
@@ -538,7 +655,7 @@ const App: Component = () => {
   };
 
   return (
-    <div class={theater() ? "app theater" : "app"}>
+    <div class={appClass()} onMouseMove={onPointerMove}>
       <header class="app-header">
         {/* the scribble is on the lockup, not the word: it runs under mark and
             wordmark alike, so the three pieces read as one drawing */}
@@ -579,14 +696,10 @@ const App: Component = () => {
           class="stage"
           ref={stageRef}
           onDblClick={() => void toggleFullscreen()}
-          onMouseMove={pokeOverlay}
         >
           <Show
             when={
-              (isFullscreen() || theater()) &&
-              overlayOn() &&
-              live() &&
-              !session()?.ownsStage()
+              (isFullscreen() || theater()) && hudVisible() && watching()
             }
           >
             <div class="stage-stats">
@@ -607,11 +720,28 @@ const App: Component = () => {
           {/* Stinger overlay: inside .stage so fullscreen/theater show it;
               above the canvas, below the stage controls; never interactive. */}
           <div class="stinger-layer" ref={stingerLayerRef} />
+          {/* The privacy blank. This is the one intentional full-frame
+              layer in the app: it *replaces* the video rather than
+              decorating it (there is no video — the sharer's encoder is
+              gated and the relay's cache is empty), so § "the stage is
+              sacred" holds. It outranks the waiting loader below. */}
+          <Show when={live() && blanked() && !session()?.ownsStage()}>
+            <div class="stage-blank">
+              <CoveredTv class="blank-art" />
+              <p class="blank-line" role="status">
+                {t("blank.card.title")}
+              </p>
+            </div>
+          </Show>
           {/* Waiting for the first frame: a crayon loader on paper rather
               than a black rectangle. Gone the moment anything paints. */}
           <Show
             when={
-              live() && !capture() && !session()?.ownsStage() && !painted()
+              live() &&
+              !blanked() &&
+              !capture() &&
+              !session()?.ownsStage() &&
+              !painted()
             }
           >
             <div class="stage-wait" title={t("stage.waiting")}>
@@ -638,7 +768,7 @@ const App: Component = () => {
               </div>
             </div>
           </Show>
-          <Show when={live() && !session()?.ownsStage() && zoom() > 1.001}>
+          <Show when={watching() && zoom() > 1.001}>
             <span class="zoom-pill" title={t("stage.zoomTitle")}>
               {zoom().toFixed(1)}x
             </span>
@@ -821,6 +951,23 @@ const App: Component = () => {
           </div>
           <span class="seg-unit">fps</span>
         </div>
+
+        {/* Lights out. Chalk, not grass: the footer already spends the one
+            --go this screen gets (docs/design.md § 5.1), and the pressed
+            state lives in aria-pressed so the visual and the accessible
+            state cannot drift. It stands beside the framerate and stinger
+            controls because it is chrome, like they are. */}
+        <Show when={live()}>
+          <button
+            type="button"
+            class="crayon-btn crayon-btn--chalk"
+            aria-pressed={cinema()}
+            title={t("cinema.toggleTitle")}
+            onClick={toggleCinema}
+          >
+            {t("cinema.toggle")}
+          </button>
+        </Show>
 
         <Show when={stingersOn()}>
           <button

@@ -619,6 +619,73 @@ export const ScribbleLoader: Component<{ class?: string }> = (props) => (
 );
 
 /**
+ * The privacy blank: the JanjaCast set with a dust sheet thrown over it.
+ *
+ * A scene drawing (§ 6 rule 5 — designed at ~220px, the size it is used),
+ * and deliberately the same television as `SceneTv` so the room reads
+ * "that's our set, covered up" rather than "something broke". The cloth is
+ * `--muted`, a semantic token, so it stays a warm grey sheet on the dark
+ * Activity paper and on the cream one.
+ *
+ * The antenna nub is inked and waveless: nothing is going out. That is the
+ * whole message, and it is carried by shape, not colour — the card's words
+ * ("Voltamos já") say the rest.
+ */
+export const CoveredTv: Component<{ class?: string }> = (props) => (
+  <svg
+    class={props.class}
+    width="240"
+    height="172"
+    viewBox="0 0 240 172"
+    aria-hidden="true"
+  >
+    {/* legs first, so the box sits on top of them */}
+    <path
+      d="M66 128 54 160M146 126 158 158"
+      fill="none"
+      stroke="var(--crayon-blue-deep)"
+      stroke-width="6"
+      stroke-linecap="round"
+    />
+    {/* the set, mostly buried under the sheet — only its lower band shows */}
+    <path
+      d="M18 36Q17 26 28 25L168 18Q180 17 181 28L186 114Q187 125 176 126L32 134Q21 135 20 124Z"
+      fill="var(--crayon-blue)"
+      stroke="var(--outline)"
+      stroke-width="5"
+      stroke-linejoin="round"
+    />
+    {/* the sheet: draped over the top, hem falling in four uneven scallops
+        (even ones would read as a graphic, not as cloth) */}
+    <path
+      d="M8 48Q5 24 32 18L174 4Q200 1 202 23L206 100Q189 90 173 100Q157 110 141 99Q125 88 109 100Q93 111 77 100Q61 89 45 101Q29 112 13 100Z"
+      fill="var(--muted)"
+      stroke="var(--outline)"
+      stroke-width="5"
+      stroke-linejoin="round"
+    />
+    {/* two folds, drawn with the crayon barely pressed */}
+    <path
+      d="M58 24 68 92M126 14 133 88"
+      fill="none"
+      stroke="var(--outline)"
+      stroke-width="3"
+      stroke-linecap="round"
+      opacity=".38"
+    />
+    {/* the antenna still poking out — inked, no waves */}
+    <circle
+      cx="210"
+      cy="26"
+      r="9"
+      fill="none"
+      stroke="var(--outline)"
+      stroke-width="3.4"
+    />
+  </svg>
+);
+
+/**
  * Connection state, drawn rather than spelled out. One scribbled blob
  * that changes *shape* as well as colour — a tick when the socket is
  * open, an orbiting spark while it is trying, a slash when it is down —

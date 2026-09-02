@@ -79,6 +79,22 @@ const en = {
   "stage.shareScreen": "Share screen",
   "stage.companionOpen": "Start sharing in the new tab.",
 
+  // --- privacy blank (the panic button) ----------------------------
+  // Sharer-side labels are full verbs — this is a control somebody presses
+  // in a hurry, and docs/i18n.md § 3 keeps buttons out of "tá" territory.
+  // The card the room sees is the one place the app speaks *to* the
+  // viewers, so it gets the spoken phrase.
+  "blank.button.on": "Blank now",
+  "blank.button.off": "Back on",
+  "blank.card.title": "Back in a sec",
+  "blank.hotkey.hint": "Hotkey: Ctrl+Shift+B",
+  "blank.badge.blanked": "Hidden",
+
+  // --- cinema mode (lights out) ------------------------------------
+  "cinema.toggle": "Lights off",
+  "cinema.toggleTitle":
+    "Dim everything around the picture; the controls fade after 3 s of stillness. Move the mouse, or press H, to bring them back.",
+
   // --- roster ------------------------------------------------------
   // Deliberately count-agnostic in both languages, so the scribble
   // underline never changes length when somebody joins (design.md § 5.5).
@@ -216,6 +232,23 @@ const ptBR: Record<MessageKey, Message> = {
   "stage.fsTitle": "Tela cheia · F (T pro modo cinema)",
   "stage.shareScreen": "Compartilhar tela",
   "stage.companionOpen": "Comece a transmitir na aba nova.",
+
+  // "Sumir" is what a Brazilian actually says about vanishing on purpose
+  // ("sumi da call"); "Ocultar tela" is what a settings dialog says. The
+  // card keeps the sanctioned phrase "Voltamos já" — first person plural,
+  // because the room is being addressed, not one viewer.
+  "blank.button.on": "Sumir agora",
+  "blank.button.off": "Voltar",
+  "blank.card.title": "Voltamos já",
+  "blank.hotkey.hint": "Atalho: Ctrl+Shift+B",
+  "blank.badge.blanked": "Escondido",
+
+  // "Luzes apagadas" over "Modo cinema": the Activity already spends
+  // "modo cinema" on theater mode in stage.fsTitle, and two different
+  // things must not share one name.
+  "cinema.toggle": "Luzes apagadas",
+  "cinema.toggleTitle":
+    "Escurece tudo em volta da imagem; os controles somem depois de 3 s parado. Mexa o mouse, ou aperte H, pra trazer de volta.",
 
   "roster.inRoom": "na sala",
   // "transmitindo" is the exact verb and it is five characters too long: in

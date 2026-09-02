@@ -59,6 +59,17 @@ export interface CaptureSample {
   at: number; // performance.now() when it was encoded
 }
 
+/** Verification hook for the privacy blank. `droppedFrames` counts raw
+ *  frames refused at the reader (gate 1); `suppressedChunks` counts already
+ *  encoded chunks refused at the encoder output (gate 2 — the in-flight
+ *  frames gate 1 could not reach). While blanked, `sentChunks` must not
+ *  move: that is the property the panic button promises. */
+export interface BlankStats {
+  droppedFrames: number;
+  suppressedChunks: number;
+  sentChunks: number;
+}
+
 export interface CaptureHandle {
   config: ConfigData;
   /** What the sharer picked: "monitor" | "window" | "browser" (tab). */
@@ -72,6 +83,17 @@ export interface CaptureHandle {
   lastSample(): CaptureSample | null;
   /** Encode the next frame as a keyframe (keyframe-on-demand). */
   forceKeyframe(): void;
+  /** Privacy panic: while true NOTHING captured is encoded or sent — not a
+   *  video frame, not an audio packet. Takes effect on the very next frame
+   *  read, and any frame already inside the encoder is suppressed at the
+   *  output, so engaging costs at most one frame of latency and zero frames
+   *  of leakage. Lifting forces an immediate keyframe so viewers recover in
+   *  one chunk. */
+  setBlanked(on: boolean): void;
+  /** Whether the encoder is currently gated by the privacy blank. */
+  isBlanked(): boolean;
+  /** Counters proving the gates fired — see BlankStats. */
+  blankStats(): BlankStats;
   /** Change the capture/encode framerate mid-stream (no restart). */
   setFramerate(fps: 30 | 60): Promise<void>;
   /** Relay congestion feedback: degraded viewers out of total. */
@@ -238,6 +260,26 @@ export async function startCapture(
   const targetBitrate = chosen.config.bitrate ?? 4_000_000;
   let bitrate = targetBitrate;
 
+  // --- privacy blank (panic button) ----------------------------------------
+  // A correctness feature, not a UI state: while `blanked` is true no
+  // captured byte may reach the transport. Two gates live in this file and
+  // they are deliberately redundant.
+  //
+  //   Gate 1 — the frame reader below drops frames before `videoEncoder
+  //            .encode()` (and audio before `audioEncoder.encode()`). This
+  //            is the one that matters: nothing captured is ever handed to
+  //            an encoder while hidden.
+  //   Gate 2 — the encoder `output` callbacks refuse to `sendChunk`. The
+  //            encoder is asynchronous and may hold up to two frames that
+  //            were legitimately admitted a moment before the toggle; gate 1
+  //            cannot reach those, so they die here instead. This is what
+  //            turns "≤1 frame of latency" into "0 frames of leakage".
+  //
+  // The relay carries two more (fan-out drop + GOP eviction) so a leak would
+  // have to defeat both ends. See internal/relay/relay.go → SetBlank.
+  let blanked = false;
+  const blankCounters = { droppedFrames: 0, suppressedChunks: 0, sentChunks: 0 };
+
   // --- stats ----------------------------------------------------------------
   let frameCount = 0;
   let byteCount = 0;
@@ -256,10 +298,17 @@ export async function startCapture(
   let videoSeq = 0;
   const videoEncoder = new VideoEncoder({
     output: (chunk, metadata) => {
+      // Blank gate 2: a frame admitted just before the toggle can still
+      // surface here. Never let it onto the wire.
+      if (blanked) {
+        blankCounters.suppressedChunks++;
+        return;
+      }
       const payload = new Uint8Array(chunk.byteLength);
       chunk.copyTo(payload);
       frameCount++;
       byteCount += payload.byteLength;
+      blankCounters.sentChunks++;
       const tid =
         (metadata as { svc?: { temporalLayerId?: number } } | undefined)?.svc
           ?.temporalLayerId ?? 0;
@@ -284,6 +333,15 @@ export async function startCapture(
       if (done || !running) {
         frame?.close();
         break;
+      }
+      // Blank gate 1, and it comes FIRST — ahead of backpressure, ahead of
+      // the keyframe bookkeeping, ahead of anything that could touch the
+      // pixels. The very next frame read after the toggle is destroyed
+      // unlooked-at, which is what bounds "engage" to a single frame.
+      if (blanked) {
+        blankCounters.droppedFrames++;
+        frame.close();
+        continue;
       }
       // Drop at the source when the encoder or the network is behind —
       // latency must never accumulate in queues.
@@ -399,9 +457,17 @@ export async function startCapture(
     let audioSeq = 0;
     audioEncoder = new AudioEncoder({
       output: (chunk) => {
+        // Blank gate 2, audio. Privacy is not only pixels: the captured
+        // app's sound (a notification, a video, someone's voice note) is
+        // exactly as leaky as its picture, so the panic button mutes it too.
+        if (blanked) {
+          blankCounters.suppressedChunks++;
+          return;
+        }
         const payload = new Uint8Array(chunk.byteLength);
         chunk.copyTo(payload);
         byteCount += payload.byteLength;
+        blankCounters.sentChunks++;
         sendChunk(packMedia(KIND_AUDIO, true, 0, audioSeq++, chunk.timestamp, payload));
       },
       error: (e) => console.error("audio encoder:", e),
@@ -422,6 +488,12 @@ export async function startCapture(
         if (done || !running) {
           data?.close();
           break;
+        }
+        // Blank gate 1, audio.
+        if (blanked) {
+          blankCounters.droppedFrames++;
+          data.close();
+          continue;
         }
         audioEncoder!.encode(data);
         data.close();
@@ -447,6 +519,19 @@ export async function startCapture(
     lastSample: () => sample,
     forceKeyframe: () => {
       keyframeWanted = true;
+    },
+    isBlanked: () => blanked,
+    blankStats: () => ({ ...blankCounters }),
+    setBlanked(on: boolean) {
+      if (blanked === on) return;
+      blanked = on;
+      if (!on) {
+        // Recover in one chunk: the same keyframe-on-demand flag that
+        // answers CtrlKeyframeRequest, so viewers whose decoders were left
+        // waiting behind the relay's keyframe gate get a fresh IDR
+        // immediately instead of the next 4-second safety-net one.
+        keyframeWanted = true;
+      }
     },
     async setFramerate(fps: 30 | 60) {
       if (videoEncoder.state !== "configured") return;

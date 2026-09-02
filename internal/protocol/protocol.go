@@ -90,6 +90,12 @@ const (
 	// cooldown, and broadcasts an ordinary CtrlStinger, so the client's
 	// existing overlay needs no new machinery.
 	CtrlStingerPlay ControlType = "stinger_play"
+	// CtrlBlank is the privacy panic button: the publisher telling the relay
+	// to hide the stream right now. Honored from the current publisher only.
+	// The publisher has already stopped encoding by the time this arrives —
+	// this engages the relay's own independent gates (fan-out drop + GOP
+	// eviction), so a leaked frame would have to defeat both sides.
+	CtrlBlank ControlType = "blank"
 
 	// Server -> client.
 	CtrlWelcome      ControlType = "welcome"       // join accepted, current room state
@@ -98,6 +104,11 @@ const (
 	CtrlPong         ControlType = "pong"          // ping reply with server time
 	CtrlTokenRefresh ControlType = "token_refresh" // fresh share token for reconnects
 	CtrlError        ControlType = "error"
+	// CtrlBlankState is the room-wide blank signal: viewers render the
+	// "back in a sec" card instead of video. Late joiners learn the same
+	// thing from StageStateData.Blanked inside CtrlWelcome, so this is the
+	// *live* edge only — never the only source of truth.
+	CtrlBlankState ControlType = "blank_state"
 
 	// Publisher -> server -> viewers (forwarded verbatim).
 	CtrlSync ControlType = "sync" // maps capture timestamps to wall clock
@@ -176,6 +187,17 @@ type StageStateData struct {
 	PublisherID   string      `json:"publisherId,omitempty"` // empty = stage free
 	PublisherName string      `json:"publisherName,omitempty"`
 	Config        *ConfigData `json:"config,omitempty"`
+	// Blanked is the privacy panic state. It rides the ordinary stage
+	// handshake so a late joiner learns it inside CtrlWelcome, before any
+	// media could arrive (there is none — blanking evicts the GOP cache).
+	Blanked bool `json:"blanked,omitempty"`
+}
+
+// BlankData is the payload of CtrlBlank (publisher -> relay) and
+// CtrlBlankState (relay -> clients). One shape, both directions, so the
+// panic toggle is a single concept on the wire.
+type BlankData struct {
+	On bool `json:"on"`
 }
 
 // WelcomeData is the payload of CtrlWelcome: the stage state plus the

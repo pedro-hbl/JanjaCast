@@ -106,6 +106,7 @@ func (h *Hub) Join(roomID, userID, username string) (*Room, *Client, iter.Seq[Ou
 			r.publisher = nil
 			r.config = nil
 			r.clearGOPLocked()
+			r.clearBlankLocked()
 			r.gateViewersLocked()
 			r.broadcastStageStateLocked()
 			// Arm the delayed stop here too: the expected immediate re-take
@@ -197,6 +198,7 @@ func (h *Hub) Leave(r *Room, c *Client) {
 		r.publisher = nil
 		r.config = nil
 		r.clearGOPLocked()
+		r.clearBlankLocked()
 		r.broadcastStageStateLocked()
 		r.scheduleStingerStopLocked()
 	}
@@ -232,6 +234,13 @@ type Room struct {
 	// waiting for the next keyframe. Guarded by mu.
 	gop      [][]byte
 	gopBytes int
+
+	// blanked is the privacy panic state: while true the room forwards no
+	// media at all and the GOP cache stays empty, so neither a live viewer
+	// nor a late joiner can be handed a captured frame. It is per-room state
+	// owned by the current publisher and cleared whenever the stage changes
+	// hands, so a new stream never inherits a stale blank. Guarded by mu.
+	blanked bool
 
 	// lastKFReq debounces keyframe requests to the publisher. Guarded by mu.
 	lastKFReq time.Time
@@ -356,10 +365,69 @@ func (r *Room) TakeStage(c *Client) {
 	r.publisher = c
 	r.config = nil
 	r.clearGOPLocked()
+	// A new stream must never inherit the previous sharer's blank.
+	r.clearBlankLocked()
 	r.gateViewersLocked()
 	r.broadcastStageStateLocked()
 	r.stingerStartLocked()
 	r.log.Info("stage taken", "user", c.Username)
+}
+
+// SetBlank engages or lifts the privacy blank on behalf of the current
+// publisher — the relay half of the panic button. Only the publisher may
+// call it; a viewer's CtrlBlank is silently refused, because "hide the
+// room" must never be reachable by anyone but the person whose screen it is.
+//
+// Engaging does three things beyond flipping the flag, and each one is an
+// independent gate against a leaked frame:
+//
+//   - ForwardMedia returns early while blanked (stray chunks already in
+//     flight from the publisher's socket are dropped here, not fanned);
+//   - the GOP cache is evicted, so a client joining mid-blank has no stale
+//     keyframe to replay;
+//   - viewers go back behind the keyframe gate, so the first thing they can
+//     decode after the blank lifts is a fresh IDR.
+func (r *Room) SetBlank(c *Client, on bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.publisher != c {
+		return // only the person on stage may hide the room
+	}
+	if _, ok := r.clients[c]; !ok {
+		return // a departed client must not be able to latch a blank
+	}
+	if r.blanked == on {
+		return
+	}
+	r.blanked = on
+	if on {
+		r.clearGOPLocked()
+		r.gateViewersLocked()
+	}
+	r.broadcastBlankLocked()
+	r.log.Info("blank", "on", on, "user", c.Username)
+}
+
+// clearBlankLocked lifts a blank because the stage changed hands (taken,
+// left, superseded, disconnected). Without it a room could stay latched
+// hidden and the next sharer would stream into a card nobody can dismiss.
+// Caller must hold r.mu.
+func (r *Room) clearBlankLocked() {
+	if !r.blanked {
+		return
+	}
+	r.blanked = false
+	r.broadcastBlankLocked()
+}
+
+// broadcastBlankLocked fans the live blank edge out. The same state also
+// rides stageStateLocked(), which is what makes late joiners correct.
+// Caller must hold r.mu; all sends are non-blocking.
+func (r *Room) broadcastBlankLocked() {
+	d := protocol.BlankData{On: r.blanked}
+	for c := range r.clients {
+		c.enqueueControl(protocol.CtrlBlankState, d)
+	}
 }
 
 // RequestKeyframeFrom forwards a keyframe request on behalf of client c,
@@ -424,6 +492,11 @@ func (r *Room) requestKeyframeLocked() {
 	if r.publisher == nil || time.Since(r.lastKFReq) < kfDebounce {
 		return
 	}
+	if r.blanked {
+		// Nothing is being encoded: asking would only prod a publisher that
+		// is deliberately silent. capture.ts forces its own IDR on unblank.
+		return
+	}
 	r.lastKFReq = time.Now()
 	r.publisher.enqueueControl(protocol.CtrlKeyframeRequest, struct{}{})
 }
@@ -440,6 +513,7 @@ func (r *Room) LeaveStage(c *Client) {
 	r.publisher = nil
 	r.config = nil
 	r.clearGOPLocked()
+	r.clearBlankLocked()
 	r.broadcastStageStateLocked()
 	r.scheduleStingerStopLocked()
 }
@@ -492,6 +566,13 @@ func (r *Room) ForwardMedia(from *Client, msg []byte) {
 	}
 	if _, ok := r.clients[from]; !ok {
 		return // departed client: never forward on its behalf
+	}
+	// Privacy panic, relay gate. The publisher already stopped encoding
+	// (web/src/capture.ts drops at the frame-read loop AND suppresses the
+	// encoder output), so reaching here means something raced or lied.
+	// Drop it: while blanked, no captured byte leaves this room.
+	if r.blanked {
+		return
 	}
 
 	// Maintain the late-join cache from the video stream. Bounded by both
@@ -590,7 +671,7 @@ func (r *Room) maybeSendRateHintLocked(now time.Time) {
 
 // stageStateLocked snapshots the stage. Caller must hold r.mu.
 func (r *Room) stageStateLocked() protocol.StageStateData {
-	s := protocol.StageStateData{Config: r.config}
+	s := protocol.StageStateData{Config: r.config, Blanked: r.blanked}
 	if r.publisher != nil {
 		s.PublisherID = r.publisher.UserID
 		s.PublisherName = r.publisher.Username

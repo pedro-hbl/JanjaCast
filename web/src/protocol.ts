@@ -25,7 +25,16 @@ export type ControlType =
   | "superseded"
   | "stinger"
   | "stinger_play"
+  | "blank"
+  | "blank_state"
   | "error";
+
+/** The privacy panic button. `blank` is publisher→relay, `blank_state` is
+ *  relay→everyone; one shape both ways. `on` is never omitted — an
+ *  un-blank that serialized to `{}` could never lift the blank. */
+export interface BlankData {
+  on: boolean;
+}
 
 /** Server-chosen stinger: the same image + sound pair (same-origin URLs under
  *  /stingers/) for every participant. "start"/"stop" are the automatic stream
@@ -82,6 +91,10 @@ export interface StageStateData {
   publisherId?: string;
   publisherName?: string;
   config?: ConfigData | null;
+  /** Privacy panic state. It rides the stage handshake (and therefore
+   *  `welcome`), so a client joining mid-blank renders the card before any
+   *  media could arrive — there is none, the relay evicted its GOP cache. */
+  blanked?: boolean;
 }
 
 /** Welcome payload: stage state plus the server-assigned id of this client. */

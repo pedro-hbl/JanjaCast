@@ -593,6 +593,52 @@
   padding: 13px 30px 15px;
 }
 
+/* The privacy panic button. It is a *toggle*, so it is one button in two
+   states rather than two buttons: chalk at rest, the full --angry crayon
+   while armed (live/stop/destructive is exactly what that crayon is for).
+   Its own wobble recipe, because it stands directly above Stop sharing —
+   which is --wobble-b — and two identical hand-drawn corners read as a
+   computer pretending to be a hand (§ 3.3). */
+.crayon-btn--panic {
+  background-color: var(--surface-2);
+  border-radius: var(--wobble-sm);
+}
+.crayon-btn--panic:hover:not(:disabled) { background-color: var(--hover-wash); }
+.crayon-btn--panic[aria-pressed="true"] {
+  background-color: var(--angry);
+  color: #fff;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.35);
+}
+.crayon-btn--panic[aria-pressed="true"]:hover:not(:disabled) {
+  background-color: #e64b4b;
+}
+
+/* The armed indicator on /share. Persistent while hidden — a sharer who
+   forgets they are blanked is the failure this whole feature has to avoid,
+   so the state is a filled red badge next to a filled red button, never a
+   colour change alone. Tilted the other way from the button. */
+.blank-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+.blank-badge {
+  font-family: var(--font-hand);
+  font-size: 13.5px;
+  font-weight: 700;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  color: #fff;
+  background: var(--angry);
+  border: 2px solid var(--outline);
+  border-radius: var(--wobble-b);
+  padding: 3px 11px 4px;
+  transform: rotate(2deg);
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.35);
+}
+
 /* --------------------------- controls ---------------------------- */
 /* One control set, three shapes: a segmented toggle for binary choices,
    a crayon select for lists, a crayon slider for continuous values. */
@@ -1008,6 +1054,123 @@ label.fps-label {
   border: 2px solid rgba(244, 239, 221, 0.35);
   border-radius: 14px 18px 15px 17px / 17px 14px 18px 15px;
   pointer-events: none;
+}
+
+/* ------------------------ privacy blank -------------------------- */
+/* The sharer pressed the panic button. This is the one full-frame layer in
+   the app and it does not violate "the stage is sacred": there is no
+   picture underneath to decorate — the encoder is gated and the relay's
+   cache is empty — so this *is* the stage for as long as it is up.
+
+   Opaque paper rather than black: black reads as "the video broke",
+   construction paper reads as "somebody put a sheet over the set", which
+   is exactly what happened. z-index clears the canvas, the stinger layer
+   and the waiting loader; it sits under the stage controls (5) and the
+   stats overlay (6) so the HUD still works while hidden. */
+.stage-blank {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 16px;
+  background: var(--ground);
+}
+.blank-art {
+  width: clamp(150px, 42%, 260px);
+  height: auto;
+  transform: rotate(-2deg);
+}
+.blank-line {
+  margin: 0;
+  font-family: var(--font-hand);
+  font-size: clamp(20px, 4.4vw, 30px);
+  font-weight: 700;
+  color: var(--text);
+  text-align: center;
+  transform: rotate(-1deg);
+}
+/* A very short stage (Discord's narrow dock) keeps the words and drops the
+   drawing — the sentence is the information, the sheet is the joke. */
+@media (max-height: 300px) {
+  .blank-art { display: none; }
+}
+
+/* ----------------------- lights out (cinema) --------------------- */
+/* One tap dims everything around the picture. It is a *state class on the
+   same root as theater*, not a third mode: theater hides chrome, lights-out
+   dims whatever chrome is still on screen, and the two compose. The canvas
+   is never touched — no overlay, no filter, no opacity on .stage or
+   .stage-canvas — so a pixel sampled before and after the toggle is
+   identical. That is the crayon rule: loud in the frame, silent in the
+   middle.
+
+   Two levels, because "the lights are down" and "nobody has moved" are
+   different facts:
+     .cinema        chrome drops to 0.25
+     .cinema-idle   the HUD fades out entirely (3s of stillness) */
+.app.cinema .app-header,
+.app.cinema .app-footer,
+.app.cinema .sidebar {
+  opacity: 0.25;
+  transition: opacity 320ms ease;
+}
+/* Reaching for the chrome brings it back before you get there. */
+.app.cinema .app-header:hover,
+.app.cinema .app-footer:hover,
+.app.cinema .sidebar:hover,
+.app.cinema .app-header:focus-within,
+.app.cinema .app-footer:focus-within,
+.app.cinema .sidebar:focus-within {
+  opacity: 1;
+}
+
+/* Idle: the HUD goes. Opacity + pointer-events rather than display/
+   visibility, so every control stays in the tab order and Tab can reveal
+   the HUD and land focus on it in the same keystroke (§ 7). */
+.app.cinema-idle .app-footer > *,
+.app.cinema-idle .app-header .stat-pill,
+.app.cinema-idle .stage-stats,
+.app.cinema-idle .fs-btn,
+.app.cinema-idle .zoom-pill {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 320ms ease;
+}
+
+/* Never hidden, at either level: anything that reports a problem. An error
+   the room cannot see is worse than a visible one, and the transport dot is
+   the only thing that distinguishes "paused" from "the socket died". */
+.app.cinema .error-text,
+.app.cinema-idle .app-footer > .error-text,
+.app.cinema .app-header .conn-dot,
+.app.cinema-idle .app-header .conn-dot {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* Keyboard reveal must actually reveal: focus inside the footer overrides
+   the idle fade as well as the dim. */
+.app.cinema-idle .app-footer:focus-within > *,
+.app.cinema-idle .app-footer:hover > * {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* Motion is emphasis, never information (§ 7): under reduced motion the
+   transitions collapse and the states still resolve. */
+@media (prefers-reduced-motion: reduce) {
+  .app.cinema .app-header,
+  .app.cinema .app-footer,
+  .app.cinema .sidebar,
+  .app.cinema-idle .app-footer > *,
+  .app.cinema-idle .stage-stats,
+  .app.cinema-idle .fs-btn {
+    transition-duration: 0.001ms;
+  }
 }
 
 /* ---------------------- takeover confirm ------------------------- */

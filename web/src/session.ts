@@ -6,6 +6,7 @@
 import { createSignal } from "solid-js";
 import { apiPath, type Identity } from "./discord";
 import type {
+  BlankData,
   ConfigData,
   Control,
   RoomStateData,
@@ -198,6 +199,19 @@ export class Session {
     this.sendControl("keyframe_request", {});
   }
 
+  /** Publisher side: engage or lift the privacy blank for the whole room.
+   *  The relay honors it from the current publisher only, and answers with
+   *  a `blank_state` to everybody. This is the *relay's* gate — the encoder
+   *  has its own, applied first (see capture.ts). */
+  setBlank(on: boolean): void {
+    this.sendControl("blank", { on });
+  }
+
+  /** Whether the room is currently hidden behind the "back in a sec" card. */
+  blanked(): boolean {
+    return this.stage().blanked === true;
+  }
+
   /** Fire a stinger at the whole room. Names are asset base names (not
    *  URLs); omit both and the server picks a random enabled pair. The server
    *  validates the names and applies a ~3s per-client cooldown, so a rejected
@@ -262,6 +276,14 @@ export class Session {
       case "stage_state":
         this.setStage((ctrl.data ?? {}) as StageStateData);
         break;
+      case "blank_state": {
+        // The live edge. `stage_state` also carries `blanked`, so this
+        // merges rather than replaces — a blank must never wipe the
+        // publisher or the codec config out of the stage signal.
+        const { on } = (ctrl.data ?? { on: false }) as BlankData;
+        this.setStage((s) => ({ ...s, blanked: on === true }));
+        break;
+      }
       case "room_state":
         this.setParticipants((ctrl.data ?? { participants: [] }) as RoomStateData);
         break;

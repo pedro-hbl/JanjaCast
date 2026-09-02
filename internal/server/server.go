@@ -617,6 +617,11 @@ func (s *Server) handleControl(room *relay.Room, client *relay.Client, data []by
 		room.ForwardControl(client, protocol.CtrlSync, ctrl.Data)
 	case protocol.CtrlKeyframeRequest:
 		room.RequestKeyframeFrom(client)
+	case protocol.CtrlBlank:
+		var b protocol.BlankData
+		if err := json.Unmarshal(ctrl.Data, &b); err == nil {
+			room.SetBlank(client, b.On)
+		}
 	case protocol.CtrlStingerPlay:
 		var play protocol.StingerPlayData
 		if err := json.Unmarshal(ctrl.Data, &play); err == nil {
