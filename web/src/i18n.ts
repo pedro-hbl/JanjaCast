@@ -256,6 +256,12 @@ const en = {
   "st.errUpload": "upload refused ({status})",
   "st.errSave": "couldn't save that ({status})",
   "st.errDelete": "couldn't delete that ({status})",
+  // --- lobby --------------------------------------------------------
+  "lobby.title": "The TV's off",
+  "lobby.subtitle": "Nobody's sharing yet",
+  "lobby.cta": "Turn on the TV",
+  "lobby.here": { one: "{count} person here", other: "{count} people here" } as Message,
+  "lobby.alone": "Just you for now",
 } satisfies Record<string, Message>;
 
 export type MessageKey = keyof typeof en;
@@ -471,6 +477,12 @@ const ptBR: Record<MessageKey, Message> = {
   "st.errUpload": "envio recusado ({status})",
   "st.errSave": "não deu pra salvar ({status})",
   "st.errDelete": "não deu pra apagar ({status})",
+  // --- lobby --------------------------------------------------------
+  "lobby.title": "A TV tá apagada",
+  "lobby.subtitle": "Ninguém tá transmitindo ainda",
+  "lobby.cta": "Acender a TV",
+  "lobby.here": { one: "{count} pessoa por aqui", other: "{count} pessoas por aqui" },
+  "lobby.alone": "Só você por enquanto",
 };
 
 const dictionaries: Record<Locale, Record<MessageKey, Message>> = {
@@ -624,3 +636,4 @@ export function t(key: MessageKey, params?: Params): string {
       : msg[pluralRule[locale()](count)];
   return interpolate(form, params);
 }
+ 

@@ -157,7 +157,9 @@ const (
 	// to claim the stage, and the whole room hears about it.
 	CtrlStageTurn ControlType = "stage_turn"
 	// CtrlStageCancel ends a pending turn, saying why.
-  CtrlStageCancel ControlType = "stage_cancel"
+    CtrlStageCancel ControlType = "stage_cancel"
+    // CtrlRoomPhase announces a lobby<->live transition to every client.
+    CtrlRoomPhase ControlType = "room_phase"
 )
 
 // Control is the JSON envelope for text messages.
@@ -212,13 +214,17 @@ type ConfigData struct {
 
 // StageStateData is the payload of CtrlStageState.
 type StageStateData struct {
-	PublisherID   string      `json:"publisherId,omitempty"` // empty = stage free
-	PublisherName string      `json:"publisherName,omitempty"`
-	Config        *ConfigData `json:"config,omitempty"`
-	// Blanked is the privacy panic state. It rides the ordinary stage
-	// handshake so a late joiner learns it inside CtrlWelcome, before any
-	// media could arrive (there is none — blanking evicts the GOP cache).
-	Blanked bool `json:"blanked,omitempty"`
+    PublisherID   string      `json:"publisherId,omitempty"` // empty = stage free
+    PublisherName string      `json:"publisherName,omitempty"`
+    Config        *ConfigData `json:"config,omitempty"`
+    // Blanked is the privacy panic state. It rides the ordinary stage
+    // handshake so a late joiner learns it inside CtrlWelcome, before any
+    // media could arrive (there is none — blanking evicts the GOP cache).
+    Blanked bool `json:"blanked,omitempty"`
+    // Phase is the overall room phase: "lobby" when nobody is publishing,
+    // "live" when there is an active publisher. It rides CtrlWelcome so a
+    // late joiner never guesses.
+    Phase string `json:"phase,omitempty"`
 }
 
 // BlankData is the payload of CtrlBlank (publisher -> relay) and

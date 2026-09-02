@@ -1147,21 +1147,32 @@ func (r *Room) maybeSendRateHintLocked(now time.Time) {
 
 // stageStateLocked snapshots the stage. Caller must hold r.mu.
 func (r *Room) stageStateLocked() protocol.StageStateData {
-	s := protocol.StageStateData{Config: r.config, Blanked: r.blanked}
-	if r.publisher != nil {
-		s.PublisherID = r.publisher.UserID
-		s.PublisherName = r.publisher.Username
-	}
-	return s
+    s := protocol.StageStateData{Config: r.config, Blanked: r.blanked}
+    if r.publisher != nil {
+        s.PublisherID = r.publisher.UserID
+        s.PublisherName = r.publisher.Username
+        s.Phase = "live"
+    } else {
+        s.Phase = "lobby"
+    }
+    return s
 }
 
 // broadcastStageStateLocked fans the stage state out. Caller must hold r.mu;
 // all sends are non-blocking so holding the lock is cheap.
 func (r *Room) broadcastStageStateLocked() {
-	state := r.stageStateLocked()
-	for c := range r.clients {
-		c.enqueueControl(protocol.CtrlStageState, state)
-	}
+    state := r.stageStateLocked()
+    for c := range r.clients {
+        c.enqueueControl(protocol.CtrlStageState, state)
+    }
+}
+
+// broadcastRoomPhaseLocked announces the lobby/live edge to everyone.
+func (r *Room) broadcastRoomPhaseLocked() {
+    phase := "lobby"
+    if r.publisher != nil { phase = "live" }
+    d := struct{ Phase string `json:"phase"` }{Phase: phase}
+    for c := range r.clients { c.enqueueControl(protocol.CtrlRoomPhase, d) }
 }
 
 func (r *Room) broadcastRoomStateLocked() {

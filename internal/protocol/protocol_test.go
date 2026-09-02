@@ -139,3 +139,18 @@ func TestStageControlNames(t *testing.T) {
 		}
 	}
 }
+
+// Room phase rides welcome and also has its own live edge.
+func TestRoomPhaseRoundTrip(t *testing.T) {
+    // Welcome carries Phase
+    inW := WelcomeData{StageStateData: StageStateData{Phase: "lobby"}, SelfID: "me"}
+    gotW := roundTrip(t, CtrlWelcome, inW)
+    if gotW.Phase != "lobby" || gotW.SelfID != "me" {
+        t.Fatalf("welcome = %+v, want phase lobby self me", gotW)
+    }
+    // Live edge control keeps phase payload shape stable
+    type RoomPhaseData struct{ Phase string `json:"phase"` }
+    if got := roundTrip(t, CtrlRoomPhase, RoomPhaseData{Phase: "live"}); got.Phase != "live" {
+        t.Fatalf("room_phase = %+v, want live", got)
+    }
+}

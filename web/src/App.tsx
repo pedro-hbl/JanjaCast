@@ -27,6 +27,7 @@ import {
 } from "./i18n";
 import { LangToggle } from "./LangToggle";
 import { Session, type SessionStatus } from "./session";
+import Lobby from "./lobby";
 import type { StageMode, StageTurnData, StingerData } from "./protocol";
 import { playTurnCue } from "./cue";
 import { startCapture, type CaptureHandle } from "./capture";
@@ -1063,51 +1064,9 @@ const App: Component = () => {
               ⛶
             </button>
           </Show>
-          {/* The empty stage is a drawing, not a sentence: the JanjaCast
-              set standing in the grass under a sun, switched off, with the
-              one thing you can do about it planted in front of it. The
-              button's label is the only text in the scene. */}
+          {/* Lobby replaces the old empty-stage scene. Presence stays in sidebar. */}
           <Show when={!live()}>
-            <div class="stage-scene">
-              <StageBackdrop />
-              <Show
-                when={companionPhase() !== "idle"}
-                fallback={
-                  <div class="scene-stack">
-                    <SceneTv class="scene-tv" />
-                    <button
-                      onClick={shareClicked}
-                      class="crayon-btn crayon-btn--go scene-cta"
-                    >
-                      {t("stage.shareScreen")}
-                    </button>
-                  </div>
-                }
-              >
-                {/* One <Show>, four faces. */}
-                <div class="scene-stack">
-                  <BrowserTabDoodle class="scene-tab" />
-                  <Show when={companionPhase() === "opening"}>
-                    <p class="scene-line">{t("stage.companionOpening")}</p>
-                  </Show>
-                  <Show when={companionPhase() === "late"}>
-                    <p class="scene-line">{t("stage.companionLate")}</p>
-                    <button onClick={shareClicked} class="crayon-btn crayon-btn--go scene-cta">
-                      {t("stage.openAgain")}
-                    </button>
-                  </Show>
-                  <Show when={companionPhase() === "joined"}>
-                    <p class="scene-line">{t("stage.companionOpen")}</p>
-                  </Show>
-                  <Show when={companionPhase() === "failed"}>
-                    <p class="scene-line">{t("stage.companionFailed")}</p>
-                    <button onClick={shareClicked} class="crayon-btn crayon-btn--go scene-cta">
-                      {t("stage.openAgain")}
-                    </button>
-                  </Show>
-                </div>
-              </Show>
-            </div>
+            <Lobby session={session()} canCapture={captureAllowed()} onShare={shareClicked} />
           </Show>
         </div>
 
