@@ -679,18 +679,24 @@ func (s *Server) handleClip(w http.ResponseWriter, r *http.Request) {
     token := strings.TrimPrefix(r.URL.Path, "/clip/")
     if token == "" { http.NotFound(w, r); return }
     // Find the room that holds this token. Linear scan is fine at this scale.
+    // Locate and copy data out while under Hub.mu, then release BEFORE I/O.
+    var data []byte
+    var mime string
+    found := false
     mu := s.hub.Mu(); mu.Lock()
-    defer mu.Unlock()
     for _, room := range s.hub.RoomsUnsafe() {
-        if data, mime, ok := room.GetClip(token); ok {
-            // Throttle by limiting write speed if needed — minimal for now.
-            w.Header().Set("Content-Type", mime)
-            w.Header().Set("Content-Disposition", "attachment; filename=\"janjacast-clip"+map[bool]string{true:".mp4", false:".webm"}[mime=="video/mp4"]+"\"")
-            w.Header().Set("Cache-Control", "no-store")
-            // naive write; egress budgeting hook could wrap ResponseWriter
-            _, _ = w.Write(data)
-            return
+        if b, m, ok := room.GetClip(token); ok {
+            data = append([]byte(nil), b...)
+            mime = m
+            found = true
+            break
         }
     }
-    http.NotFound(w, r)
+    mu.Unlock()
+    if !found { http.NotFound(w, r); return }
+    // Serve outside of Hub.mu
+    w.Header().Set("Content-Type", mime)
+    w.Header().Set("Content-Disposition", "attachment; filename=\"janjacast-clip"+map[bool]string{true:".mp4", false:".webm"}[mime=="video/mp4"]+"\"")
+    w.Header().Set("Cache-Control", "no-store")
+    _, _ = w.Write(data)
 }
