@@ -633,6 +633,17 @@ const App: Component = () => {
     if (!live()) setPhase("idle");
   });
 
+  // The tab's presence is authoritative both ways: joining promotes the
+  // stored phase past "opening"/"late", and leaving *without ever going
+  // live* means the person closed the tab and changed their mind — that
+  // must land on the hero CTA, not back on the stale wait copy.
+  createEffect<boolean>((was) => {
+    const joined = companionJoined();
+    if (joined) setPhase("joined");
+    else if (was && !live()) setPhase("idle");
+    return joined;
+  }, false);
+
   // --- stinger management panel --------------------------------------------
   // A drawer over the sidebar side (never over the video). The button is
   // hidden entirely unless the server actually has an asset store.
