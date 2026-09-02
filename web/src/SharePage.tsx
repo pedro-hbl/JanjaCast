@@ -11,10 +11,29 @@ import {
   type Component,
 } from "solid-js";
 import type { Identity } from "./discord";
-import { Session } from "./session";
+import { Session, type SessionStatus } from "./session";
 import { startCapture, type CaptureHandle } from "./capture";
 import { CastMark, OnAirDot, SunDoodle, Wordmark } from "./doodles";
+import { t, type MessageKey, type Params } from "./i18n";
+import { LangToggle } from "./LangToggle";
 import "./theme.css";
+
+/** Same as App's: an error is stored as a *descriptor* so it re-renders in
+ *  the new language when the toggle flips. A bare string is for messages we
+ *  do not own (browser DOMExceptions out of getDisplayMedia). */
+type ShareError = string | { key: MessageKey; params?: Params };
+
+/** Connection words. /share keeps the words rather than the Activity's
+ *  LinkDot, because the wait state would have to be yellow and yellow is
+ *  invisible on cream (docs/design.md § 5.11). */
+const CONN_KEY: Record<SessionStatus, MessageKey> = {
+  connecting: "conn.connecting",
+  open: "conn.open",
+  reconnecting: "conn.reconnecting",
+  closed: "conn.closed",
+  unauthorized: "conn.unauthorized",
+  superseded: "conn.superseded",
+};
 
 const SharePage: Component = () => {
   const params = new URLSearchParams(location.search);
@@ -73,7 +92,13 @@ const SharePage: Component = () => {
     params.get("fps") === "30" ? 30 : 60,
   );
   const [stats, setStats] = createSignal({ fps: 0, kbps: 0, targetKbps: 0 });
-  const [error, setError] = createSignal<string | null>(null);
+  const [error, setError] = createSignal<ShareError | null>(null);
+  const errorText = (): string | null => {
+    const e = error();
+    if (e == null) return null;
+    return typeof e === "string" ? e : t(e.key, e.params);
+  };
+  const connWord = () => t(CONN_KEY[session.status()]);
   // "auto" reads the surface the sharer picked (tab ⇒ motion, screen or
   // window ⇒ text). The two explicit values stay reachable under Advanced.
   const [hint, setHint] = createSignal<"auto" | "text" | "motion">("auto");
@@ -103,7 +128,7 @@ const SharePage: Component = () => {
   session.onSuperseded = () => {
     capture()?.stop();
     setCapture(null);
-    setError("This share was replaced by a newer sharing tab — you can close this one.");
+    setError({ key: "share.replaced" });
   };
 
   // Remote stop: if we held the stage and it is no longer ours (the user
@@ -192,6 +217,9 @@ const SharePage: Component = () => {
   return (
     <div class="share-page">
       <SunDoodle class="share-sun" />
+      {/* opposite corner from the sun, so the sheet keeps one drawing in
+          each top corner rather than two things fighting for the same one */}
+      <LangToggle class="share-lang" />
 
       <div class="share-card">
         <h1 class="share-title">
@@ -201,17 +229,18 @@ const SharePage: Component = () => {
             <CastMark class="logo-mark" size={36} />
             <Wordmark />
           </span>
-          <span class="share-title-sub">screen sharing</span>
+          <span class="share-title-sub">{t("share.sub")}</span>
         </h1>
         <p class="share-room">
-          Room <code>{room}</code> · connection: {session.status()}
+          {t("share.room")} <code>{room}</code> · {t("share.connection")}:{" "}
+          {connWord()}
         </p>
 
         <Show when={capture() && session.status() !== "open"}>
           <p class="error-text">
             {session.status() === "unauthorized"
-              ? "⛔ Session expired — go back to Discord and click Share screen again."
-              : "⚠ Not connected — nobody can see your screen right now. Reconnecting…"}
+              ? t("share.expired")
+              : t("share.notConnected")}
           </p>
         </Show>
 
@@ -220,11 +249,13 @@ const SharePage: Component = () => {
           fallback={
             <>
               <Show when={takenBy()}>
-                <p class="error-text">✋ {takenBy()} took the stage.</p>
+                <p class="error-text">
+                  {t("err.tookStage", { name: takenBy() ?? "" })}
+                </p>
               </Show>
               <div class="field">
                 <span class="field-label" id="share-fps-label">
-                  Framerate
+                  {t("footer.framerate")}
                 </span>
                 <div class="seg" role="group" aria-labelledby="share-fps-label">
                   <button
@@ -251,13 +282,9 @@ const SharePage: Component = () => {
                 disabled={session.status() !== "open"}
                 class="crayon-btn crayon-btn--go crayon-btn--big"
               >
-                Start sharing
+                {t("share.start")}
               </button>
-              <p class="share-hint">
-                Pick the screen, window, or tab to stream. Keep this tab open
-                while sharing — everyone in the Discord call watches through the
-                Activity.
-              </p>
+              <p class="share-hint">{t("share.hint")}</p>
 
               {/* Everything below here already has a right answer, and the
                   right answer is the default. The disclosure keeps the two
@@ -266,10 +293,10 @@ const SharePage: Component = () => {
                   offers), sharpness reads the picked surface, and sound is
                   scoped to the captured app so the call can't echo. */}
               <details class="crayon-details">
-                <summary>Advanced</summary>
+                <summary>{t("share.advanced")}</summary>
                 <div class="details-body">
                   <label class="fps-label">
-                    Optimize for{" "}
+                    {t("share.optimize")}{" "}
                     <select
                       class="crayon-select"
                       value={hint()}
@@ -279,13 +306,13 @@ const SharePage: Component = () => {
                         )
                       }
                     >
-                      <option value="auto">✨ Automatic (recommended)</option>
-                      <option value="text">📖 Text (code, slides)</option>
-                      <option value="motion">🎮 Motion (games, video)</option>
+                      <option value="auto">{t("share.opt.auto")}</option>
+                      <option value="text">{t("share.opt.text")}</option>
+                      <option value="motion">{t("share.opt.motion")}</option>
                     </select>
                   </label>
                   <label class="fps-label">
-                    Sound{" "}
+                    {t("share.sound")}{" "}
                     <select
                       class="crayon-select"
                       value={audioMode()}
@@ -295,21 +322,17 @@ const SharePage: Component = () => {
                         )
                       }
                     >
-                      <option value="app">
-                        🎵 App sound — no call echo (recommended)
-                      </option>
-                      <option value="system">
-                        🔊 Whole-screen sound (echo-prone!)
-                      </option>
-                      <option value="none">🔇 No sound</option>
+                      <option value="app">{t("share.snd.app")}</option>
+                      <option value="system">{t("share.snd.system")}</option>
+                      <option value="none">{t("share.snd.none")}</option>
                     </select>
                   </label>
                   <p class="share-hint">
                     {audioMode() === "app"
-                      ? "Pick a window or a browser tab — only that app's sound is shared, so the Discord call is never re-broadcast."
+                      ? t("share.sndHint.app")
                       : audioMode() === "system"
-                        ? "⚠ Shares everything on your speakers, INCLUDING the Discord call — everyone will hear themselves unless Discord uses a different output device (Windows: Settings → Sound → Volume mixer → Discord → Output)."
-                        : "Video only; the voice call carries the commentary."}
+                        ? t("share.sndHint.system")
+                        : t("share.sndHint.none")}
                   </p>
                 </div>
               </details>
@@ -317,12 +340,17 @@ const SharePage: Component = () => {
           }
         >
           <p class="share-live">
-            <OnAirDot class="live-dot" /> Live at {fps()} fps — {stats().fps}{" "}
-            fps · {stats().kbps} kbps (target {stats().targetKbps})
+            <OnAirDot class="live-dot" />{" "}
+            {t("share.liveLine", {
+              fps: fps(),
+              realFps: stats().fps,
+              kbps: stats().kbps,
+              target: stats().targetKbps,
+            })}
           </p>
           <div class="field">
             <span class="field-label" id="share-live-fps-label">
-              Framerate
+              {t("footer.framerate")}
             </span>
             <div
               class="seg"
@@ -355,27 +383,27 @@ const SharePage: Component = () => {
             <span class="seg-unit">fps</span>
           </div>
           <p class="share-room">
-            {viewers()} watching · total upload ≈{" "}
-            {Math.round((stats().kbps * Math.max(viewers(), 1)) / 100) / 10}{" "}
-            Mbps
+            {t("share.watching", { count: viewers() })} ·{" "}
+            {t("share.upload", {
+              mbps:
+                Math.round((stats().kbps * Math.max(viewers(), 1)) / 100) / 10,
+            })}
             {budgetKbps() > 0 &&
             stats().kbps * Math.max(viewers(), 1) > budgetKbps()
-              ? " ⚠ over your egress budget"
+              ? t("share.overBudget")
               : ""}
           </p>
           <button
             onClick={stop}
             class="crayon-btn crayon-btn--stop crayon-btn--big"
           >
-            Stop sharing
+            {t("footer.stopSharing")}
           </button>
-          <p class="share-hint">
-            You can minimize this tab; the stream keeps running.
-          </p>
+          <p class="share-hint">{t("share.minimize")}</p>
         </Show>
 
         <Show when={error()}>
-          <p class="error-text">{error()}</p>
+          <p class="error-text">{errorText()}</p>
         </Show>
       </div>
 

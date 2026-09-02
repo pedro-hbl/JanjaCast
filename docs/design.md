@@ -12,6 +12,11 @@ Source of truth is the code, not this document:
 | Icons, drawings, wordmark   | `web/src/doodles.tsx` |
 | Favicon (separate 16px cut) | `web/index.html`    |
 | README lockup (standalone)  | `docs/lockup.svg`   |
+| Every user-facing string    | `web/src/i18n.ts`   |
+
+Copy is a design surface here and it ships in two languages — en-US and
+pt-BR, with Brazilian Discord users as the primary audience. Terminology,
+register and the length budget are in `docs/i18n.md`.
 
 ---
 
@@ -464,9 +469,15 @@ Destructive text is `#fff` with an ink shadow, not `--text`.
 
 ### 5.2 Segmented toggle — `.seg` / `.seg-btn`
 
-**Use for a choice with exactly two crayons.** Framerate (30 | 60) is the only
-current instance, in three places: the Activity footer, the `/share` pre-flight
-form, and the `/share` mid-stream controls.
+**Use for a choice with exactly two crayons.** Two instances:
+
+- **Framerate** (30 | 60), in three places: the Activity footer, the `/share`
+  pre-flight form, and the `/share` mid-stream controls.
+- **Language** (EN | PT), `.lang-seg`, in two: pinned right in the Activity
+  header and in the top-left corner of the `/share` sheet. Same control, only
+  the cell metrics change — 38px rather than 46px, 32px under 460px. Its two
+  visible letters are an abbreviation, so each button carries the language's
+  own name as its `aria-label`. See `docs/i18n.md`.
 
 A binary choice does not deserve a dropdown: a select hides one of two options
 behind a click and gives no read of the current value without focus. The
@@ -812,7 +823,13 @@ sidebar goes entirely. The picture is never what gets sacrificed.
 - Give neighbouring elements different wobble recipes and opposite tilts.
 - Put the personality in the *chrome* — frames, labels, buttons, empty states.
 - Write copy in the app's voice: plain verbs, active, specific, sentence case.
-  "Take the stage", not "Initiate broadcast session".
+  "Take the stage", not "Initiate broadcast session". Then put it in
+  `web/src/i18n.ts` in **both** languages — no user-facing string is written
+  inline, and pt-BR is the primary audience, not a translation of the
+  English (`docs/i18n.md`).
+- Check a new label at 440px on both grounds. pt-BR runs 20–30% longer than
+  English; the two shapes that break first are a fixed-width control and a
+  row that does not wrap.
 - Test on both papers before you commit. Half the bugs in this theme are
   something that only exists on one ground.
 

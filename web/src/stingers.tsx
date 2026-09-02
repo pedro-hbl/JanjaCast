@@ -18,6 +18,7 @@ import {
 import { apiPath } from "./discord";
 import type { StingerAsset, StingerListData } from "./protocol";
 import { BoomDoodle, DiceDoodle } from "./doodles";
+import { t } from "./i18n";
 
 export interface StingerPanelProps {
   /** Discord access token (or share token). Absent on anonymous dev servers,
@@ -57,7 +58,7 @@ export const StingerPanel: Component<StingerPanelProps> = (props) => {
   const refresh = async (keepError = false) => {
     try {
       const resp = await fetch(apiPath("/api/stingers"), { headers: auth() });
-      if (!resp.ok) throw new Error(`couldn't read the folder (${resp.status})`);
+      if (!resp.ok) throw new Error(t("st.errList", { status: resp.status }));
       const data = (await resp.json()) as StingerListData;
       setAssets(data.assets ?? []);
       setLimits({ max: data.max, maxBytes: data.maxBytes });
@@ -116,7 +117,10 @@ export const StingerPanel: Component<StingerPanelProps> = (props) => {
     // glance instead of an 8 MiB upload.
     setError(
       tooBig.length > 0
-        ? `⛔ ${tooBig.map((f) => f.name).join(", ")} — bigger than ${fmtSize(limits().maxBytes)}.`
+        ? t("st.tooBig", {
+            names: tooBig.map((f) => f.name).join(", "),
+            max: fmtSize(limits().maxBytes),
+          })
         : null,
     );
     try {
@@ -133,7 +137,7 @@ export const StingerPanel: Component<StingerPanelProps> = (props) => {
         } | null;
         const rejected = data?.errors ?? [];
         if (!resp.ok && rejected.length === 0) {
-          throw new Error(`upload refused (${resp.status})`);
+          throw new Error(t("st.errUpload", { status: resp.status }));
         }
         if (rejected.length > 0) {
           const mine = error();
@@ -167,7 +171,7 @@ export const StingerPanel: Component<StingerPanelProps> = (props) => {
           body: JSON.stringify(body),
         },
       );
-      if (!resp.ok) throw new Error(`couldn't save that (${resp.status})`);
+      if (!resp.ok) throw new Error(t("st.errSave", { status: resp.status }));
       setError(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -184,7 +188,7 @@ export const StingerPanel: Component<StingerPanelProps> = (props) => {
         { method: "DELETE", headers: auth() },
       );
       if (!resp.ok && resp.status !== 404) {
-        throw new Error(`couldn't delete that (${resp.status})`);
+        throw new Error(t("st.errDelete", { status: resp.status }));
       }
       setError(null);
     } catch (e) {
@@ -201,28 +205,28 @@ export const StingerPanel: Component<StingerPanelProps> = (props) => {
         type="button"
         class="stinger-chip"
         aria-pressed={f.a.playOnStart}
-        title="Play when a stream starts"
+        title={t("st.chipStartTitle")}
         onClick={() => void patch(f.a, { playOnStart: !f.a.playOnStart })}
       >
-        start
+        {t("st.chipStart")}
       </button>
       <button
         type="button"
         class="stinger-chip"
         aria-pressed={f.a.playOnStop}
-        title="Play when a stream stops"
+        title={t("st.chipStopTitle")}
         onClick={() => void patch(f.a, { playOnStop: !f.a.playOnStop })}
       >
-        stop
+        {t("st.chipStop")}
       </button>
       <button
         type="button"
         class="stinger-chip stinger-chip--on"
         aria-pressed={f.a.enabled}
-        title="Use this one at all"
+        title={t("st.chipOnTitle")}
         onClick={() => void patch(f.a, { enabled: !f.a.enabled })}
       >
-        on
+        {t("st.chipOn")}
       </button>
     </div>
   );
@@ -236,57 +240,57 @@ export const StingerPanel: Component<StingerPanelProps> = (props) => {
           <button
             type="button"
             class="stinger-act"
-            title="Play this at the whole room"
+            title={t("st.roomTitle")}
             onClick={() =>
               props.onPlay(
                 f.a.type === "image" ? { image: f.a.name } : { audio: f.a.name },
               )
             }
           >
-            📣<span class="stinger-act-label">room</span>
+            📣<span class="stinger-act-label">{t("st.room")}</span>
           </button>
           <button
             type="button"
             class="stinger-act stinger-act--danger"
-            title={`Delete ${f.a.name}`}
+            title={t("st.deleteTitle", { name: f.a.name })}
             onClick={() => setConfirming(f.a.name)}
           >
-            ✕<span class="stinger-act-label">delete</span>
+            ✕<span class="stinger-act-label">{t("st.delete")}</span>
           </button>
         </div>
       }
     >
       <div class="stinger-row-actions stinger-confirm">
-        <span class="stinger-confirm-msg">Delete it?</span>
+        <span class="stinger-confirm-msg">{t("st.confirm")}</span>
         <button
           type="button"
           class="stinger-act stinger-act--danger"
           onClick={() => void remove(f.a)}
         >
-          yes
+          {t("st.yes")}
         </button>
         <button
           type="button"
           class="stinger-act"
           onClick={() => setConfirming(null)}
         >
-          no
+          {t("st.no")}
         </button>
       </div>
     </Show>
   );
 
   return (
-    <aside class="stinger-drawer" role="dialog" aria-label="Stingers">
+    <aside class="stinger-drawer" role="dialog" aria-label={t("st.title")}>
       <header class="stinger-head">
         <BoomDoodle class="stinger-head-icon" />
         <h4 class="stinger-title">
-          <span class="u-scribble u-scribble--pink">Stingers</span>
+          <span class="u-scribble u-scribble--pink">{t("st.title")}</span>
         </h4>
         <button
           type="button"
           class="stinger-close"
-          aria-label="Close stingers"
+          aria-label={t("st.close")}
           onClick={props.onClose}
         >
           ✕
@@ -308,7 +312,7 @@ export const StingerPanel: Component<StingerPanelProps> = (props) => {
           }}
         >
           <p class="stinger-drop-msg">
-            {dragging() ? "Let go!" : "Drop pictures and sounds here"}
+            {dragging() ? t("st.dropLetGo") : t("st.drop")}
           </p>
           <button
             type="button"
@@ -316,7 +320,7 @@ export const StingerPanel: Component<StingerPanelProps> = (props) => {
             disabled={busy()}
             onClick={() => fileInput.click()}
           >
-            {busy() ? "Uploading…" : "Choose files"}
+            {busy() ? t("st.uploading") : t("st.choose")}
           </button>
           <input
             ref={fileInput}
@@ -331,8 +335,10 @@ export const StingerPanel: Component<StingerPanelProps> = (props) => {
             }}
           />
           <p class="stinger-hint">
-            png jpg gif webp · mp3 ogg wav · up to {fmtSize(limits().maxBytes)} each
-            {assets().length > 0 ? ` · ${assets().length}/${limits().max} used` : ""}
+            {t("st.formats", { size: fmtSize(limits().maxBytes) })}
+            {assets().length > 0
+              ? t("st.used", { used: assets().length, max: limits().max })
+              : ""}
           </p>
         </div>
 
@@ -343,7 +349,7 @@ export const StingerPanel: Component<StingerPanelProps> = (props) => {
           onClick={() => props.onPlay({ random: true })}
         >
           <DiceDoodle class="stinger-dice-icon" />
-          Surprise the room
+          {t("st.dice")}
         </button>
 
         <Show when={error()}>
@@ -352,17 +358,16 @@ export const StingerPanel: Component<StingerPanelProps> = (props) => {
 
         <Show
           when={!loading()}
-          fallback={<p class="stinger-empty">Opening the crayon box…</p>}
+          fallback={<p class="stinger-empty">{t("st.loading")}</p>}
         >
           <Show when={assets().length === 0}>
-            <p class="stinger-empty">
-              Nothing in here yet. Drop a meme and an airhorn in and the whole
-              room gets them.
-            </p>
+            <p class="stinger-empty">{t("st.empty")}</p>
           </Show>
 
           <Show when={images().length > 0}>
-            <h5 class="stinger-group">Pictures ({images().length})</h5>
+            <h5 class="stinger-group">
+              {t("st.pictures", { count: images().length })}
+            </h5>
             <div class="stinger-grid">
               <For each={images()}>
                 {(a) => (
@@ -390,7 +395,9 @@ export const StingerPanel: Component<StingerPanelProps> = (props) => {
           </Show>
 
           <Show when={audios().length > 0}>
-            <h5 class="stinger-group">Sounds ({audios().length})</h5>
+            <h5 class="stinger-group">
+              {t("st.sounds", { count: audios().length })}
+            </h5>
             <ul class="stinger-list">
               <For each={audios()}>
                 {(a) => (
@@ -405,8 +412,8 @@ export const StingerPanel: Component<StingerPanelProps> = (props) => {
                       aria-pressed={previewing() === a.name}
                       title={
                         previewing() === a.name
-                          ? "Stop the preview"
-                          : "Listen here only (nobody else hears it)"
+                          ? t("st.previewStop")
+                          : t("st.previewPlay")
                       }
                       onClick={() => togglePreview(a)}
                     >
