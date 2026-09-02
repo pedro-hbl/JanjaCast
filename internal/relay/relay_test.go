@@ -312,6 +312,31 @@ func TestSessionStatsAccrual(t *testing.T) {
     if ps1.StingerPlays < 1 { t.Fatalf("StingerPlays=%d, want >=1", ps1.StingerPlays) }
 }
 
+func TestAssembleAwards(t *testing.T) {
+    hub := NewHub(discard())
+    room, a, _ := hub.Join("aw", "u1", "Ana")
+    _, b, _ := hub.Join("aw", "u2", "Beto")
+    _, c, _ := hub.Join("aw", "u3", "Carla")
+    hub.Join("aw", "u4", "Dani")
+    room.TakeStage(a)
+    // Simulate time with joins/leaves
+    time.Sleep(5 * time.Millisecond)
+    hub.Leave(room, b)
+    time.Sleep(5 * time.Millisecond)
+    hub.Join("aw", "u2", "Beto")
+    // Increment stinger plays for Carla
+    _ = room.PlayStinger(c, &protocol.StingerData{Kind: "manual"})
+
+    room.mu.Lock()
+    got := room.assembleAwardsLocked()
+    room.mu.Unlock()
+    if got == nil || len(got) == 0 { t.Fatalf("no awards assembled") }
+    // At minimum Host must be present.
+    foundHost := false
+    for _, a := range got { if a.Category == "host" { foundHost = true } }
+    if !foundHost { t.Fatalf("host not present in awards: %+v", got) }
+}
+
 // TestSessionTakeoverNewestWins: the same identity joining again replaces
 // the old connection — no ghost roster entries — and the old connection is
 // told it was superseded (terminally) rather than just dropped.
