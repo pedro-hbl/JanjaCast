@@ -36,6 +36,7 @@ export type ControlType =
   | "stage_turn"
   | "stage_cancel"
   | "room_phase"
+  | "awards_ready"
   | "cinema_state"
   | "cinema_stroke_add"
   | "error";
@@ -195,6 +196,8 @@ export interface StageStateData {
 }
 
 export interface RoomPhaseData { phase: "lobby" | "live" }
+
+export interface AwardsReadyData { sessionId: string }
 
 /** Welcome payload: stage state plus the server-assigned id of this client. */
 export interface WelcomeData extends StageStateData {
