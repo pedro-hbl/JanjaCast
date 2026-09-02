@@ -189,8 +189,21 @@ const tlRecoverAfter = 8 * time.Second
 const rateHintInterval = 2 * time.Second
 
 // kfDebounce is the minimum gap between keyframe requests forwarded to a
-// publisher — coalesces a burst of struggling viewers into one request.
-const kfDebounce = 300 * time.Millisecond
+// publisher. IDRs are the largest frames in the stream, so this must stay at
+// or below the old fixed-cadence rate (0.5/s) — a struggling viewer asking
+// for more IDRs than that is a positive-feedback congestion loop.
+const kfDebounce = 2 * time.Second
+
+// kfClientBudget bounds how often a single client's own keyframe_request
+// messages are honored, so one hostile or buggy tab cannot pin the publisher
+// at the room-wide debounce rate.
+const kfClientBudget = 3 * time.Second
+
+// maxGOPChunks keeps the late-join cache small enough to replay into a
+// fresh client queue (sendBuffer slots, minus room for control messages).
+// A GOP that outgrows this is dropped; joiners fall back to
+// keyframe-on-demand instead of receiving a truncated stale burst.
+const maxGOPChunks = sendBuffer - 16
 
 // Client is one connected WebSocket participant.
 type Client struct {
@@ -211,6 +224,9 @@ type Client struct {
 	// before resorting to the needKeyframe freeze. Guarded by Room.mu.
 	maxTL      uint8
 	lastTLDrop time.Time
+	// lastKFAsk budgets this client's own keyframe requests. Guarded by
+	// Room.mu.
+	lastKFAsk time.Time
 }
 
 type outMsg struct {
@@ -228,26 +244,51 @@ func (m outMsg) Binary() bool { return m.binary }
 func (m outMsg) Payload() []byte { return m.payload }
 
 // TakeStage makes c the publisher, replacing any current one. A displaced
-// publisher is told who took over so its UI can say so.
+// publisher is told who took over so its UI can say so. Departed clients
+// cannot claim the stage.
 func (r *Room) TakeStage(c *Client) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if _, ok := r.clients[c]; !ok {
+		return // already left: a ghost must never hold the stage
+	}
 	if old := r.publisher; old != nil && old != c {
 		old.enqueueControl(protocol.CtrlStageTaken, protocol.StageTakenData{ByName: c.Username})
 	}
 	r.publisher = c
 	r.config = nil
 	r.clearGOPLocked()
+	r.gateViewersLocked()
 	r.broadcastStageStateLocked()
 	r.log.Info("stage taken", "user", c.Username)
 }
 
-// RequestKeyframe forwards a keyframe request to the publisher, debounced
-// per room. Safe to call whenever a viewer is stuck waiting for a keyframe.
-func (r *Room) RequestKeyframe() {
+// RequestKeyframeFrom forwards a keyframe request on behalf of client c,
+// applying both the per-client budget and the room-wide debounce. The
+// publisher asking about itself is ignored.
+func (r *Room) RequestKeyframeFrom(c *Client) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if c == r.publisher {
+		return
+	}
+	now := time.Now()
+	if now.Sub(c.lastKFAsk) < kfClientBudget {
+		return
+	}
+	c.lastKFAsk = now
 	r.requestKeyframeLocked()
+}
+
+// gateViewersLocked puts every non-publisher behind the keyframe gate —
+// called when the GOP cache is invalidated by a stage or config change, so
+// stale-parameter deltas are not forwarded. Caller must hold r.mu.
+func (r *Room) gateViewersLocked() {
+	for c := range r.clients {
+		if c != r.publisher {
+			c.needKeyframe = true
+		}
+	}
 }
 
 func (r *Room) requestKeyframeLocked() {
@@ -280,8 +321,12 @@ func (r *Room) SetConfig(c *Client, cfg *protocol.ConfigData) {
 	if r.publisher != c {
 		return
 	}
+	if _, ok := r.clients[c]; !ok {
+		return
+	}
 	r.config = cfg
 	r.clearGOPLocked() // new encoder session invalidates the cache
+	r.gateViewersLocked()
 	r.broadcastStageStateLocked()
 }
 
@@ -315,8 +360,13 @@ func (r *Room) ForwardMedia(from *Client, msg []byte) {
 	if r.publisher != from {
 		return // stale sender lost the stage
 	}
+	if _, ok := r.clients[from]; !ok {
+		return // departed client: never forward on its behalf
+	}
 
-	// Maintain the late-join cache from the video stream.
+	// Maintain the late-join cache from the video stream. Bounded by both
+	// bytes and chunk count: a GOP that cannot fit a fresh client queue is
+	// useless as a replay (and would deliver a stale burst instead).
 	if hdr.Kind == protocol.KindVideo {
 		switch {
 		case hdr.Keyframe():
@@ -325,8 +375,8 @@ func (r *Room) ForwardMedia(from *Client, msg []byte) {
 			r.gop = [][]byte{msg}
 			r.gopBytes = len(msg)
 		case r.gop != nil:
-			if r.gopBytes+len(msg) > maxGOPBytes {
-				r.clearGOPLocked() // runaway GOP; wait for the next keyframe
+			if r.gopBytes+len(msg) > maxGOPBytes || len(r.gop) >= maxGOPChunks {
+				r.clearGOPLocked() // runaway GOP; joiners use keyframe-on-demand
 			} else {
 				r.gop = append(r.gop, msg)
 				r.gopBytes += len(msg)
