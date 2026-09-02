@@ -34,7 +34,42 @@ const App: Component = () => {
   }>({ fps: 0, kbps: 0 });
 
   let canvasRef!: HTMLCanvasElement;
+  let stageRef!: HTMLDivElement;
   let player: Player | null = null;
+
+  // Fullscreen when the iframe permits it; otherwise "theater mode" —
+  // maximize the stage inside the Activity by hiding all chrome.
+  const [theater, setTheater] = createSignal(false);
+  const toggleFullscreen = async () => {
+    if (document.fullscreenElement) {
+      await document.exitFullscreen().catch(() => {});
+      return;
+    }
+    if (document.fullscreenEnabled) {
+      try {
+        await stageRef.requestFullscreen();
+        return;
+      } catch {
+        // permissions policy said no — fall through to theater
+      }
+    }
+    setTheater((t) => !t);
+  };
+
+  const onKey = (e: KeyboardEvent) => {
+    const t = e.target as HTMLElement;
+    if (
+      t instanceof HTMLInputElement ||
+      t instanceof HTMLSelectElement ||
+      t instanceof HTMLTextAreaElement
+    ) {
+      return;
+    }
+    if (e.key === "f" || e.key === "F") void toggleFullscreen();
+    if (e.key === "t" || e.key === "T") setTheater((v) => !v);
+    if (e.key === "Escape") setTheater(false);
+  };
+  document.addEventListener("keydown", onKey);
 
   onMount(async () => {
     try {
@@ -86,6 +121,7 @@ const App: Component = () => {
   }, 1000);
 
   onCleanup(() => {
+    document.removeEventListener("keydown", onKey);
     clearInterval(statsTimer);
     capture()?.stop();
     player?.close();
@@ -173,7 +209,7 @@ const App: Component = () => {
   const live = () => Boolean(stage().publisherId);
 
   return (
-    <div class="app">
+    <div class={theater() ? "app theater" : "app"}>
       <header class="app-header">
         <strong class="logo">JanjaCast</strong>
         <Show when={live()}>
@@ -191,7 +227,7 @@ const App: Component = () => {
       </header>
 
       <main class="app-main">
-        <div class="stage">
+        <div class="stage" ref={stageRef} onDblClick={() => void toggleFullscreen()}>
           <canvas
             ref={canvasRef}
             class="stage-canvas"
@@ -207,6 +243,15 @@ const App: Component = () => {
               🎥 You are live at {fps()} fps
               {capture() ? "." : " from your browser tab."}
             </p>
+          </Show>
+          <Show when={live() && !session()?.ownsStage()}>
+            <button
+              class="fs-btn"
+              title="Fullscreen · F (T for theater mode)"
+              onClick={() => void toggleFullscreen()}
+            >
+              ⛶
+            </button>
           </Show>
           <Show when={!live()}>
             <div class="stage-empty">
