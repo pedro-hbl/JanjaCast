@@ -172,6 +172,11 @@ const (
 const (
 	CtrlReaction      ControlType = "reaction"
 	CtrlReactionBurst ControlType = "reaction_burst"
+	// CtrlRoomPhase announces a lobby<->live transition to every client.
+	CtrlRoomPhase ControlType = "room_phase"
+	// Server -> every room client: an end-of-session awards page is ready.
+	// Carries a session-scoped id the server serves under /awards/{id}.
+	CtrlAwardsReady ControlType = "awards_ready"
 )
 
 // Control is the JSON envelope for text messages.
@@ -233,6 +238,10 @@ type StageStateData struct {
 	// handshake so a late joiner learns it inside CtrlWelcome, before any
 	// media could arrive (there is none — blanking evicts the GOP cache).
 	Blanked bool `json:"blanked,omitempty"`
+	// Phase is the overall room phase: "lobby" when nobody is publishing,
+	// "live" when there is an active publisher. It rides CtrlWelcome so a
+	// late joiner never guesses.
+	Phase string `json:"phase,omitempty"`
 }
 
 // BlankData is the payload of CtrlBlank (publisher -> relay) and
@@ -248,6 +257,14 @@ type BlankData struct {
 type WelcomeData struct {
 	StageStateData
 	SelfID string `json:"selfId"`
+}
+
+// AwardsReadyData is the payload of CtrlAwardsReady: a short id (UUID or
+// similar) under which the server serves a screenshot-friendly HTML page with
+// auto-assigned session superlatives. The page itself is server-rendered and
+// language-switched from ?lang=; the Activity only needs the id.
+type AwardsReadyData struct {
+	SessionID string `json:"sessionId"`
 }
 
 // RoomStateData is the payload of CtrlRoomState.

@@ -77,7 +77,8 @@ type Server struct {
 	instanceID string
 
 	connMu sync.Mutex
-	conns  map[*websocket.Conn]struct{}
+    conns  map[*websocket.Conn]struct{}
+    awards *awardStore
 }
 
 // New builds the handler.
@@ -93,8 +94,9 @@ func New(cfg Config, log *slog.Logger) *Server {
 		wsPatterns: originPatterns(cfg),
 		instanceID: newInstanceID(),
 		conns:      make(map[*websocket.Conn]struct{}),
-	}
-	if !cfg.AllowAnon && (cfg.DiscordClientID == "" || cfg.DiscordClientSecret == "") {
+    }
+    s.initAwards()
+    if !cfg.AllowAnon && (cfg.DiscordClientID == "" || cfg.DiscordClientSecret == "") {
 		log.Warn("DISCORD_CLIENT_ID/SECRET unset and anonymous access disabled — every join will be refused")
 	}
 	if len(cfg.TokenSecret) == 0 {
@@ -121,8 +123,9 @@ func New(cfg Config, log *slog.Logger) *Server {
 	s.mux.HandleFunc("POST /api/token", s.handleToken)
 	s.mux.HandleFunc("POST /api/share-token", s.handleShareToken)
 	s.mux.HandleFunc("GET /api/health", s.handleHealth)
-	s.mux.HandleFunc("GET /api/config", s.handleConfig)
-	s.mux.HandleFunc("GET /ws", s.handleWS)
+  s.mux.HandleFunc("GET /api/config", s.handleConfig)
+  s.mux.HandleFunc("GET /ws", s.handleWS)
+  s.mux.HandleFunc("GET /awards/{id}", s.handleAwards)
 
 	var dist fs.FS
 	if cfg.DevWebDir != "" {

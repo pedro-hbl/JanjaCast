@@ -27,6 +27,7 @@ import {
 } from "./i18n";
 import { LangToggle } from "./LangToggle";
 import { Session, type SessionStatus } from "./session";
+import Lobby from "./lobby";
 import type { StageMode, StageTurnData, StingerData, PlacarStateData } from "./protocol";
 import { playTurnCue } from "./cue";
 import { startCapture, type CaptureHandle } from "./capture";
@@ -164,6 +165,7 @@ const App: Component = () => {
     key: MessageKey;
     params?: Params;
   } | null>(null);
+  const [awardsId, setAwardsId] = createSignal<string | null>(null);
   /** Ticks the countdowns. Cheap, and one timer for both clocks means the
    *  turn pill and the rodízio pill never disagree by a frame. */
   const [tick, setTick] = createSignal(0);
@@ -190,6 +192,12 @@ const App: Component = () => {
   let canvasRef!: HTMLCanvasElement;
   let stageRef!: HTMLDivElement;
   let player: Player | null = null;
+  // Listen for awards_ready surfaced by session.
+  onMount(() => {
+    const h = (e: any) => setAwardsId(e.detail as string);
+    (window as any).addEventListener("awards_ready", h);
+    onCleanup(() => (window as any).removeEventListener("awards_ready", h));
+  });
 
   // --- cinema scribbles (local-only helpers) ------------------------------
   const ownStrokes = () => (session()?.cinemaStrokes() ?? []).filter(s => s.userId === session()?.selfId());
@@ -1097,51 +1105,9 @@ const App: Component = () => {
               ⛶
             </button>
           </Show>
-          {/* The empty stage is a drawing, not a sentence: the JanjaCast
-              set standing in the grass under a sun, switched off, with the
-              one thing you can do about it planted in front of it. The
-              button's label is the only text in the scene. */}
+          {/* Lobby replaces the old empty-stage scene. Presence stays in sidebar. */}
           <Show when={!live()}>
-            <div class="stage-scene">
-              <StageBackdrop />
-              <Show
-                when={companionPhase() !== "idle"}
-                fallback={
-                  <div class="scene-stack">
-                    <SceneTv class="scene-tv" />
-                    <button
-                      onClick={shareClicked}
-                      class="crayon-btn crayon-btn--go scene-cta"
-                    >
-                      {t("stage.shareScreen")}
-                    </button>
-                  </div>
-                }
-              >
-                {/* One <Show>, four faces. */}
-                <div class="scene-stack">
-                  <BrowserTabDoodle class="scene-tab" />
-                  <Show when={companionPhase() === "opening"}>
-                    <p class="scene-line">{t("stage.companionOpening")}</p>
-                  </Show>
-                  <Show when={companionPhase() === "late"}>
-                    <p class="scene-line">{t("stage.companionLate")}</p>
-                    <button onClick={shareClicked} class="crayon-btn crayon-btn--go scene-cta">
-                      {t("stage.openAgain")}
-                    </button>
-                  </Show>
-                  <Show when={companionPhase() === "joined"}>
-                    <p class="scene-line">{t("stage.companionOpen")}</p>
-                  </Show>
-                  <Show when={companionPhase() === "failed"}>
-                    <p class="scene-line">{t("stage.companionFailed")}</p>
-                    <button onClick={shareClicked} class="crayon-btn crayon-btn--go scene-cta">
-                      {t("stage.openAgain")}
-                    </button>
-                  </Show>
-                </div>
-              </Show>
-            </div>
+            <Lobby session={session()} canCapture={captureAllowed()} onShare={shareClicked} />
           </Show>
         </div>
 
@@ -1262,6 +1228,16 @@ const App: Component = () => {
           />
         </Show>
       </main>
+
+      <Show when={awardsId()}>
+        <div class="toast awards-toast">
+          <span>{t("awards.ready")}</span>
+          <button class="crayon-btn crayon-btn--go" onClick={() => openExternal(`/awards/${awardsId()}?lang=${localeParam()}`)}>
+            {t("awards.view")}
+          </button>
+          <button class="toast-x" aria-label={t("awards.dismiss")} onClick={() => setAwardsId(null)}>×</button>
+        </div>
+      </Show>
 
       <footer class="app-footer">
         <Show

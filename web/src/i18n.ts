@@ -280,6 +280,16 @@ const en = {
   "reactions.hype.calm": "Chill",
   "reactions.hype.warm": "Heating up",
   "reactions.hype.storm": "STORM!",
+  // --- awards toast (Activity-side) ---------------------------------
+  "awards.ready": "That's a wrap! The trophy ceremony is ready.",
+  "awards.view": "See the trophies",
+  "awards.dismiss": "Dismiss",
+  // --- lobby --------------------------------------------------------
+  "lobby.title": "The TV's off",
+  "lobby.subtitle": "Nobody's sharing yet",
+  "lobby.cta": "Turn on the TV",
+  "lobby.here": { one: "{count} person here", other: "{count} people here" } as Message,
+  "lobby.alone": "Just you for now",
 } satisfies Record<string, Message>;
 
 export type MessageKey = keyof typeof en;
@@ -519,6 +529,16 @@ const ptBR: Record<MessageKey, Message> = {
   "reactions.hype.calm": "De boa",
   "reactions.hype.warm": "Esquentando",
   "reactions.hype.storm": "REBU!",
+  // --- awards toast (Activity-side) ---------------------------------
+  "awards.ready": "Acabou! A entrega de troféus tá pronta.",
+  "awards.view": "Ver os troféus",
+  "awards.dismiss": "Fechar",
+  // --- lobby --------------------------------------------------------
+  "lobby.title": "A TV tá apagada",
+  "lobby.subtitle": "Ninguém tá transmitindo ainda",
+  "lobby.cta": "Acender a TV",
+  "lobby.here": { one: "{count} pessoa por aqui", other: "{count} pessoas por aqui" },
+  "lobby.alone": "Só você por enquanto",
 };
 
 const dictionaries: Record<Locale, Record<MessageKey, Message>> = {
@@ -672,3 +692,4 @@ export function t(key: MessageKey, params?: Params): string {
       : msg[pluralRule[locale()](count)];
   return interpolate(form, params);
 }
+ 

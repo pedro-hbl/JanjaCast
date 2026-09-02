@@ -375,6 +375,11 @@ export class Session {
       case "stage_state":
         this.setStage((ctrl.data ?? {}) as StageStateData);
         break;
+      case "room_phase": {
+        const d = (ctrl.data ?? { phase: "lobby" }) as import('./protocol').RoomPhaseData;
+        this.setStage((s) => ({ ...s, phase: d.phase }));
+        break;
+      }
       case "cinema_state": {
         const d = (ctrl.data ?? { paused: false, strokes: [] }) as import('./protocol').CinemaStateData;
         this.setCinemaPaused(!!d.paused);
@@ -452,6 +457,12 @@ export class Session {
         // Fresh share token so reconnects keep working past token expiry.
         const { shareToken } = ctrl.data as { shareToken: string };
         if (shareToken) this.creds.shareToken = shareToken;
+        break;
+      }
+      case "awards_ready": {
+        const d = ctrl.data as import('./protocol').AwardsReadyData;
+        // Surface via a DOM event; App listens by overriding onServerError earlier.
+        (window as any).dispatchEvent(new CustomEvent("awards_ready", { detail: d.sessionId }));
         break;
       }
       case "error": {

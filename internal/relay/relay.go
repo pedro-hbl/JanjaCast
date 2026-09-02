@@ -134,6 +134,18 @@ func (h *Hub) Join(roomID, userID, username string) (*Room, *Client, iter.Seq[Ou
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
+	// Stats: create or update participant entry.
+	if r.sessionStats == nil {
+		r.sessionStats = make(map[string]*ParticipantStats)
+	}
+	if ps, ok := r.sessionStats[userID]; ok {
+		ps.Disconnects++
+		ps.Username = username
+		ps.lastJoin = time.Now()
+	} else {
+		r.sessionStats[userID] = &ParticipantStats{UserID: userID, Username: username, FirstJoin: time.Now(), lastJoin: time.Now()}
+	}
+
 	// Session takeover, newest wins: the same identity joining again (a
 	// restarted share, a reconnect racing its own half-open predecessor)
 	// replaces the old connection instead of accumulating ghost roster
@@ -255,14 +267,23 @@ func (h *Hub) Leave(r *Room, c *Client) {
 	delete(r.clients, c)
 	c.closeOnce.Do(func() { close(c.done) })
 
+	var assembled []AwardData
 	if r.publisher == c {
 		r.publisher = nil
 		r.config = nil
 		r.clearGOPLocked()
 		r.clearBlankLocked()
 		r.stopRodizioClockLocked()
+		// Assemble awards if the session qualifies (stats snapshot under lock).
+		assembled = r.assembleAwardsLocked()
 		r.broadcastStageStateLocked()
 		r.scheduleStingerStopLocked()
+	}
+	// Fold watch time on disconnect.
+	if ps, ok := r.sessionStats[c.UserID]; ok {
+		if !ps.lastJoin.IsZero() {
+			ps.TotalWatch += time.Since(ps.lastJoin)
+		}
 	}
 	// A departing person never lingers in the line, and a turn called on
 	// somebody who just closed their tab advances immediately instead of
@@ -274,6 +295,19 @@ func (h *Hub) Leave(r *Room, c *Client) {
 	}
 	r.broadcastStageQueueLocked()
 	r.broadcastRoomStateLocked()
+
+	// Publish awards after leaving modifications if any.
+	if assembled != nil {
+		// fire callback if wired by server layer
+		if rcb := rAwardsCallback; rcb != nil {
+			// allocate id in server layer; here pass empty to be filled there
+			rcb(r.id, assembled)
+		}
+		// also notify clients that awards are ready; session id supplied by server later
+		for cl := range r.clients {
+			cl.enqueueControl(protocol.CtrlAwardsReady, protocol.AwardsReadyData{SessionID: r.id})
+		}
+	}
 
 	// Identity check: only reap the exact Room object registered under this
 	// id, so a stale reference can never evict a live successor.
@@ -381,6 +415,25 @@ type Room struct {
 	placarPrompt   string
 	placarScores   map[string]int
 	placarLastVote map[*Client]time.Time
+
+	// --- session stats for end-of-session awards (guarded by mu) ---------
+	sessionStats map[string]*ParticipantStats
+}
+
+// rAwardsCallback is installed by the server layer to receive assembled
+// awards for a finished session. Stored at package scope; invoked outside
+// locks.
+var rAwardsCallback func(roomID string, awards []AwardData)
+
+// ParticipantStats accumulates per-participant counters for a live session.
+type ParticipantStats struct {
+	UserID       string
+	Username     string
+	FirstJoin    time.Time
+	lastJoin     time.Time
+	TotalWatch   time.Duration
+	StingerPlays int
+	Disconnects  int
 }
 
 // stageTurn is the person currently being called to the stage.
@@ -622,6 +675,12 @@ func (r *Room) PlayStinger(c *Client, d *protocol.StingerData) bool {
 	}
 	c.lastStingerAsk = now
 	r.broadcastStingerLocked(d)
+	// Stats: count successful fires by the caller.
+	if r.sessionStats != nil {
+		if ps, ok := r.sessionStats[c.UserID]; ok {
+			ps.StingerPlays++
+		}
+	}
 	return true
 }
 
@@ -1339,6 +1398,9 @@ func (r *Room) stageStateLocked() protocol.StageStateData {
 	if r.publisher != nil {
 		s.PublisherID = r.publisher.UserID
 		s.PublisherName = r.publisher.Username
+		s.Phase = "live"
+	} else {
+		s.Phase = "lobby"
 	}
 	return s
 }
@@ -1349,6 +1411,20 @@ func (r *Room) broadcastStageStateLocked() {
 	state := r.stageStateLocked()
 	for c := range r.clients {
 		c.enqueueControl(protocol.CtrlStageState, state)
+	}
+}
+
+// broadcastRoomPhaseLocked announces the lobby/live edge to everyone.
+func (r *Room) broadcastRoomPhaseLocked() {
+	phase := "lobby"
+	if r.publisher != nil {
+		phase = "live"
+	}
+	d := struct {
+		Phase string `json:"phase"`
+	}{Phase: phase}
+	for c := range r.clients {
+		c.enqueueControl(protocol.CtrlRoomPhase, d)
 	}
 }
 
