@@ -127,8 +127,18 @@ func (h *Hub) Join(roomID, userID, username string) (*Room, *Client, iter.Seq[Ou
 		h.rooms[roomID] = r
 	}
 
-	r.mu.Lock()
-	defer r.mu.Unlock()
+  r.mu.Lock()
+  defer r.mu.Unlock()
+
+  // Stats: create or update participant entry.
+  if r.sessionStats == nil { r.sessionStats = make(map[string]*ParticipantStats) }
+  if ps, ok := r.sessionStats[userID]; ok {
+    ps.Disconnects++
+    ps.Username = username
+    ps.lastJoin = time.Now()
+  } else {
+    r.sessionStats[userID] = &ParticipantStats{UserID: userID, Username: username, FirstJoin: time.Now(), lastJoin: time.Now()}
+  }
 
 	// Session takeover, newest wins: the same identity joining again (a
 	// restarted share, a reconnect racing its own half-open predecessor)
@@ -248,7 +258,7 @@ func (h *Hub) Leave(r *Room, c *Client) {
 	delete(r.clients, c)
 	c.closeOnce.Do(func() { close(c.done) })
 
-	if r.publisher == c {
+  if r.publisher == c {
 		r.publisher = nil
 		r.config = nil
 		r.clearGOPLocked()
@@ -256,7 +266,11 @@ func (h *Hub) Leave(r *Room, c *Client) {
 		r.stopRodizioClockLocked()
 		r.broadcastStageStateLocked()
 		r.scheduleStingerStopLocked()
-	}
+  }
+  // Fold watch time on disconnect.
+  if ps, ok := r.sessionStats[c.UserID]; ok {
+    if !ps.lastJoin.IsZero() { ps.TotalWatch += time.Since(ps.lastJoin) }
+  }
 	// A departing person never lingers in the line, and a turn called on
 	// somebody who just closed their tab advances immediately instead of
 	// burning its whole window on a ghost.
@@ -355,6 +369,20 @@ type Room struct {
   // --- cinema (paused + shared strokes) ---------------------------------
   cinemaPaused  bool
   cinemaStrokes []protocol.StrokeData // FIFO cap 100
+
+  // --- session stats for end-of-session awards (guarded by mu) ---------
+  sessionStats map[string]*ParticipantStats
+}
+
+// ParticipantStats accumulates per-participant counters for a live session.
+type ParticipantStats struct {
+  UserID       string
+  Username     string
+  FirstJoin    time.Time
+  lastJoin     time.Time
+  TotalWatch   time.Duration
+  StingerPlays int
+  Disconnects  int
 }
 
 // stageTurn is the person currently being called to the stage.
@@ -595,8 +623,14 @@ func (r *Room) PlayStinger(c *Client, d *protocol.StingerData) bool {
 		return false
 	}
 	c.lastStingerAsk = now
-	r.broadcastStingerLocked(d)
-	return true
+    r.broadcastStingerLocked(d)
+    // Stats: count successful fires by the caller.
+    if r.sessionStats != nil {
+        if ps, ok := r.sessionStats[c.UserID]; ok {
+            ps.StingerPlays++
+        }
+    }
+    return true
 }
 
 // --- the stage queue -------------------------------------------------------

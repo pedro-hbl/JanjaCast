@@ -291,6 +291,27 @@ func TestTemporalSheddingBeforeFreeze(t *testing.T) {
 	}
 }
 
+func TestSessionStatsAccrual(t *testing.T) {
+    hub := NewHub(discard())
+    room, a, _ := hub.Join("stats", "u1", "Ana")
+    hub.Join("stats", "u2", "Beto")
+    time.Sleep(5 * time.Millisecond)
+    hub.Leave(room, a)
+    time.Sleep(5 * time.Millisecond)
+    _, a2, _ := hub.Join("stats", "u1", "Ana")
+    if !room.PlayStinger(a2, &protocol.StingerData{Kind: "manual"}) {
+        t.Fatal("stinger did not broadcast")
+    }
+    room.mu.Lock()
+    ps1 := room.sessionStats["u1"]
+    ps2 := room.sessionStats["u2"]
+    room.mu.Unlock()
+    if ps1 == nil || ps2 == nil { t.Fatalf("missing stats entries: %+v %+v", ps1, ps2) }
+    if ps1.Disconnects != 1 { t.Fatalf("disconnects=%d, want 1", ps1.Disconnects) }
+    if ps1.TotalWatch <= 0 { t.Fatalf("TotalWatch not accrued: %+v", ps1) }
+    if ps1.StingerPlays < 1 { t.Fatalf("StingerPlays=%d, want >=1", ps1.StingerPlays) }
+}
+
 // TestSessionTakeoverNewestWins: the same identity joining again replaces
 // the old connection — no ghost roster entries — and the old connection is
 // told it was superseded (terminally) rather than just dropped.
