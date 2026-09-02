@@ -71,6 +71,8 @@ export interface CaptureHandle {
   lastSample(): CaptureSample | null;
   /** Encode the next frame as a keyframe (keyframe-on-demand). */
   forceKeyframe(): void;
+  /** Change the capture/encode framerate mid-stream (no restart). */
+  setFramerate(fps: 30 | 60): Promise<void>;
   /** Relay congestion feedback: degraded viewers out of total. */
   applyRateHint(degraded: number, viewers: number): void;
   /** Fires when the user ends capture via the browser's own UI. */
@@ -410,6 +412,15 @@ export async function startCapture(
     lastSample: () => sample,
     forceKeyframe: () => {
       keyframeWanted = true;
+    },
+    async setFramerate(fps: 30 | 60) {
+      if (videoEncoder.state !== "configured") return;
+      await videoTrack.applyConstraints({ frameRate: { ideal: fps } }).catch(() => {});
+      chosen.config = { ...chosen.config, framerate: fps };
+      videoEncoder.configure({ ...chosen.config, bitrate });
+      keyframeWanted = true;
+      handle.config = { ...handle.config, framerate: fps };
+      handle.onconfigchange?.(handle.config);
     },
     onended: null,
     onconfigchange: null,

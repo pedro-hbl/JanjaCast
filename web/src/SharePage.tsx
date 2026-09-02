@@ -284,6 +284,21 @@ const SharePage: Component = () => {
             <ScribbleDot class="live-dot" /> Live at {fps()} fps — {stats().fps}{" "}
             fps · {stats().kbps} kbps (target {stats().targetKbps})
           </p>
+          <label class="fps-label">
+            Framerate{" "}
+            <select
+              class="crayon-select"
+              value={fps()}
+              onChange={(e) => {
+                const v = Number(e.currentTarget.value) as 30 | 60;
+                setFps(v);
+                void capture()?.setFramerate(v);
+              }}
+            >
+              <option value={30}>30 fps</option>
+              <option value={60}>60 fps</option>
+            </select>
+          </label>
           <p class="share-room">
             {viewers()} watching · total upload ≈{" "}
             {Math.round((stats().kbps * Math.max(viewers(), 1)) / 100) / 10}{" "}

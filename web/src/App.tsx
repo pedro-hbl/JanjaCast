@@ -52,6 +52,20 @@ const App: Component = () => {
   // Fullscreen when the iframe permits it; otherwise "theater mode" —
   // maximize the stage inside the Activity by hiding all chrome.
   const [theater, setTheater] = createSignal(false);
+  const [isFullscreen, setIsFullscreen] = createSignal(false);
+  const onFsChange = () => setIsFullscreen(Boolean(document.fullscreenElement));
+  document.addEventListener("fullscreenchange", onFsChange);
+
+  // In fullscreen/theater the header (and its stats) is hidden — surface
+  // the stats as a hover overlay on the stage instead, auto-hiding after a
+  // short idle so they never burn into the movie.
+  const [overlayOn, setOverlayOn] = createSignal(false);
+  let overlayTimer: ReturnType<typeof setTimeout> | null = null;
+  const pokeOverlay = () => {
+    setOverlayOn(true);
+    if (overlayTimer) clearTimeout(overlayTimer);
+    overlayTimer = setTimeout(() => setOverlayOn(false), 2500);
+  };
   const toggleFullscreen = async () => {
     if (document.fullscreenElement) {
       await document.exitFullscreen().catch(() => {});
@@ -136,6 +150,8 @@ const App: Component = () => {
 
   onCleanup(() => {
     document.removeEventListener("keydown", onKey);
+    document.removeEventListener("fullscreenchange", onFsChange);
+    if (overlayTimer) clearTimeout(overlayTimer);
     clearInterval(statsTimer);
     capture()?.stop();
     player?.close();
@@ -241,7 +257,25 @@ const App: Component = () => {
       </header>
 
       <main class="app-main">
-        <div class="stage" ref={stageRef} onDblClick={() => void toggleFullscreen()}>
+        <div
+          class="stage"
+          ref={stageRef}
+          onDblClick={() => void toggleFullscreen()}
+          onMouseMove={pokeOverlay}
+        >
+          <Show
+            when={
+              (isFullscreen() || theater()) &&
+              overlayOn() &&
+              live() &&
+              !session()?.ownsStage()
+            }
+          >
+            <div class="stage-stats">
+              {stats().fps} fps · {stats().kbps} kbps
+              {stats().latencyMs != null ? ` · ${stats().latencyMs} ms` : ""}
+            </div>
+          </Show>
           <canvas
             ref={canvasRef}
             class="stage-canvas"

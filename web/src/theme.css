@@ -476,3 +476,19 @@
   border: none;
   border-radius: 0;
 }
+
+/* Hover stats overlay for fullscreen / theater (header is hidden there). */
+.stage-stats {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  z-index: 6;
+  padding: 6px 14px;
+  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  font-size: 13px;
+  color: var(--chalk, #f4efdd);
+  background: rgba(11, 13, 20, 0.72);
+  border: 2px solid rgba(244, 239, 221, 0.35);
+  border-radius: 14px 18px 15px 17px / 17px 14px 18px 15px;
+  pointer-events: none;
+}
