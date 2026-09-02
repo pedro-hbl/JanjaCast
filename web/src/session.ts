@@ -235,6 +235,11 @@ export class Session {
     this.sendControl("keyframe_request", {});
   }
 
+  // Cinema controls
+  pauseCinema(): void { this.sendControl("cinema_pause" as any, {}); }
+  resumeCinema(): void { this.sendControl("cinema_resume" as any, {}); }
+  sendCinemaStroke(d: import('./protocol').CinemaStrokeData): void { this.sendControl("cinema_stroke" as any, d); }
+
   /** Publisher side: engage or lift the privacy blank for the whole room.
    *  The relay honors it from the current publisher only, and answers with
    *  a `blank_state` to everybody. This is the *relay's* gate — the encoder

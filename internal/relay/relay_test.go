@@ -34,6 +34,43 @@ func mediaMsg(keyframe bool) []byte {
 	return msg
 }
 
+// --- cinema ---------------------------------------------------------------
+
+func TestCinemaPauseResumeAndBacklog(t *testing.T) {
+    hub := NewHub(discard())
+    room, pub, _ := hub.Join("r1", "u1", "alice")
+    _, bob, bobOut := hub.Join("r1", "u2", "bob")
+    room.TakeStage(pub)
+
+    // Pause: media should be gated; add a few strokes.
+    if ok, _ := room.CinemaPause(pub); !ok { t.Fatal("pause refused") }
+    // Space out to clear 10/s limiter.
+    for i := 0; i < 5; i++ {
+        time.Sleep(110 * time.Millisecond)
+        if ok, _ := room.AddCinemaStroke(bob, &protocol.CinemaStrokeData{Color: "redorange", Points: []protocol.Point{{X:0.1,Y:0.1},{X:0.2,Y:0.2}}}); !ok {
+            t.Fatal("valid stroke refused")
+        }
+    }
+
+    // Late joiner receives cinema_state with strokes in the welcome sequence.
+    _, late, lateOut := hub.Join("r1", "u3", "late")
+    hub.Leave(room, late)
+    sawState := false
+    for _, m := range collect(lateOut) {
+        if m.Binary() { continue }
+        var ctrl protocol.Control
+        if err := json.Unmarshal(m.Payload(), &ctrl); err == nil && ctrl.Type == protocol.CtrlCinemaState {
+            sawState = true
+        }
+    }
+    if !sawState { t.Fatal("late joiner did not receive cinema_state") }
+
+    // Resume clears strokes and requests keyframe (not asserted here); media path live again.
+    if ok, _ := room.CinemaResume(pub); !ok { t.Fatal("resume refused") }
+    hub.Leave(room, bob)
+    _ = bobOut
+}
+
 func stageOf(r *Room) protocol.StageStateData {
 	r.mu.Lock()
 	defer r.mu.Unlock()
