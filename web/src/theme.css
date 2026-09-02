@@ -318,8 +318,8 @@
    its shape via the max box), compositor-promoted, with a soft shadow that
    shrinks with the transform scale for depth. */
 .stinger-img {
-  max-width: 55%;
-  max-height: 40%;
+  max-width: 78%;
+  max-height: 68%;
   object-fit: contain;
   will-change: transform, opacity;
   filter: drop-shadow(0 14px 28px rgba(0, 0, 0, 0.45));
