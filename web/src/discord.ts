@@ -70,6 +70,30 @@ export async function fetchStingersEnabled(): Promise<boolean> {
   return Boolean((await fetchConfig()).stingers);
 }
 
+/**
+ * The language the *Discord client* is set to, e.g. "pt-BR" / "en-US".
+ *
+ * This is the zero-friction half of locale detection: a Brazilian whose
+ * Discord is in Portuguese gets a Portuguese Activity without touching
+ * anything. `userSettingsGetLocale` needs the `identify` scope, which
+ * `setupIdentity` has already taken, so it only works once the SDK is ready
+ * — call it *after* setupIdentity resolves.
+ *
+ * Returns null outside Discord, on older clients that lack the command, and
+ * on any RPC failure: the caller then falls back to `navigator.language`.
+ * Best-effort by construction — a language guess must never be able to break
+ * startup.
+ */
+export async function fetchClientLocale(): Promise<string | null> {
+  if (!sdkInstance) return null;
+  try {
+    const { locale } = await sdkInstance.commands.userSettingsGetLocale();
+    return locale || null;
+  } catch {
+    return null;
+  }
+}
+
 /** Prefix for same-origin API/WS paths: Discord routes activity traffic
  *  through its proxy under `/.proxy/`. */
 export function apiPath(path: string): string {

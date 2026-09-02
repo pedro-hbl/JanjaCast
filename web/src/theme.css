@@ -659,6 +659,40 @@ label.fps-label {
   color: var(--muted);
 }
 
+/* --- language: the same segmented control, sized for two letters ----
+   EN | PT is a choice with exactly two crayons, so it is `.seg` and
+   nothing else. Only the metrics change: "30"/"60" needed a 46px cell to
+   sit comfortably under a Framerate label, two capitals in a corner do
+   not, and the header has less room to spare than the footer.
+   Still ≥38×28 inside a 3px border, clearing SC 2.5.8's 24×24. */
+.lang-seg .seg-btn {
+  min-width: 38px;
+  padding: 3px 9px 4px;
+  font-size: 13px;
+  letter-spacing: 0.5px;
+}
+/* pinned to the header's right edge, ahead of the connection dot: the
+   language is chrome, the dot is status, and status sits at the very edge.
+   The dot carries its own `margin-left: auto` for the case where it is the
+   only thing on the right; with the toggle in front of it the gap is the
+   header's own, so the pair reads as one cluster. */
+.header-lang {
+  margin-left: auto;
+}
+.header-lang + .conn-dot {
+  margin-left: 0;
+}
+/* on the cream sheet it takes the corner the sun does not */
+.share-lang {
+  position: absolute;
+  top: 18px;
+  left: 22px;
+  z-index: 2;
+  /* the sheet leans −0.6°, the sun is a drawing: give this one its own
+     angle so no two neighbouring objects share a tilt */
+  transform: rotate(1.5deg);
+}
+
 /* --- select: for a choice with more than two crayons ---------------- */
 .crayon-select {
   -webkit-appearance: none;
@@ -1317,10 +1351,20 @@ label.fps-label {
   .sidebar { width: 148px; padding: 10px 8px; }
   .participant-tag { margin-left: 0; }
   .status-line { display: none; }
+  /* The header does not wrap, and a live room fills it with the lockup, the
+     on-air badge, the stats, the language toggle and the connection dot. The
+     stats go at the same tier the status line goes: they are diagnostics
+     (design.md § 5.6, "the identity steps back completely"), and the badge —
+     who is live — outranks them. The stage overlay still carries them in
+     fullscreen and theater, which is where anybody reading 4200 kbps is
+     actually looking. */
+  .app-header .stat-pill { display: none; }
 }
 @media (max-width: 460px) {
   .sidebar { display: none; }
   .app-header, .app-footer { padding: 6px 10px; gap: 8px; }
+  /* two capitals still clear SC 2.5.8's 24×24 at 32×28 inside the border */
+  .lang-seg .seg-btn { min-width: 32px; padding: 3px 6px 4px; }
   /* Below this the drawer cannot both fit and leave the picture alone. The
      user opened it deliberately and one tap closes it, so it takes the row
      and gives the stage back on close. */
@@ -1725,10 +1769,15 @@ label.fps-label {
    where two labelled selects still stack. */
 .share-card > .field { justify-content: center; }
 .share-card .crayon-details .fps-label { max-width: 100%; }
-/* the panel is inset inside the card, so its controls give the 344px back
+/* The panel is inset inside the card, so its controls give the 344px back
    — otherwise the longest label wraps above its select and only that one
-   row breaks the shared edge */
-.share-card .crayon-details .crayon-select { width: 330px; }
+   row breaks the shared edge.
+   352, not 330: pt-BR's longest option ("🎵 Som do app — sem eco na call
+   (recomendado)") measures 304px in the Hand face and needs 348 once the
+   10px inset, the 30px chevron gutter and the 2px borders are added. The
+   panel's own content box is 424px wide, so both rows still fit their label
+   inline and nothing here truncates in either language. */
+.share-card .crayon-details .crayon-select { width: 352px; }
 .crayon-details .share-hint { max-width: 100%; text-align: right; }
 
 /* ------------------------- sr-only ------------------------------- */

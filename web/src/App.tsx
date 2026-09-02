@@ -10,13 +10,22 @@ import {
 import {
   apiPath,
   captureAllowed,
+  fetchClientLocale,
   fetchPublicOrigin,
   fetchStingersEnabled,
   openExternal,
   setupIdentity,
   type Identity,
 } from "./discord";
-import { Session } from "./session";
+import {
+  adoptClientLocale,
+  localeParam,
+  t,
+  type MessageKey,
+  type Params,
+} from "./i18n";
+import { LangToggle } from "./LangToggle";
+import { Session, type SessionStatus } from "./session";
 import type { StingerData } from "./protocol";
 import { startCapture, type CaptureHandle } from "./capture";
 import { Player } from "./player";
@@ -38,6 +47,15 @@ import {
 import { StingerPanel } from "./stingers";
 import "./theme.css";
 
+/**
+ * What the error line is holding. A *descriptor* rather than a rendered
+ * string, so an error already on screen re-draws in the new language when
+ * the toggle flips. A bare string is the escape hatch for messages we do not
+ * own: browser DOMExceptions out of getDisplayMedia, and the Discord SDK's
+ * own failures, which arrive in whatever language their source speaks.
+ */
+type AppError = string | { key: MessageKey; params?: Params };
+
 /** One row of the sidebar roster — one *person*, not one connection. */
 interface RosterRow {
   id: string;
@@ -50,6 +68,18 @@ interface RosterRow {
  *  belong to one person, so presentation collapses them onto one row. */
 const baseId = (id: string) => (id.endsWith(":tab") ? id.slice(0, -4) : id);
 const plainName = (n: string) => n.replace(/\s*\(sharing\)\s*$/i, "");
+
+/** The transport states in words. They are only ever *read out* — the `title`
+ *  on the dot and its screen-reader label — so they get translated, while
+ *  the drawing stays the thing that carries the meaning on screen. */
+const CONN_KEY: Record<SessionStatus, MessageKey> = {
+  connecting: "conn.connecting",
+  open: "conn.open",
+  reconnecting: "conn.reconnecting",
+  closed: "conn.closed",
+  unauthorized: "conn.unauthorized",
+  superseded: "conn.superseded",
+};
 
 /** How the connection state is *drawn* (the words go in a tooltip).
  *  `undefined` is the moment before the session exists — that is still
@@ -85,7 +115,14 @@ const StageBackdrop: Component = () => (
 
 const App: Component = () => {
   const [identity, setIdentity] = createSignal<Identity | null>(null);
-  const [error, setError] = createSignal<string | null>(null);
+  const [error, setError] = createSignal<AppError | null>(null);
+  /** The error, rendered in the current language. Reading it inside JSX is
+   *  what makes a live error follow the toggle. */
+  const errorText = (): string | null => {
+    const e = error();
+    if (e == null) return null;
+    return typeof e === "string" ? e : t(e.key, e.params);
+  };
   const [session, setSession] = createSignal<Session | null>(null);
   const [capture, setCapture] = createSignal<CaptureHandle | null>(null);
   // 60 by default — this is a games-and-video product first, and the
@@ -266,6 +303,10 @@ const App: Component = () => {
     try {
       const id = await setupIdentity();
       setIdentity(id);
+      // Zero-friction language: adopt whatever the Discord client is set to.
+      // It arrives after first paint and loses to an explicit choice, so it
+      // can neither delay startup nor undo the toggle.
+      void fetchClientLocale().then(adoptClientLocale);
       const s = new Session(id, { accessToken: id.accessToken });
       player = new Player(canvasRef, () => s.serverNow());
       player.setVolume(volume() / 100);
@@ -281,13 +322,12 @@ const App: Component = () => {
       s.onStageTaken = (byName) => {
         if (capture()) {
           stopSharing();
-          setError(`✋ ${byName} took the stage.`);
+          setError({ key: "err.tookStage", params: { name: byName } });
         }
       };
       // Same Discord user opened the Activity somewhere newer (another
       // device, a reloaded iframe): this view is terminally disconnected.
-      s.onSuperseded = () =>
-        setError("Opened elsewhere — this view is disconnected. Close and reopen the Activity here to take over.");
+      s.onSuperseded = () => setError({ key: "err.superseded" });
       // Stream start/stop stinger — the sharer's own view plays it too.
       s.onStinger = (st) => void playStinger(st);
       s.connect();
@@ -378,7 +418,9 @@ const App: Component = () => {
         }),
       }),
     ]);
-    if (!tokenResp.ok) throw new Error(`share token refused: ${tokenResp.status}`);
+    if (!tokenResp.ok) {
+      throw new Error(t("err.shareToken", { status: tokenResp.status }));
+    }
     const { shareToken } = (await tokenResp.json()) as { shareToken: string };
 
     const url = new URL("/share", origin);
@@ -386,6 +428,10 @@ const App: Component = () => {
     url.searchParams.set("room", id.room); // display only; token is authoritative
     url.searchParams.set("name", id.username);
     url.searchParams.set("fps", String(fps()));
+    // The companion tab lives on the public origin, not Discord's proxy, so
+    // it cannot see this origin's localStorage. Hand it the language on the
+    // URL and it opens already speaking it.
+    url.searchParams.set("lang", localeParam());
     await openExternal(url.toString());
     setCompanionOpened(true);
   };
@@ -402,6 +448,11 @@ const App: Component = () => {
   });
 
   const [confirmTakeover, setConfirmTakeover] = createSignal(false);
+
+  /** The takeover question, split either side of its `{name}` slot so the
+   *  name can stay bold. `t()` leaves the placeholder alone when no params
+   *  are passed, which is what makes this safe. */
+  const kickParts = () => t("modal.kick").split("{name}");
 
   /** Entry point for the Share button: if someone else is live, ask before
    *  kicking them off the stage. */
@@ -449,6 +500,13 @@ const App: Component = () => {
   const stage = () => session()?.stage() ?? {};
   const live = () => Boolean(stage().publisherId);
 
+  /** Transport state as a word, in the active language. `undefined` is the
+   *  beat before the session exists — that is "starting", not "broken". */
+  const connWord = () => {
+    const s = session()?.status();
+    return t(s ? CONN_KEY[s] : "conn.starting");
+  };
+
   /** Presentation-only view of the participant list: one row per person,
    *  flagged with who is on the stage and which one is you. */
   const roster = (): RosterRow[] => {
@@ -491,7 +549,7 @@ const App: Component = () => {
         <Show when={live()}>
           <span class="live-badge">
             <OnAirDot class="live-dot" />
-            <span class="live-badge-label">On air</span>
+            <span class="live-badge-label">{t("header.onAir")}</span>
             <span class="live-badge-name">{stage().publisherName}</span>
           </span>
           <span class="stat-pill">
@@ -504,13 +562,14 @@ const App: Component = () => {
             words are still there for anyone who wants them — on hover and
             for screen readers — they just no longer shout "reconnecting"
             across the header. */}
+        <LangToggle class="header-lang" />
         <span
           class={`conn-dot conn-dot--${linkState(session()?.status())}`}
-          title={`${session()?.status() ?? "starting"} · ${identity()?.username ?? "…"}`}
+          title={`${connWord()} · ${identity()?.username ?? "…"}`}
         >
           <LinkDot class="conn-mark" />
           <span class="u-sr-only" role="status">
-            Connection {session()?.status() ?? "starting"}
+            {t("conn.sr", { status: connWord() })}
           </span>
         </span>
       </header>
@@ -555,10 +614,10 @@ const App: Component = () => {
               live() && !capture() && !session()?.ownsStage() && !painted()
             }
           >
-            <div class="stage-wait" title="Waiting for the picture…">
+            <div class="stage-wait" title={t("stage.waiting")}>
               <ScribbleLoader class="wait-scribble" />
               <span class="u-sr-only" role="status">
-                Waiting for the picture
+                {t("stage.waiting")}
               </span>
             </div>
           </Show>
@@ -569,22 +628,25 @@ const App: Component = () => {
               <StageBackdrop />
               <div class="scene-stack">
                 <SceneTv class="scene-tv" />
+                {/* two whole sentences, not a concatenation: word order
+                    around the fps number is not the same in every language */}
                 <p class="scene-line">
-                  🎥 You are live at {fps()} fps
-                  {capture() ? "." : " from your browser tab."}
+                  {capture()
+                    ? t("stage.liveHere", { fps: fps() })
+                    : t("stage.liveTab", { fps: fps() })}
                 </p>
               </div>
             </div>
           </Show>
           <Show when={live() && !session()?.ownsStage() && zoom() > 1.001}>
-            <span class="zoom-pill" title="Scroll to zoom · drag to pan">
+            <span class="zoom-pill" title={t("stage.zoomTitle")}>
               {zoom().toFixed(1)}x
             </span>
           </Show>
           <Show when={live() && !session()?.ownsStage()}>
             <button
               class="fs-btn"
-              title="Fullscreen · F (T for theater mode)"
+              title={t("stage.fsTitle")}
               onClick={() => void toggleFullscreen()}
             >
               ⛶
@@ -606,7 +668,7 @@ const App: Component = () => {
                       onClick={shareClicked}
                       class="crayon-btn crayon-btn--go scene-cta"
                     >
-                      Share screen
+                      {t("stage.shareScreen")}
                     </button>
                   </div>
                 }
@@ -615,7 +677,7 @@ const App: Component = () => {
                     it rather than describing it. */}
                 <div class="scene-stack">
                   <BrowserTabDoodle class="scene-tab" />
-                  <p class="scene-line">Start sharing in the new tab.</p>
+                  <p class="scene-line">{t("stage.companionOpen")}</p>
                 </div>
               </Show>
             </div>
@@ -630,7 +692,7 @@ const App: Component = () => {
             <EyesDoodle class="sidebar-title-icon" />
             <span class="sidebar-count">{roster().length}</span>
             <span class="sidebar-count-label u-scribble u-scribble--yellow">
-              in the room
+              {t("roster.inRoom")}
             </span>
           </h4>
           <div class="roster">
@@ -648,12 +710,12 @@ const App: Component = () => {
                   <Show when={p.sharing}>
                     <span class="participant-tag">
                       <MegaphoneDoodle class="participant-tag-icon" />
-                      sharing
+                      {t("roster.sharing")}
                     </span>
                   </Show>
                   <Show when={p.isSelf && !p.sharing}>
                     <span class="participant-tag participant-tag--you">
-                      you
+                      {t("roster.you")}
                     </span>
                   </Show>
                 </div>
@@ -680,7 +742,7 @@ const App: Component = () => {
                     onClick={shareClicked}
                     class="crayon-btn crayon-btn--go"
                   >
-                    {live() ? "Take the stage" : "Share screen"}
+                    {live() ? t("footer.takeStage") : t("stage.shareScreen")}
                   </button>
                 </Show>
               }
@@ -690,19 +752,19 @@ const App: Component = () => {
                 onClick={() => session()?.leaveStage()}
                 class="crayon-btn crayon-btn--stop"
               >
-                Stop sharing
+                {t("footer.stopSharing")}
               </button>
             </Show>
           }
         >
           <button onClick={stopSharing} class="crayon-btn crayon-btn--stop">
-            Stop sharing
+            {t("footer.stopSharing")}
           </button>
         </Show>
 
         <Show when={live() && !session()?.ownsStage()}>
-          <label class="fps-label" title="On speakers, your mic feeds the stream back into the call — headphones avoid it.">
-            🎧 Volume{" "}
+          <label class="fps-label" title={t("footer.volumeTitle")}>
+            {t("footer.volume")}{" "}
             <input
               class="crayon-range"
               type="range"
@@ -725,7 +787,7 @@ const App: Component = () => {
 
         <div class="field">
           <span class="field-label" id="fps-label">
-            Framerate
+            {t("footer.framerate")}
           </span>
           <div class="seg" role="group" aria-labelledby="fps-label">
             <button
@@ -755,15 +817,15 @@ const App: Component = () => {
             type="button"
             class="crayon-btn crayon-btn--chalk"
             aria-expanded={stingerPanel()}
-            title="Add, curate and fire the room's stingers"
+            title={t("footer.stingersTitle")}
             onClick={() => setStingerPanel((v) => !v)}
           >
-            🎺 Stingers
+            {t("footer.stingers")}
           </button>
         </Show>
 
         <Show when={error()}>
-          <span class="error-text">{error()}</span>
+          <span class="error-text">{errorText()}</span>
         </Show>
       </footer>
 
@@ -778,8 +840,14 @@ const App: Component = () => {
       <Show when={confirmTakeover()}>
         <div class="modal-scrim">
           <div class="share-card modal-card">
+            {/* One message with one slot — rendered *around* the slot so the
+                name keeps its <strong>. Splitting on the placeholder rather
+                than concatenating two half-sentences means a language is
+                free to put the name first, last, or in the middle. */}
             <p class="modal-msg">
-              ✋ Kick <strong>{stage().publisherName}</strong> off the stage?
+              {kickParts()[0] ?? ""}
+              <strong>{stage().publisherName}</strong>
+              {kickParts()[1] ?? ""}
             </p>
             <div class="modal-actions">
               <button
@@ -789,13 +857,13 @@ const App: Component = () => {
                   void share();
                 }}
               >
-                Yeah, my turn
+                {t("modal.yes")}
               </button>
               <button
                 class="crayon-btn crayon-btn--stop"
                 onClick={() => setConfirmTakeover(false)}
               >
-                Never mind
+                {t("modal.no")}
               </button>
             </div>
           </div>
