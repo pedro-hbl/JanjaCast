@@ -723,6 +723,16 @@ const App: Component = () => {
             </For>
           </div>
         </aside>
+
+        {/* Anchored inside the positioned main row (design.md § 5.8): the
+            drawer must cover neither the header lockup nor the footer. */}
+        <Show when={stingerPanel()}>
+          <StingerPanel
+            token={identity()?.accessToken}
+            onClose={() => setStingerPanel(false)}
+            onPlay={(opts) => session()?.playStinger(opts)}
+          />
+        </Show>
       </main>
 
       <footer class="app-footer">
@@ -828,14 +838,6 @@ const App: Component = () => {
           <span class="error-text">{errorText()}</span>
         </Show>
       </footer>
-
-      <Show when={stingerPanel()}>
-        <StingerPanel
-          token={identity()?.accessToken}
-          onClose={() => setStingerPanel(false)}
-          onPlay={(opts) => session()?.playStinger(opts)}
-        />
-      </Show>
 
       <Show when={confirmTakeover()}>
         <div class="modal-scrim">

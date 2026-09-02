@@ -745,9 +745,19 @@ Drawing rules:
    `CastMark`). Everything else is fixed.
 
 Current set: `CastMark`, `OnAirDot`, `ScribbleDot`, `StickFigure`, `EyesDoodle`,
-<<<<<<< HEAD
-`MegaphoneDoodle`, `CloudDoodle`, `SunDoodle`. `Wordmark` also lives in
-`doodles.tsx` — it is a drawing made of letters, not a component.
+`MegaphoneDoodle`, `CloudDoodle`, `SunDoodle`, `StarDoodle`, `DiceDoodle`,
+`BoomDoodle`, `SceneTv`, `BrowserTabDoodle`, `ScribbleLoader`, `LinkDot`.
+`Wordmark` also lives in `doodles.tsx` — it is a drawing made of letters, not
+a component.
+
+`SceneTv`, `BrowserTabDoodle`, `ScribbleLoader` and `LinkDot` are *scene*
+drawings rather than icons: they are used at 130–270px, they carry no
+adjacent label to lean on, and three of them have CSS-driven states
+(`SceneTv`'s nub and waves, `ScribbleLoader`'s self-drawing stroke,
+`LinkDot`'s three shapes). Rule 5 — design at the size it will be used — is
+why `SceneTv` is a separate drawing from `CastMark` rather than the mark
+scaled up: at poster size the mark's horizontal glare streaks read as lines
+of text and its stroke weights read as slabs.
 
 **How to test a drawing at size.** Do not judge it in a design tool at 400%.
 Rasterise it at its real px size onto its real ground, then blow *that bitmap*
@@ -755,18 +765,6 @@ up with nearest-neighbour scaling — scaling the SVG instead just re-renders th
 vector and tells you nothing. That is how the 16 / 20 / 24 / 34 decisions above
 were made, and it is the only way to see that a 1.6-radius pupil is a
 sub-pixel smear at 16px.
-=======
-`MegaphoneDoodle`, `CloudDoodle`, `SunDoodle`, `SceneTv`, `BrowserTabDoodle`,
-`ScribbleLoader`, `LinkDot`.
-
-The last four are *scene* drawings rather than icons: they are used at
-130–270px, they carry no adjacent label to lean on, and three of them have
-CSS-driven states (`SceneTv`'s nub and waves, `ScribbleLoader`'s
-self-drawing stroke, `LinkDot`'s three shapes). Rule 5 — design at the size
-it will be used — is why `SceneTv` is a separate drawing from `CastMark`
-rather than the mark scaled up: at poster size the mark's horizontal glare
-streaks read as lines of text and its stroke weights read as slabs.
->>>>>>> worktree-agent-a1407e437877a9f75
 
 Emoji are used sparingly as inline glyphs in copy (🎧 🎥 ✋ ⛔ 🎵) — never as
 component icons, because they render as somebody else's artwork.
