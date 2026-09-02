@@ -92,6 +92,11 @@
      tiles butt into one continuous line — an inset start/end leaves a
      visible seam every 72px. */
   --scribble: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='72' height='8' viewBox='0 0 72 8'><path d='M0 5Q9 1.8 18 5T36 5T54 5T72 5' fill='none' stroke='%23000' stroke-width='2.4' stroke-linecap='round'/></svg>");
+  /* Scribble-textured grass with crayon flowers. A crayon-box asset, so it
+     is the same strip on both grounds: it runs along the bottom of the
+     /share sheet (.grass-strip) and along the bottom of the Activity's
+     empty-stage scene (.scene-grass). */
+  --grass-art: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='220' height='48' viewBox='0 0 220 48'><path d='M0 22 Q14 14 28 21 T56 20 T84 22 T112 19 T140 22 T168 20 T196 22 T220 20 L220 48 L0 48 Z' fill='%235cb53f'/><path d='M8 30 q4 -8 7 -1 M30 34 q5 -9 8 -2 M52 29 q4 -8 7 -1 M96 33 q4 -8 7 -1 M140 30 q5 -9 8 -2 M186 33 q4 -8 7 -1' fill='none' stroke='%233f8f2a' stroke-width='2.2' stroke-linecap='round'/><g stroke='%2326222e' stroke-width='1.2'><circle cx='72' cy='27' r='4.2' fill='%23e86aa6'/><circle cx='72' cy='27' r='1.5' fill='%23f2c230' stroke='none'/><circle cx='122' cy='31' r='4.2' fill='%23f2c230'/><circle cx='122' cy='31' r='1.5' fill='%23e85d3a' stroke='none'/><circle cx='170' cy='26' r='4.2' fill='%238b5fc7'/><circle cx='170' cy='26' r='1.5' fill='%23fffdf3' stroke='none'/><circle cx='24' cy='24' r='4.2' fill='%23e85d3a'/><circle cx='24' cy='24' r='1.5' fill='%23f2c230' stroke='none'/></g></svg>");
   /* Hand-drawn select chevron, one per ground (a background-image can't
      take currentColor). */
   --chevron: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='13' height='9' viewBox='0 0 13 9'><path d='M1.6 2Q4.1 4.5 6.4 7 8.9 4.4 11.4 1.9' fill='none' stroke='%23f4efdd' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/></svg>");
@@ -412,23 +417,8 @@
   filter: drop-shadow(0 14px 28px rgba(0, 0, 0, 0.45));
 }
 
-.stage-empty {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 10px;
-  padding: 16px;
-}
-.stage-cloud { opacity: 0.85; }
-
-.stage-msg {
-  margin: 0;
-  max-width: 420px;
-  text-align: center;
-  color: var(--muted);
-  font-family: var(--font-hand);
-  font-size: var(--step-1);
-}
+/* (the empty stage is now a composed scene — see § the empty-stage scene
+   at the end of this sheet) */
 
 /* --------------------------- sidebar ----------------------------- */
 
@@ -916,9 +906,7 @@ label.fps-label {
   bottom: 0;
   height: 48px;
   pointer-events: none;
-  background:
-    url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='220' height='48' viewBox='0 0 220 48'><path d='M0 22 Q14 14 28 21 T56 20 T84 22 T112 19 T140 22 T168 20 T196 22 T220 20 L220 48 L0 48 Z' fill='%235cb53f'/><path d='M8 30 q4 -8 7 -1 M30 34 q5 -9 8 -2 M52 29 q4 -8 7 -1 M96 33 q4 -8 7 -1 M140 30 q5 -9 8 -2 M186 33 q4 -8 7 -1' fill='none' stroke='%233f8f2a' stroke-width='2.2' stroke-linecap='round'/><g stroke='%2326222e' stroke-width='1.2'><circle cx='72' cy='27' r='4.2' fill='%23e86aa6'/><circle cx='72' cy='27' r='1.5' fill='%23f2c230' stroke='none'/><circle cx='122' cy='31' r='4.2' fill='%23f2c230'/><circle cx='122' cy='31' r='1.5' fill='%23e85d3a' stroke='none'/><circle cx='170' cy='26' r='4.2' fill='%238b5fc7'/><circle cx='170' cy='26' r='1.5' fill='%23fffdf3' stroke='none'/><circle cx='24' cy='24' r='4.2' fill='%23e85d3a'/><circle cx='24' cy='24' r='1.5' fill='%23f2c230' stroke='none'/></g></svg>")
-    repeat-x left bottom / 220px 48px;
+  background: var(--grass-art) repeat-x left bottom / 220px 48px;
 }
 
 /* --------------- fullscreen / theater mode ----------------------- */
@@ -1354,4 +1342,364 @@ label.fps-label {
     scroll-behavior: auto !important;
   }
   .live-wave { opacity: 1; }
+  /* the loader's wave settles fully drawn rather than half-erased */
+  .wait-scribble path { stroke-dashoffset: 0 !important; }
+}
+
+/* ==================================================================
+   THE EMPTY-STAGE SCENE
+   ------------------------------------------------------------------
+   An Activity nobody is streaming to used to be a cloud and a sentence.
+   It is a drawing now: the JanjaCast set standing in the grass under a
+   sun, switched off, with the single thing you can do about it planted
+   in front of it at poster size. The button's own label is the only
+   text in the picture.
+
+   This lives *inside* .stage, so it inherits theater and fullscreen for
+   free — and it only ever exists while the canvas has nothing on it, so
+   § "the stage is sacred" holds: nothing here can appear over video.
+   ================================================================== */
+
+.stage-scene {
+  position: absolute;
+  inset: 0;
+  z-index: 1; /* over the (blank) canvas, under the stinger layer at 4 */
+  display: flex;
+  /* the set *stands* on the grass — centred vertically it floats in the
+     sky and the drawing stops reading as a place */
+  align-items: flex-end;
+  justify-content: center;
+  overflow: hidden;
+  /* construction paper, not the letterbox black: black reads as "the
+     video is broken", paper reads as "this is a drawing" */
+  background: var(--ground);
+  animation: scene-in 420ms cubic-bezier(0.2, 0.7, 0.3, 1) both;
+}
+
+@keyframes scene-in {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: none; }
+}
+
+/* --- the weather -------------------------------------------------- */
+
+.scene-sun {
+  position: absolute;
+  top: 3%;
+  right: 3%;
+  width: clamp(46px, 11vw, 88px);
+  height: clamp(46px, 11vw, 88px);
+  opacity: 0.9;
+  animation: scene-sun 90s linear infinite;
+}
+@keyframes scene-sun {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.scene-cloud {
+  position: absolute;
+  height: auto;
+  opacity: 0.5;
+  color: var(--muted);
+}
+.scene-cloud--a {
+  top: 11%;
+  left: 6%;
+  width: clamp(60px, 15vw, 108px);
+  animation: scene-drift 26s ease-in-out infinite;
+}
+.scene-cloud--b {
+  /* clear of both the sun (top right) and the set (centre) */
+  top: 33%;
+  left: 74%;
+  width: clamp(42px, 10vw, 74px);
+  opacity: 0.35;
+  animation: scene-drift 37s ease-in-out infinite reverse;
+}
+@keyframes scene-drift {
+  0%, 100% { transform: translateX(0); }
+  50% { transform: translateX(16px); }
+}
+
+.scene-grass {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 44px;
+  pointer-events: none;
+  background: var(--grass-art) repeat-x left bottom / 220px 48px;
+}
+
+/* --- the set and its one button ------------------------------------ */
+
+.scene-stack {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  max-width: 100%;
+  /* the button lands in the grass, not above it */
+  padding: 0 16px 22px;
+}
+
+.scene-tv,
+.scene-tab {
+  width: clamp(150px, 36vw, 272px);
+  height: auto;
+  /* A short Activity panel would otherwise clip the top of the set: the
+     drawing has an intrinsic ratio, so capping its height shrinks the
+     width with it and the composition stays whole at any panel shape. */
+  max-height: 38vh;
+  filter: drop-shadow(0 8px 14px rgba(0, 0, 0, 0.45));
+}
+
+/* The hero. Bigger than any other button in the product on purpose: it
+   is the only thing to do on this screen, and it is standing in a field. */
+.scene-cta {
+  margin-top: -6px;
+  font-size: clamp(16px, 2.6vw, 22px);
+  padding: 12px 28px 14px;
+  transform: rotate(-2.2deg);
+  box-shadow: 3px 4px 0 var(--outline);
+}
+.scene-cta:hover:not(:disabled) {
+  transform: rotate(1.5deg) scale(1.06);
+}
+
+/* Pressing the button is what switches the set on — hovering it shows
+   you that, by lighting the nub and throwing the waves. Decoration
+   reinforcing the label; the drawing means the same standing still. */
+.scene-tv-nub {
+  /* dark and quiet while the set is off, so going red actually reads as
+     switching on rather than as a colour swap */
+  fill: var(--surface-2);
+  transition: fill 180ms ease;
+}
+.scene-tv-wave {
+  opacity: 0;
+  transform-box: fill-box;
+  transform-origin: 0% 50%;
+  transition: opacity 200ms ease;
+}
+.stage-scene:has(.scene-cta:hover) .scene-tv-nub,
+.stage-scene:has(.scene-cta:focus-visible) .scene-tv-nub {
+  fill: var(--angry);
+}
+.stage-scene:has(.scene-cta:hover) .scene-tv-wave,
+.stage-scene:has(.scene-cta:focus-visible) .scene-tv-wave {
+  opacity: 1;
+}
+
+/* your own view while you hold the stage: the set is on, and stays on */
+.stage-scene--live .scene-tv-nub { fill: var(--angry); }
+.stage-scene--live .scene-tv-wave {
+  opacity: 1;
+  animation: crayon-wave 1.5s ease-out infinite;
+}
+.stage-scene--live .scene-tv-wave--far { animation-delay: 0.22s; }
+
+/* the arrow that points into the companion tab's green button */
+.scene-tab-arrow {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+  animation: scene-nudge 1.7s ease-in-out infinite;
+}
+@keyframes scene-nudge {
+  0%, 100% { transform: translate(0, 0); }
+  50% { transform: translate(5px, -7px); }
+}
+
+/* At most one line of words in the scene, and it is confident: --text,
+   not --muted. Anything longer belongs somewhere that isn't the stage. */
+.scene-line {
+  /* a button may stand *in* the grass; a line of words may not */
+  margin: 14px 0 30px;
+  max-width: 26ch;
+  text-align: center;
+  font-family: var(--font-hand);
+  font-size: clamp(13.5px, 1.7vw, var(--step-1));
+  line-height: 1.35;
+  color: var(--text);
+}
+
+/* A *short* stage has no sky to put weather in — drop the weather, keep
+   the set. Narrow is fine: the clamps shrink the sun and clouds and the
+   sky is exactly where the spare height goes. */
+@media (max-height: 340px) {
+  .scene-sun,
+  .scene-cloud { display: none; }
+  .scene-stack { padding-bottom: 16px; }
+  .scene-grass { height: 32px; }
+  .scene-line { margin-bottom: 22px; }
+}
+
+/* --- joining: waiting for the first frame -------------------------- */
+/* Between joining a live stage and the first decoded frame the canvas is
+   black. A crayon wave draws itself over paper instead — and the whole
+   layer is unmounted the instant anything paints, so it can never sit on
+   top of moving video. */
+
+.stage-wait {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--ground);
+}
+.wait-scribble {
+  width: clamp(96px, 26vw, 148px);
+  height: auto;
+}
+.wait-scribble path {
+  stroke-dasharray: 170;
+  animation: scribble-draw 1.8s ease-in-out infinite;
+}
+@keyframes scribble-draw {
+  0% { stroke-dashoffset: 170; }
+  55% { stroke-dashoffset: 0; }
+  100% { stroke-dashoffset: -170; }
+}
+
+/* ==================== connection indicator ======================== */
+/* "reconnecting" used to be a word in the header. It is a scribbled dot
+   now, and it changes *shape* as well as colour — a tick when the socket
+   is open, an orbiting spark while it is trying, a slash when it is down
+   — so the state never rests on colour alone (§ 7). The words survive in
+   the element's title and in a visually-hidden label. */
+
+.conn-dot {
+  margin-left: auto;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  transform: rotate(-4deg);
+}
+.conn-mark { flex: none; }
+.conn-blob { fill: var(--muted); }
+.conn-tick,
+.conn-spark,
+.conn-slash { display: none; }
+
+.conn-dot--live .conn-blob { fill: var(--grass); }
+.conn-dot--live .conn-tick { display: inline; }
+
+.conn-dot--wait .conn-blob { fill: var(--yellow); }
+.conn-dot--wait .conn-spark {
+  display: inline;
+  fill: var(--yellow);
+  transform-box: fill-box;
+  /* orbit around the blob's centre, not the spark's own — the spark's
+     fill-box is 4.2 wide at (14.5,1.3); the blob centre is (9.5,8.7) */
+  transform-origin: -119% 176%;
+  animation: conn-orbit 1.6s linear infinite;
+}
+.conn-dot--wait .conn-blob { animation: crayon-pulse 1.6s ease-in-out infinite; }
+@keyframes conn-orbit {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.conn-dot--down .conn-blob { fill: var(--angry); }
+.conn-dot--down .conn-slash {
+  display: inline;
+  stroke: var(--angry-lit);
+}
+
+/* the blob pulse needs its own box, or it scales about the SVG origin */
+.conn-blob {
+  transform-box: fill-box;
+  transform-origin: 50% 50%;
+}
+
+/* ==================== advanced disclosure ========================= */
+/* /share used to ask four questions before you could start. Three of them
+   had a right answer every time; the codec had one so reliably that the
+   control is gone. What is left of the other two folds in here, behind a
+   dashed crayon tag — reachable, not in the way. */
+
+.crayon-details {
+  width: 100%;
+  max-width: 452px;
+}
+.crayon-details > summary {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: fit-content;
+  margin: 0 auto;
+  padding: 5px 14px 6px;
+  font-family: var(--font-hand);
+  font-size: 13.5px;
+  color: var(--muted);
+  background: transparent;
+  border: 2px dashed var(--outline);
+  border-radius: var(--wobble-sm);
+  cursor: pointer;
+  list-style: none;
+  transform: rotate(-0.8deg);
+  transition: color 140ms ease, transform 140ms ease;
+}
+.crayon-details > summary::-webkit-details-marker { display: none; }
+.crayon-details > summary::before {
+  content: "";
+  width: 13px;
+  height: 9px;
+  flex: none;
+  background: var(--chevron) no-repeat center / 13px 9px;
+  transform: rotate(-90deg);
+  transition: transform 160ms ease;
+}
+.crayon-details[open] > summary::before { transform: rotate(0deg); }
+.crayon-details > summary:hover { color: var(--text); transform: rotate(0.6deg); }
+/* summary is not in the global focus-ring selector list */
+.crayon-details > summary:focus-visible {
+  outline: 3px dashed var(--focus);
+  outline-offset: 3px;
+}
+
+.crayon-details .details-body {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 14px;
+  margin-top: 14px;
+  padding: 16px 11px 18px;
+  text-align: right;
+  background: var(--surface-2);
+  border: 3px dashed var(--outline);
+  border-radius: var(--wobble-b);
+  animation: scene-in 220ms ease both;
+}
+/* The shared right edge (§ 5.3) existed because four controls stacked up.
+   The default flow is down to one, and a single right-aligned row reads as
+   the leftover of a form — so the framerate centres over the button, and
+   the right edge survives where it still earns its keep: inside the panel,
+   where two labelled selects still stack. */
+.share-card > .field { justify-content: center; }
+.share-card .crayon-details .fps-label { max-width: 100%; }
+/* the panel is inset inside the card, so its controls give the 344px back
+   — otherwise the longest label wraps above its select and only that one
+   row breaks the shared edge */
+.share-card .crayon-details .crayon-select { width: 330px; }
+.crayon-details .share-hint { max-width: 100%; text-align: right; }
+
+/* ------------------------- sr-only ------------------------------- */
+/* Text that exists for assistive tech only — used where the picture
+   carries the meaning on screen (§ 7: state is never colour-only). */
+.u-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
 }

@@ -499,7 +499,9 @@ Markup contract:
 
 ### 5.3 Select — `.crayon-select`
 
-For *Optimize for*, *Codec*, *Sound* — lists of three or more with long labels.
+For *Optimize for* and *Sound* — lists of three or more with long labels.
+Both now live inside the `/share` **Advanced** disclosure (§ 5.10); the
+default flow shows no select at all.
 
 `appearance: none`, crayon streaks, ink border, wobble-sm corners, and a
 hand-drawn chevron supplied per ground by `--chevron`. Hover tilts −0.6°.
@@ -629,6 +631,74 @@ lead with a glyph and say what to do (`✋ pedro took the stage.`,
 `⛔ Session expired — go back to Discord and click Share screen again.`). They
 do not apologise and they are never vague.
 
+### 5.9 The stage scene — `.stage-scene`
+
+An Activity with nothing on the canvas is a **drawing**, not a sentence: the
+`SceneTv` standing in the grass (`--grass-art`) under `SunDoodle` and two
+`CloudDoodle`s, on the construction-paper ground rather than the letterbox
+black — black reads as *the video is broken*, paper reads as *this is a
+drawing*. Three states share one backdrop:
+
+| State | Centre of the scene | Words |
+| ----- | ------------------- | ----- |
+| Nobody live | set switched off + the oversized `.scene-cta` | the button's label |
+| Companion tab opened | `BrowserTabDoodle` with a bobbing arrow | one line |
+| You are live (`--live`) | the same set, switched on and rippling | one line |
+
+Rules:
+
+- **It only exists while the canvas is empty**, which is what keeps § *the
+  stage is sacred* true: nothing here can ever appear over a picture.
+- **The set stands on the grass.** Bottom-anchored, never centred — centred
+  it floats in the sky and the drawing stops reading as a place. A button
+  may stand *in* the grass; a line of words may not.
+- **One line of text, maximum**, and it is `--text`, not `--muted`. Anything
+  longer belongs somewhere that is not the stage.
+- **The `.scene-cta` is the screen's only `--go`** (§ 5.1). While it is
+  showing, the footer's Share button is suppressed; it returns the moment
+  the stage has a picture or a companion tab to re-open.
+- Hovering or focusing the CTA lights the set's nub and throws its waves —
+  decoration that previews the button's own label, never information. The
+  drawing means the same standing still.
+- The set carries `max-height: 38vh` so a short panel scales the whole
+  composition instead of clipping its top, and the weather is dropped below
+  340px of viewport height (a short stage has no sky to put it in).
+
+Joining a live stage gets `.stage-wait`: `ScribbleLoader` drawing itself on
+paper, unmounted the instant a frame paints (the signal is the canvas's own
+backing store — `player.ts` sizes it only when it actually draws).
+
+### 5.10 Disclosure — `.crayon-details`
+
+A dashed crayon tag over a dashed inset panel, for controls that already
+have a right answer. `summary` carries its own focus ring (it is not in the
+global focus selector list) and its own marker, a rotated `--chevron`.
+
+**Only for settings whose default is right every time.** A control that a
+person genuinely has to choose does not belong behind a disclosure — and a
+control whose right answer is *always* the same should be deleted instead
+(that is what happened to *Codec*).
+
+### 5.11 Connection — `.conn-dot`
+
+Transport state used to be the word `reconnecting` sitting in the Activity
+header. It is `LinkDot` now, and it changes **shape** as well as colour so
+it never rests on colour alone (§ 7):
+
+| State | Socket | Drawing |
+| ----- | ------ | ------- |
+| `--live` | `open` | grass blob with an ink tick |
+| `--wait` | `connecting`, `reconnecting` | yellow blob, breathing, with a spark orbiting it |
+| `--down` | `closed`, `unauthorized`, `superseded` | red blob with a slash through it |
+
+The words survive in the wrapper's `title` and in a `.u-sr-only` label. This
+is the *transport*; **`.live-badge` is the stage** (§ 5.5) and the two must
+never be conflated — a perfectly connected room with nobody streaming shows
+a green dot and no badge.
+
+It stays on the dark ground only. On cream the wait state would have to be
+yellow, which is invisible there (§ 3.1), so `/share` keeps its words.
+
 ---
 
 ## 6. Iconography
@@ -664,6 +734,7 @@ Drawing rules:
    `CastMark`). Everything else is fixed.
 
 Current set: `CastMark`, `OnAirDot`, `ScribbleDot`, `StickFigure`, `EyesDoodle`,
+<<<<<<< HEAD
 `MegaphoneDoodle`, `CloudDoodle`, `SunDoodle`. `Wordmark` also lives in
 `doodles.tsx` — it is a drawing made of letters, not a component.
 
@@ -673,6 +744,18 @@ up with nearest-neighbour scaling — scaling the SVG instead just re-renders th
 vector and tells you nothing. That is how the 16 / 20 / 24 / 34 decisions above
 were made, and it is the only way to see that a 1.6-radius pupil is a
 sub-pixel smear at 16px.
+=======
+`MegaphoneDoodle`, `CloudDoodle`, `SunDoodle`, `SceneTv`, `BrowserTabDoodle`,
+`ScribbleLoader`, `LinkDot`.
+
+The last four are *scene* drawings rather than icons: they are used at
+130–270px, they carry no adjacent label to lean on, and three of them have
+CSS-driven states (`SceneTv`'s nub and waves, `ScribbleLoader`'s
+self-drawing stroke, `LinkDot`'s three shapes). Rule 5 — design at the size
+it will be used — is why `SceneTv` is a separate drawing from `CastMark`
+rather than the mark scaled up: at poster size the mark's horizontal glare
+streaks read as lines of text and its stroke weights read as slabs.
+>>>>>>> worktree-agent-a1407e437877a9f75
 
 Emoji are used sparingly as inline glyphs in copy (🎧 🎥 ✋ ⛔ 🎵) — never as
 component icons, because they render as somebody else's artwork.
