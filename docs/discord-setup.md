@@ -66,3 +66,12 @@ its API and WebSocket paths with `/.proxy/` as Discord requires.
   inside the Activity.
 - **Tab/system audio capture** is Chromium-specific: tab audio works broadly,
   full system audio only on Windows.
+
+## FAQ: the "Use special activity URL permission" checkbox
+
+When launching the Activity, Discord's own launcher may show a checkbox —
+"Usar permissão especial do URL da atividade" / "Use special activity URL
+permission". **This dialog belongs to Discord, not JanjaCast**, and appears
+because you are launching your own (unverified) developer app: it controls
+Discord's URL-override mechanism for testing. Leave it **unchecked** —
+JanjaCast needs nothing from it, and everything works without it.
