@@ -258,14 +258,17 @@ func (h *Hub) Leave(r *Room, c *Client) {
 	delete(r.clients, c)
 	c.closeOnce.Do(func() { close(c.done) })
 
+  var assembled []AwardData
   if r.publisher == c {
 		r.publisher = nil
 		r.config = nil
 		r.clearGOPLocked()
 		r.clearBlankLocked()
 		r.stopRodizioClockLocked()
-		r.broadcastStageStateLocked()
-		r.scheduleStingerStopLocked()
+    // Assemble awards if the session qualifies (stats snapshot under lock).
+    assembled = r.assembleAwardsLocked()
+    r.broadcastStageStateLocked()
+    r.scheduleStingerStopLocked()
   }
   // Fold watch time on disconnect.
   if ps, ok := r.sessionStats[c.UserID]; ok {
@@ -279,8 +282,21 @@ func (h *Hub) Leave(r *Room, c *Client) {
 		r.cancelTurnLocked(protocol.CancelLeft)
 		r.advanceTurnLocked()
 	}
-	r.broadcastStageQueueLocked()
-	r.broadcastRoomStateLocked()
+  r.broadcastStageQueueLocked()
+  r.broadcastRoomStateLocked()
+
+  // Publish awards after leaving modifications if any.
+  if assembled != nil {
+      // fire callback if wired by server layer
+      if rcb := rAwardsCallback; rcb != nil {
+          // allocate id in server layer; here pass empty to be filled there
+          rcb(r.id, assembled)
+      }
+      // also notify clients that awards are ready; session id supplied by server later
+      for cl := range r.clients {
+          cl.enqueueControl(protocol.CtrlAwardsReady, protocol.AwardsReadyData{SessionID: r.id})
+      }
+  }
 
 	// Identity check: only reap the exact Room object registered under this
 	// id, so a stale reference can never evict a live successor.
@@ -373,6 +389,11 @@ type Room struct {
   // --- session stats for end-of-session awards (guarded by mu) ---------
   sessionStats map[string]*ParticipantStats
 }
+
+// rAwardsCallback is installed by the server layer to receive assembled
+// awards for a finished session. Stored at package scope; invoked outside
+// locks.
+var rAwardsCallback func(roomID string, awards []AwardData)
 
 // ParticipantStats accumulates per-participant counters for a live session.
 type ParticipantStats struct {
