@@ -371,6 +371,11 @@ export class Session {
       case "stage_state":
         this.setStage((ctrl.data ?? {}) as StageStateData);
         break;
+      case "room_phase": {
+        const d = (ctrl.data ?? { phase: "lobby" }) as import('./protocol').RoomPhaseData;
+        this.setStage((s) => ({ ...s, phase: d.phase }));
+        break;
+      }
       case "cinema_state": {
         const d = (ctrl.data ?? { paused: false, strokes: [] }) as import('./protocol').CinemaStateData;
         this.setCinemaPaused(!!d.paused);

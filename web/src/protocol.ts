@@ -194,6 +194,8 @@ export interface StageStateData {
   phase?: "lobby" | "live";
 }
 
+export interface RoomPhaseData { phase: "lobby" | "live" }
+
 /** Welcome payload: stage state plus the server-assigned id of this client. */
 export interface WelcomeData extends StageStateData {
   selfId?: string;
