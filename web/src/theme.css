@@ -1365,9 +1365,9 @@ label.fps-label {
   inset: 0;
   z-index: 1; /* over the (blank) canvas, under the stinger layer at 4 */
   display: flex;
-  /* the set *stands* on the grass — centred vertically it floats in the
-     sky and the drawing stops reading as a place */
-  align-items: flex-end;
+  /* the set and its button sit in the middle of the screen (owner's call);
+     the grass stays at the foot so the scene still reads as a place */
+  align-items: center;
   justify-content: center;
   overflow: hidden;
   /* construction paper, not the letterbox black: black reads as "the
@@ -1387,14 +1387,24 @@ label.fps-label {
   position: absolute;
   top: 3%;
   right: 3%;
-  width: clamp(46px, 11vw, 88px);
-  height: clamp(46px, 11vw, 88px);
+  width: clamp(64px, 15vw, 124px);
+  height: clamp(64px, 15vw, 124px);
   opacity: 0.9;
   animation: scene-sun 90s linear infinite;
 }
 @keyframes scene-sun {
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
+}
+/* The face spins on its own inside the slowly-turning disc — fast enough
+   to be seen, slow enough to stay sweet rather than dizzy. */
+.scene-sun .sun-face {
+  transform-origin: 36px 36px;
+  animation: scene-sun-face 14s linear infinite;
+}
+@keyframes scene-sun-face {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(-360deg); }
 }
 
 .scene-cloud {
@@ -1417,9 +1427,41 @@ label.fps-label {
   opacity: 0.35;
   animation: scene-drift 37s ease-in-out infinite reverse;
 }
+.scene-cloud--c {
+  top: 6%;
+  left: 42%;
+  width: clamp(48px, 12vw, 86px);
+  opacity: 0.42;
+  animation: scene-drift 31s ease-in-out infinite;
+}
+.scene-cloud--d {
+  top: 48%;
+  left: 10%;
+  width: clamp(36px, 9vw, 64px);
+  opacity: 0.3;
+  animation: scene-drift 43s ease-in-out infinite reverse;
+}
 @keyframes scene-drift {
   0%, 100% { transform: translateX(0); }
   50% { transform: translateX(16px); }
+}
+
+/* A scatter of crayon sparkles; each twinkles on its own beat. */
+.scene-star {
+  position: absolute;
+  width: clamp(10px, 2vw, 16px);
+  height: auto;
+  opacity: 0.55;
+  animation: scene-twinkle 3.4s ease-in-out infinite;
+}
+.scene-star--a { top: 18%; left: 24%; }
+.scene-star--b { top: 9%; left: 62%; animation-delay: 0.9s; }
+.scene-star--c { top: 36%; left: 84%; animation-delay: 1.7s; }
+.scene-star--d { top: 52%; left: 66%; animation-delay: 2.4s; }
+.scene-star--e { top: 28%; left: 8%; animation-delay: 1.2s; }
+@keyframes scene-twinkle {
+  0%, 100% { opacity: 0.25; transform: scale(0.85) rotate(-6deg); }
+  50% { opacity: 0.8; transform: scale(1.1) rotate(8deg); }
 }
 
 .scene-grass {

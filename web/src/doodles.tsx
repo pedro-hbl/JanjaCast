@@ -435,11 +435,31 @@ export const SunDoodle: Component<{ class?: string }> = (props) => (
       stroke-linecap="round"
     />
     <path
+      class="sun-face"
       d="M31 32.5q1 1.6 2.4.2M39.5 32.5q1 1.6 2.4.2M30.5 39c3.4 3.2 8 3.2 11.4 0"
       fill="none"
       stroke="var(--outline)"
       stroke-width="1.8"
       stroke-linecap="round"
+    />
+  </svg>
+);
+
+/** A tiny crayon sparkle — four uneven strokes, for the empty-stage sky. */
+export const StarDoodle: Component<{ class?: string }> = (props) => (
+  <svg
+    class={props.class}
+    width="16"
+    height="16"
+    viewBox="0 0 16 16"
+    aria-hidden="true"
+  >
+    <path
+      d="M8 1.6 8.4 6l4-.2-3.6 2.4 1.4 4.2L8 9.8l-2.6 2.8 1.2-4.4L3.4 6l4.2.2Z"
+      fill="var(--yellow)"
+      stroke="var(--outline)"
+      stroke-width="1.1"
+      stroke-linejoin="round"
     />
   </svg>
 );

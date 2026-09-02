@@ -29,6 +29,7 @@ import {
   MegaphoneDoodle,
   OnAirDot,
   SceneTv,
+  StarDoodle,
   ScribbleLoader,
   StickFigure,
   SunDoodle,
@@ -71,6 +72,13 @@ const StageBackdrop: Component = () => (
     <SunDoodle class="scene-sun" />
     <CloudDoodle class="scene-cloud scene-cloud--a" />
     <CloudDoodle class="scene-cloud scene-cloud--b" />
+    <CloudDoodle class="scene-cloud scene-cloud--c" />
+    <CloudDoodle class="scene-cloud scene-cloud--d" />
+    <StarDoodle class="scene-star scene-star--a" />
+    <StarDoodle class="scene-star scene-star--b" />
+    <StarDoodle class="scene-star scene-star--c" />
+    <StarDoodle class="scene-star scene-star--d" />
+    <StarDoodle class="scene-star scene-star--e" />
     <div class="scene-grass" aria-hidden="true" />
   </>
 );
