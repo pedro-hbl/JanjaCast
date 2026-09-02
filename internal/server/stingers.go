@@ -189,9 +189,13 @@ func (s *Server) handleStingerUpload(w http.ResponseWriter, r *http.Request) {
 		}
 		files++
 		if files > maxUploadFiles {
+			// Stop reading rather than reporting on every part: a body with
+			// a hundred thousand tiny parts must not become a hundred
+			// thousand error entries.
 			failed = append(failed, uploadResult{Name: part.FileName(), Error: "too many files at once"})
 			part.Close()
-			continue
+			drainParts(mr)
+			break
 		}
 		a, err := s.stingers.Create(part.FileName(), part, stinger.MaxAssetBytes)
 		part.Close()
