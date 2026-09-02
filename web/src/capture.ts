@@ -34,6 +34,10 @@ export interface CaptureOptions {
   backpressure?: () => number;
   /** "text" sharpens edges for code/slides; "motion" favors smoothness. */
   contentHint?: "text" | "motion";
+  /** Total relay egress budget (kbit/s). The encoder's ceiling becomes
+   *  budget ÷ viewers, so adding viewers lowers per-viewer bitrate instead
+   *  of multiplying uplink load past saturation. 0 = unlimited. */
+  egressBudgetKbps?: number;
 }
 
 export interface CaptureSample {
@@ -238,15 +242,24 @@ export async function startCapture(
   let clearSeconds = 0;
   let hintDegraded = 0;
   let hintViewers = 0;
+  // The per-viewer ceiling: with an egress budget, every viewer multiplies
+  // uplink cost, so the ceiling is budget ÷ viewers.
+  const ceiling = () => {
+    const budget = (opts.egressBudgetKbps ?? 0) * 1000;
+    if (budget <= 0 || hintViewers <= 0) return targetBitrate;
+    return Math.max(ABR_MIN_BITRATE, Math.min(targetBitrate, Math.floor(budget / hintViewers)));
+  };
   const abrTimer = setInterval(() => {
     if (!opts.backpressure || videoEncoder.state !== "configured") return;
     const backlog = opts.backpressure();
-    // Congested when our uplink backs up, or when a meaningful share of
-    // viewers (>30%) is being degraded by the relay.
+    const cap = ceiling();
+    // Congested when our uplink backs up, when a meaningful share of
+    // viewers (>30%) is being degraded by the relay, or when the viewer
+    // count pushed the egress budget below the current bitrate.
     const fanoutPressure =
       hintViewers > 0 && hintDegraded / hintViewers > 0.3;
-    if (backlog > ABR_HIGH_WATER || fanoutPressure) {
-      const next = Math.max(ABR_MIN_BITRATE, Math.round(bitrate * 0.7));
+    if (backlog > ABR_HIGH_WATER || fanoutPressure || bitrate > cap) {
+      const next = Math.max(ABR_MIN_BITRATE, Math.min(Math.round(bitrate * 0.7), cap));
       clearSeconds = 0;
       if (next < bitrate) {
         bitrate = next;
@@ -254,13 +267,15 @@ export async function startCapture(
         // already-congested uplink defeats the point of stepping down.
         videoEncoder.configure({ ...chosen.config, bitrate });
       }
-    } else if (backlog < ABR_LOW_WATER && bitrate < targetBitrate) {
+    } else if (backlog < ABR_LOW_WATER && bitrate < cap) {
       clearSeconds++;
       if (clearSeconds >= ABR_STEP_UP_AFTER_S) {
         clearSeconds = 0;
-        // Additive increase: multiplicative recovery from the floor takes
-        // over a minute to get back to target — far too slow.
-        bitrate = Math.min(targetBitrate, bitrate + 400_000);
+        // Additive increase, divided by the viewer count: a +400kbps step
+        // costs the uplink 400kbps × viewers, so step by what one viewer's
+        // worth of headroom actually buys.
+        const step = Math.max(100_000, Math.floor(400_000 / Math.max(hintViewers, 1)));
+        bitrate = Math.min(cap, bitrate + step);
         videoEncoder.configure({ ...chosen.config, bitrate });
         keyframeWanted = true;
       }

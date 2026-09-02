@@ -123,6 +123,14 @@ export class Session {
       this.setStatus("unauthorized");
       return;
     }
+    // 4001 backs up the in-band superseded control at the transport level:
+    // a newer session for this identity exists; reconnecting would kick it.
+    if (ev?.code === 4001) {
+      this.closedByUser = true;
+      this.setStatus("superseded");
+      this.onSuperseded?.();
+      return;
+    }
     this.setStatus("reconnecting");
     const delay = Math.min(
       500 * 2 ** this.reconnectAttempt + Math.random() * 250,

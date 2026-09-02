@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -35,6 +36,20 @@ func healthcheck() int {
 		return 1
 	}
 	return 0
+}
+
+// envInt reads an integer env var; empty or invalid yields def. Explicit 0
+// is honored (e.g. unlimited egress budget on a VPS).
+func envInt(name string, def int) int {
+	raw := os.Getenv(name)
+	if raw == "" {
+		return def
+	}
+	n, err := strconv.Atoi(raw)
+	if err != nil {
+		return def
+	}
+	return n
 }
 
 func logLevel() slog.Level {
@@ -80,6 +95,7 @@ func main() {
 		PublicOrigin:        os.Getenv("JANJACAST_PUBLIC_ORIGIN"),
 		AllowAnon:           os.Getenv("JANJACAST_ALLOW_ANON") == "1",
 		TokenSecret:         tokenSecret,
+		EgressBudgetKbps:    envInt("JANJACAST_EGRESS_BUDGET_KBPS", 25_000),
 	}
 
 	// SIGTERM matters: it is what `docker stop` and orchestrators send.

@@ -69,6 +69,7 @@ func (h *Hub) Join(roomID, userID, username string) (*Room, *Client, iter.Seq[Ou
 			continue
 		}
 		old.enqueueControl(protocol.CtrlSuperseded, struct{}{})
+		old.superseded = true
 		delete(r.clients, old)
 		old.closeOnce.Do(func() { close(old.done) })
 		if r.publisher == old {
@@ -249,6 +250,17 @@ type Client struct {
 	// lastKFAsk budgets this client's own keyframe requests. Guarded by
 	// Room.mu.
 	lastKFAsk time.Time
+	// superseded records that this connection was replaced by a newer
+	// session — the transport layer closes it with a distinct code so the
+	// client treats even a lost in-band signal as terminal. Guarded by
+	// Room.mu (of the room it was in when superseded).
+	superseded bool
+}
+
+// WasSuperseded reports whether this client was replaced by a newer session.
+// Read after the write loop ends; the happens-before edge is done closing.
+func (c *Client) WasSuperseded() bool {
+	return c.superseded
 }
 
 type outMsg struct {
@@ -411,6 +423,12 @@ func (r *Room) ForwardMedia(from *Client, msg []byte) {
 		if c == from {
 			continue
 		}
+		// The sharer's other connections (their Activity view) don't render
+		// their own stream — sending it anyway costs a full stream of
+		// egress per share (43% of uplink in the observed incident).
+		if baseID(c.UserID) == baseID(from.UserID) {
+			continue
+		}
 		if hdr.Kind == protocol.KindVideo {
 			if c.needKeyframe && !hdr.Keyframe() {
 				continue
@@ -463,8 +481,8 @@ func (r *Room) maybeSendRateHintLocked(now time.Time) {
 	r.lastHint = now
 	degraded, viewers := 0, 0
 	for c := range r.clients {
-		if c == r.publisher {
-			continue
+		if c == r.publisher || baseID(c.UserID) == baseID(r.publisher.UserID) {
+			continue // the sharer's own connections receive no media
 		}
 		viewers++
 		if c.needKeyframe || c.maxTL < maxTemporalLayer {

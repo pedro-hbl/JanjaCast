@@ -21,6 +21,38 @@ const SharePage: Component = () => {
   const room = params.get("room") ?? "dev";
   const name = params.get("name") ?? "sharer";
 
+  // Loopback hop: when the relay runs on THIS machine (self-hosted sharer),
+  // capturing through the public tunnel wastes a full stream of uplink AND
+  // downlink. Probe localhost; if it is the very same server instance, move
+  // this tab there. http://localhost is a secure context, so the mixed-
+  // content check permits the probe from an https page.
+  if (location.hostname !== "localhost" && location.hostname !== "127.0.0.1") {
+    void (async () => {
+      try {
+        const cfg = (await (await fetch("/api/config")).json()) as {
+          instance?: string;
+          localPort?: string;
+        };
+        if (!cfg.instance || !cfg.localPort) return;
+        const ctrl = new AbortController();
+        const timer = setTimeout(() => ctrl.abort(), 1500);
+        const health = (await (
+          await fetch(`http://localhost:${cfg.localPort}/api/health`, {
+            signal: ctrl.signal,
+          })
+        ).json()) as { instance?: string };
+        clearTimeout(timer);
+        if (health.instance === cfg.instance) {
+          location.replace(
+            `http://localhost:${cfg.localPort}/share${location.search}`,
+          );
+        }
+      } catch {
+        // No local server — we are a remote sharer; stay on the tunnel.
+      }
+    })();
+  }
+
   const identity: Identity = {
     inDiscord: false,
     userId: Math.random().toString(36).slice(2, 10), // server overrides via token
@@ -41,12 +73,23 @@ const SharePage: Component = () => {
   const [error, setError] = createSignal<string | null>(null);
   const [hint, setHint] = createSignal<"text" | "motion">("text");
   const [takenBy, setTakenBy] = createSignal<string | null>(null);
+  const [viewers, setViewers] = createSignal(0);
+  const [budgetKbps, setBudgetKbps] = createSignal(0);
+
+  void fetch("/api/config")
+    .then((r) => r.json())
+    .then((c: { egressBudgetKbps?: number }) =>
+      setBudgetKbps(c.egressBudgetKbps ?? 0),
+    )
+    .catch(() => {});
 
   // Keyframe-on-demand: the relay asks when a viewer joins or falls behind.
   session.onKeyframeRequest = () => capture()?.forceKeyframe();
   // Fan-out congestion feedback feeds the encoder's rate controller.
-  session.onRateHint = (degraded, viewers) =>
-    capture()?.applyRateHint(degraded, viewers);
+  session.onRateHint = (degraded, v) => {
+    setViewers(v);
+    capture()?.applyRateHint(degraded, v);
+  };
   // If someone takes the stage, say so instead of silently reverting.
   session.onStageTaken = (byName) => setTakenBy(byName);
   // A newer share session replaced this tab (e.g. Share clicked again in
@@ -121,6 +164,7 @@ const SharePage: Component = () => {
       const handle = await startCapture(fps(), (buf) => session.sendMedia(buf), {
         backpressure: () => session.bufferedAmount(),
         contentHint: hint(),
+        egressBudgetKbps: budgetKbps(),
       });
       handle.onended = stop;
       handle.onconfigchange = (cfg) => session.announceConfig(cfg);
@@ -203,6 +247,15 @@ const SharePage: Component = () => {
           <p class="share-live">
             <ScribbleDot class="live-dot" /> Live at {fps()} fps — {stats().fps}{" "}
             fps · {stats().kbps} kbps (target {stats().targetKbps})
+          </p>
+          <p class="share-room">
+            {viewers()} watching · total upload ≈{" "}
+            {Math.round((stats().kbps * Math.max(viewers(), 1)) / 100) / 10}{" "}
+            Mbps
+            {budgetKbps() > 0 &&
+            stats().kbps * Math.max(viewers(), 1) > budgetKbps()
+              ? " ⚠ over your egress budget"
+              : ""}
           </p>
           <button
             onClick={stop}

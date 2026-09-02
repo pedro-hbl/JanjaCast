@@ -56,6 +56,10 @@ const App: Component = () => {
           setError(`✋ ${byName} took the stage.`);
         }
       };
+      // Same Discord user opened the Activity somewhere newer (another
+      // device, a reloaded iframe): this view is terminally disconnected.
+      s.onSuperseded = () =>
+        setError("Opened elsewhere — this view is disconnected. Close and reopen the Activity here to take over.");
       s.connect();
       setSession(s);
     } catch (e) {

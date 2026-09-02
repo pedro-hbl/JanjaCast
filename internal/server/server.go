@@ -4,6 +4,8 @@ package server
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"io"
@@ -44,6 +46,11 @@ type Config struct {
 	// When empty a random per-process key is used and share tokens die on
 	// restart.
 	TokenSecret []byte
+	// EgressBudgetKbps caps total relay egress (stream bitrate × viewers).
+	// The sharer's encoder divides this by the viewer count to derive its
+	// bitrate ceiling. 0 = unlimited (sensible on a VPS; on a residential
+	// uplink set ~60% of the measured upload speed).
+	EgressBudgetKbps int
 }
 
 // Server is the root http.Handler.
@@ -55,6 +62,10 @@ type Server struct {
 	auth       *authn
 	rl         *rateLimiter
 	wsPatterns []string
+	// instanceID lets a companion tab recognize "the server behind this
+	// tunnel is running on MY machine" and hop to loopback, taking the
+	// capture stream off the shared uplink entirely.
+	instanceID string
 
 	connMu sync.Mutex
 	conns  map[*websocket.Conn]struct{}
@@ -70,6 +81,7 @@ func New(cfg Config, log *slog.Logger) *Server {
 		auth:  newAuthn(cfg.TokenSecret, cfg.DiscordClientID),
 		rl:         newRateLimiter(60, time.Minute), // per-IP budget for auth endpoints
 		wsPatterns: originPatterns(cfg),
+		instanceID: newInstanceID(),
 		conns:      make(map[*websocket.Conn]struct{}),
 	}
 	if !cfg.AllowAnon && (cfg.DiscordClientID == "" || cfg.DiscordClientSecret == "") {
@@ -126,12 +138,20 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 		}
 		origin = scheme + "://" + r.Host
 	}
+	port := "8080"
+	if _, p, err := net.SplitHostPort(s.cfg.Addr); err == nil && p != "" {
+		port = p
+	}
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]string{
+	_ = json.NewEncoder(w).Encode(map[string]any{
 		"publicOrigin": origin,
 		// Served at runtime so one published image works for any Discord
 		// app — no client id baked into the bundle required.
 		"clientId": s.cfg.DiscordClientID,
+		// For the companion tab's loopback hop and egress budgeting.
+		"instance":         s.instanceID,
+		"localPort":        port,
+		"egressBudgetKbps": s.cfg.EgressBudgetKbps,
 	})
 }
 
@@ -142,7 +162,18 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	_, _ = w.Write([]byte(`{"ok":true}`))
+	// The instance id lets a companion tab probe http://localhost:<port>
+	// and confirm it is the very same server it reached via the tunnel.
+	w.Header().Set("Access-Control-Allow-Origin", "*") // health is not sensitive
+	_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "instance": s.instanceID})
+}
+
+func newInstanceID() string {
+	b := make([]byte, 8)
+	if _, err := rand.Read(b); err != nil {
+		panic(err)
+	}
+	return hex.EncodeToString(b)
 }
 
 // handleToken exchanges the OAuth authorization code the Activity client got
@@ -459,6 +490,12 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 				conn.CloseNow()
 				return
 			}
+		}
+		// Belt and braces for takeover: the in-band superseded control has
+		// been drained above; a distinct close code makes the transport
+		// itself terminal in case the client missed it.
+		if client.WasSuperseded() {
+			_ = conn.Close(4001, "superseded")
 		}
 	}()
 
