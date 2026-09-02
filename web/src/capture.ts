@@ -34,10 +34,14 @@ export interface CaptureOptions {
   backpressure?: () => number;
   /** "text" sharpens edges for code/slides; "motion" favors smoothness. */
   contentHint?: "text" | "motion";
-  /** Total relay egress budget (kbit/s). The encoder's ceiling becomes
-   *  budget ÷ viewers, so adding viewers lowers per-viewer bitrate instead
-   *  of multiplying uplink load past saturation. 0 = unlimited. */
+  /** Total relay egress budget (kbit/s). Quality-first semantics: the full
+   *  target bitrate is allowed as long as the network delivers it — the
+   *  budget ÷ viewers ceiling engages only while congestion is actually
+   *  observed, and lifts again after a clean stretch. 0 = unlimited. */
   egressBudgetKbps?: number;
+  /** "av1" prefers hardware AV1 (30-40% fewer bits at equal quality on
+   *  screen content; requires a modern GPU, falls back to H.264). */
+  codecPref?: "auto" | "av1";
 }
 
 export interface CaptureSample {
@@ -71,6 +75,7 @@ async function pickVideoCodec(
   width: number,
   height: number,
   framerate: number,
+  codecPref: "auto" | "av1" = "auto",
 ): Promise<VideoCodecChoice> {
   const bitrate = framerate >= 60 ? 6_000_000 : 4_000_000;
   const h264 = (codec: string, extra: Partial<VideoEncoderConfig>): VideoCodecChoice => ({
@@ -89,7 +94,28 @@ async function pickVideoCodec(
   // SVC (L1T3) first: temporal layers let the relay smoothly lower a slow
   // viewer's framerate instead of freezing them. Non-SVC fallbacks follow
   // for encoders that don't support scalabilityMode.
-  const candidates: VideoCodecChoice[] = [
+  const candidates: VideoCodecChoice[] = [];
+  if (codecPref === "av1") {
+    // AV1's screen-content tools (palette mode, intra block copy) cut
+    // 30-40% of bitrate at equal quality on code/slides. Hardware-only:
+    // software AV1 encode cannot hold realtime at these resolutions, and
+    // isConfigSupported rejects prefer-hardware without a capable GPU.
+    const av1 = (extra: Partial<VideoEncoderConfig>): VideoCodecChoice => ({
+      wire: "av01.0.08M.08",
+      config: {
+        codec: "av01.0.08M.08",
+        width,
+        height,
+        framerate,
+        bitrate,
+        latencyMode: "realtime",
+        hardwareAcceleration: "prefer-hardware",
+        ...extra,
+      } as VideoEncoderConfig,
+    });
+    candidates.push(av1({ scalabilityMode: "L1T3" }), av1({}));
+  }
+  candidates.push(
     h264("avc1.640c34", { hardwareAcceleration: "prefer-hardware", scalabilityMode: "L1T3" }),
     h264("avc1.640c34", { hardwareAcceleration: "prefer-hardware" }),
     h264("avc1.42e034", {}),
@@ -104,7 +130,7 @@ async function pickVideoCodec(
       wire: "vp8",
       config: { codec: "vp8", width, height, framerate, bitrate, latencyMode: "realtime" },
     },
-  ];
+  );
   for (const cand of candidates) {
     const { supported } = await VideoEncoder.isConfigSupported(cand.config);
     if (supported) return cand;
@@ -143,7 +169,7 @@ export async function startCapture(
   let width = settings.width ?? 1920;
   let height = settings.height ?? 1080;
 
-  const chosen = await pickVideoCodec(width, height, framerate);
+  const chosen = await pickVideoCodec(width, height, framerate, opts.codecPref ?? "auto");
 
   const targetBitrate = chosen.config.bitrate ?? 4_000_000;
   let bitrate = targetBitrate;
@@ -242,22 +268,32 @@ export async function startCapture(
   let clearSeconds = 0;
   let hintDegraded = 0;
   let hintViewers = 0;
-  // The per-viewer ceiling: with an egress budget, every viewer multiplies
-  // uplink cost, so the ceiling is budget ÷ viewers.
+  // Quality-first ceiling: the budget ÷ viewers cap engages only while
+  // congestion has actually been observed recently. A clean network earns
+  // the full target bitrate back regardless of viewer count — the budget is
+  // a guardrail against saturation oscillation, not a standing quality tax.
+  let lastPressureAt = 0;
+  const PRESSURE_MEMORY_MS = 15_000;
   const ceiling = () => {
     const budget = (opts.egressBudgetKbps ?? 0) * 1000;
-    if (budget <= 0 || hintViewers <= 0) return targetBitrate;
+    if (
+      budget <= 0 ||
+      hintViewers <= 0 ||
+      performance.now() - lastPressureAt > PRESSURE_MEMORY_MS
+    ) {
+      return targetBitrate;
+    }
     return Math.max(ABR_MIN_BITRATE, Math.min(targetBitrate, Math.floor(budget / hintViewers)));
   };
   const abrTimer = setInterval(() => {
     if (!opts.backpressure || videoEncoder.state !== "configured") return;
     const backlog = opts.backpressure();
-    const cap = ceiling();
-    // Congested when our uplink backs up, when a meaningful share of
-    // viewers (>30%) is being degraded by the relay, or when the viewer
-    // count pushed the egress budget below the current bitrate.
+    // Congested when our uplink backs up or when a meaningful share of
+    // viewers (>30%) is being degraded by the relay.
     const fanoutPressure =
       hintViewers > 0 && hintDegraded / hintViewers > 0.3;
+    if (backlog > ABR_HIGH_WATER || fanoutPressure) lastPressureAt = performance.now();
+    const cap = ceiling();
     if (backlog > ABR_HIGH_WATER || fanoutPressure || bitrate > cap) {
       const next = Math.max(ABR_MIN_BITRATE, Math.min(Math.round(bitrate * 0.7), cap));
       clearSeconds = 0;

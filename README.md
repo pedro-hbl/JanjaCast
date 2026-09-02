@@ -96,7 +96,13 @@ development.
 ## Self-hosting notes
 
 - One process, tiny footprint; a small VPS handles a community. The real cost
-  is egress: **stream bitrate × viewers** while live.
+  is egress: **stream bitrate × viewers** while live. On a home connection,
+  set `JANJACAST_EGRESS_BUDGET_KBPS` to ~60% of your measured upload speed —
+  it acts as a congestion guardrail only (full quality whenever the network
+  is clean). For max quality at any viewer count, run the relay on a VPS:
+  [docs/deploy-vps.md](docs/deploy-vps.md).
+- A sharer whose machine also hosts the relay is detected automatically and
+  captures over loopback — their stream never crosses the internet twice.
 - Discord requires HTTPS — any TLS reverse proxy or a Cloudflare Tunnel in
   front of `:8080` works. Quick-tunnel URLs rotate on restart; use a named
   tunnel (free) for anything long-lived, or the portal mapping goes stale.

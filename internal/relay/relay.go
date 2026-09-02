@@ -13,6 +13,7 @@ import (
 	"log/slog"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/pedro-hbl/janjacast/internal/protocol"
@@ -22,6 +23,13 @@ import (
 // overflows the relay drops video until the next keyframe rather than
 // letting one slow consumer stall the room.
 const sendBuffer = 256
+
+// clientQueueBytes bounds the per-viewer queue by BYTES as well as slots. A
+// realtime stream should never queue seconds of media: 256 slots of ~12KB
+// chunks is >3MB (2-4s at 6Mbps) of invisible latency before backpressure
+// fires. ~1.5MB ≈ 2s worst case, so temporal shedding reacts while the
+// network is merely strained instead of after it has drowned.
+const clientQueueBytes = 1_500_000
 
 // maxGOPBytes bounds the late-join cache; past this the cache is dropped and
 // joiners wait for the next keyframe like before.
@@ -101,9 +109,7 @@ func (h *Hub) Join(roomID, userID, username string) (*Room, *Client, iter.Seq[Ou
 	// truncated GOP is never fed to its decoder.
 	replayed := true
 	for _, msg := range r.gop {
-		select {
-		case c.out <- outMsg{binary: true, payload: msg}:
-		default:
+		if !c.trySend(outMsg{binary: true, payload: msg}) {
 			replayed = false
 		}
 	}
@@ -120,17 +126,21 @@ func (h *Hub) Join(roomID, userID, username string) (*Room, *Client, iter.Seq[Ou
 
 	// The sequence drains queued messages before honoring done, so nothing
 	// already accepted is dropped on the floor at disconnect.
+	take := func(m OutMsg, yield func(OutMsg) bool) bool {
+		c.queuedBytes.Add(-int64(len(m.payload)))
+		return yield(m)
+	}
 	seq := func(yield func(OutMsg) bool) {
 		for {
 			select {
 			case m := <-c.out:
-				if !yield(m) {
+				if !take(m, yield) {
 					return
 				}
 			default:
 				select {
 				case m := <-c.out:
-					if !yield(m) {
+					if !take(m, yield) {
 						return
 					}
 				case <-c.done:
@@ -255,6 +265,10 @@ type Client struct {
 	// client treats even a lost in-band signal as terminal. Guarded by
 	// Room.mu (of the room it was in when superseded).
 	superseded bool
+	// queuedBytes tracks bytes accepted into out but not yet handed to the
+	// write loop — the byte half of the queue bound. Atomic: incremented
+	// under Room.mu, decremented by the write-loop iterator without it.
+	queuedBytes atomic.Int64
 }
 
 // WasSuperseded reports whether this client was replaced by a newer session.
@@ -443,10 +457,9 @@ func (r *Room) ForwardMedia(from *Client, msg []byte) {
 				c.maxTL++
 				c.lastTLDrop = now
 			}
-			select {
-			case c.out <- outMsg{binary: true, payload: msg}:
+			if c.trySend(outMsg{binary: true, payload: msg}) {
 				c.needKeyframe = false
-			default:
+			} else {
 				c.lastTLDrop = now
 				if hdr.TemporalID > 0 {
 					// A higher temporal layer is non-reference: dropping it
@@ -463,10 +476,8 @@ func (r *Room) ForwardMedia(from *Client, msg []byte) {
 				}
 			}
 		} else {
-			select {
-			case c.out <- outMsg{binary: true, payload: msg}:
-			default: // drop audio chunk under pressure
-			}
+			// Audio: drop silently under pressure.
+			_ = c.trySend(outMsg{binary: true, payload: msg})
 		}
 	}
 	r.maybeSendRateHintLocked(now)
@@ -542,16 +553,28 @@ func (c *Client) SendControl(t protocol.ControlType, data any) {
 	c.enqueueControl(t, data)
 }
 
-// enqueueControl marshals and queues a control message. The send is
-// non-blocking and the channel is never closed, so this is safe under any
-// lock and against concurrent Leave.
+// trySend queues a message if both the slot and byte bounds allow it. The
+// send is non-blocking and the channel is never closed, so this is safe
+// under any lock and against concurrent Leave.
+func (c *Client) trySend(m outMsg) bool {
+	if c.queuedBytes.Load()+int64(len(m.payload)) > clientQueueBytes {
+		return false
+	}
+	select {
+	case c.out <- m:
+		c.queuedBytes.Add(int64(len(m.payload)))
+		return true
+	default:
+		return false
+	}
+}
+
+// enqueueControl marshals and queues a control message.
 func (c *Client) enqueueControl(t protocol.ControlType, data any) {
 	payload, err := protocol.MarshalControl(t, data)
 	if err != nil {
 		return
 	}
-	select {
-	case c.out <- outMsg{payload: payload}:
-	default: // control overflow: connection is doomed anyway; write loop will notice
-	}
+	// Control overflow: connection is doomed anyway; write loop will notice.
+	_ = c.trySend(outMsg{payload: payload})
 }

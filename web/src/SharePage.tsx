@@ -72,6 +72,7 @@ const SharePage: Component = () => {
   const [stats, setStats] = createSignal({ fps: 0, kbps: 0, targetKbps: 0 });
   const [error, setError] = createSignal<string | null>(null);
   const [hint, setHint] = createSignal<"text" | "motion">("text");
+  const [codec, setCodec] = createSignal<"auto" | "av1">("auto");
   const [takenBy, setTakenBy] = createSignal<string | null>(null);
   const [viewers, setViewers] = createSignal(0);
   const [budgetKbps, setBudgetKbps] = createSignal(0);
@@ -165,6 +166,7 @@ const SharePage: Component = () => {
         backpressure: () => session.bufferedAmount(),
         contentHint: hint(),
         egressBudgetKbps: budgetKbps(),
+        codecPref: codec(),
       });
       handle.onended = stop;
       handle.onconfigchange = (cfg) => session.announceConfig(cfg);
@@ -227,6 +229,17 @@ const SharePage: Component = () => {
                 >
                   <option value="text">📖 Text (code, slides)</option>
                   <option value="motion">🎮 Motion (games, video)</option>
+                </select>
+              </label>
+              <label class="fps-label">
+                Codec{" "}
+                <select
+                  class="crayon-select"
+                  value={codec()}
+                  onChange={(e) => setCodec(e.currentTarget.value as "auto" | "av1")}
+                >
+                  <option value="auto">Auto (H.264)</option>
+                  <option value="av1">AV1 — sharper per bit (modern GPU)</option>
                 </select>
               </label>
               <button
