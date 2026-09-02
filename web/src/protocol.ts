@@ -139,6 +139,7 @@ export interface StingerAsset {
   enabled: boolean;
   playOnStart: boolean;
   playOnStop: boolean;
+  stormTrigger?: boolean;
 }
 
 /** GET /api/stingers. */

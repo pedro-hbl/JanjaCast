@@ -289,9 +289,15 @@ type StageTakenData struct {
 // currently degrading (temporal-layer drops or keyframe waits) out of how
 // many total. The publisher's ABR treats degraded>0 as congestion.
 type RateHintData struct {
-	Degraded int `json:"degraded"`
-	Viewers  int `json:"viewers"`
+  Degraded int `json:"degraded"`
+  Viewers  int `json:"viewers"`
 }
+
+// --- reactions -----------------------------------------------------------------
+var ReactionEmojis = []string{"fire", "laugh", "heart", "skull", "clap", "shock"}
+func ValidReactionEmoji(s string) bool { for _, e := range ReactionEmojis { if s == e { return true } }; return false }
+type ReactionData struct{ Emoji string `json:"emoji"` }
+type ReactionBurstData struct{ Counts map[string]int `json:"counts"`; Density int `json:"density"`; WindowMs int `json:"windowMs"` }
 
 // StingerData is the payload of CtrlStinger: which transition happened and
 // the same-origin URLs (under /stingers/) of the image and sound every
