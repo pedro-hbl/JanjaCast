@@ -115,14 +115,15 @@ func (h *Hub) Join(roomID, userID, username string) (*Room, *Client, iter.Seq[Ou
 		if ttl <= 0 {
 			ttl = turnTTL
 		}
-		r = &Room{
-			id:              roomID,
-			clients:         make(map[*Client]struct{}),
-			log:             h.log.With("room", roomID),
-			stinger:         h.Stinger,
-			stingerStopWait: h.StingerStopDelay,
-			turnWait:        ttl,
-		}
+        r = &Room{
+            id:              roomID,
+            clients:         make(map[*Client]struct{}),
+            log:             h.log.With("room", roomID),
+            stinger:         h.Stinger,
+            stingerStopWait: h.StingerStopDelay,
+            turnWait:        ttl,
+            lastReactionBy:  make(map[*Client]time.Time),
+        }
 		h.rooms[roomID] = r
 	}
 
@@ -346,8 +347,21 @@ type Room struct {
 	rodizioStart time.Time
 	// rodizioExtended records the one +5 minutes, reset on every TakeStage.
 	rodizioExtended bool
-	// lastPass is the per-room pass cooldown stamp.
-	lastPass time.Time
+  // lastPass is the per-room pass cooldown stamp.
+  lastPass time.Time
+
+  // --- reactions (guarded by mu) --------------------------------------
+  // reaction events over a sliding window; sampled into bursts.
+  reactionEvents []struct{
+    t time.Time
+    e string
+  }
+  lastReactionBurst time.Time
+  // per-client cooldown for CtrlReaction taps
+  lastReactionBy map[*Client]time.Time
+
+  // storm cooldown
+  nextStorm time.Time
 }
 
 // stageTurn is the person currently being called to the stage.
@@ -1007,16 +1021,89 @@ func (r *Room) SetConfig(c *Client, cfg *protocol.ConfigData) {
 // clock sync marks) verbatim to every other participant. Non-publishers are
 // ignored.
 func (r *Room) ForwardControl(from *Client, t protocol.ControlType, data any) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	if r.publisher != from {
-		return
-	}
-	for c := range r.clients {
-		if c != from {
-			c.enqueueControl(t, data)
-		}
-	}
+  r.mu.Lock()
+  defer r.mu.Unlock()
+  switch t {
+  case protocol.CtrlSync:
+    if r.publisher != from {
+      return
+    }
+    for c := range r.clients {
+      if c != from {
+        c.enqueueControl(t, data)
+      }
+    }
+  case protocol.CtrlReaction:
+    // Client tap → append event if valid and not cooling down.
+    if _, ok := r.clients[from]; !ok {
+      return
+    }
+    var d protocol.ReactionData
+    if m, ok := data.(protocol.ReactionData); ok {
+      d = m
+    } else if mp, ok := data.(*protocol.ReactionData); ok && mp != nil {
+      d = *mp
+    } else {
+      return
+    }
+    if !protocol.ValidReactionEmoji(d.Emoji) {
+      return
+    }
+    now := time.Now()
+    if last, ok := r.lastReactionBy[from]; ok && now.Sub(last) < 200*time.Millisecond {
+      return
+    }
+    r.lastReactionBy[from] = now
+    r.reactionEvents = append(r.reactionEvents, struct{ t time.Time; e string }{t: now, e: d.Emoji})
+    // On a 250ms pace, fan an aggregate only when non-zero; sum includes
+    // all events currently in-window, not just since last pace tick.
+    if now.Sub(r.lastReactionBurst) >= 250*time.Millisecond {
+      r.lastReactionBurst = now
+      // Evict old events (window 1500ms) and sum counts.
+      cutoff := now.Add(-1500 * time.Millisecond)
+      i := 0
+      for _, ev := range r.reactionEvents {
+        if !ev.t.Before(cutoff) {
+          r.reactionEvents[i] = ev
+          i++
+        }
+      }
+      if i > 0 {
+        // Count over the in-window view (prefix [0:i]).
+        counts := make(map[string]int, 6)
+        for _, ev := range r.reactionEvents[:i] {
+          counts[ev.e]++
+        }
+        burst := protocol.ReactionBurstData{Counts: counts, Density: i, WindowMs: 1500}
+        for c := range r.clients {
+          c.enqueueControl(protocol.CtrlReactionBurst, burst)
+        }
+        // Auto-storm trigger: density threshold and 20s cooldown.
+        if i >= 15 {
+          r.maybeStormLocked()
+        }
+      }
+      r.reactionEvents = r.reactionEvents[:i]
+    }
+  default:
+    // Unknown forwarded control: ignore.
+  }
+}
+
+// maybeStormLocked broadcasts a random manual stinger when the storm cooldown
+// has elapsed. Caller must hold r.mu.
+func (r *Room) maybeStormLocked() {
+    if r.stinger == nil {
+        return
+    }
+    now := time.Now()
+    if !r.nextStorm.IsZero() && now.Before(r.nextStorm) {
+        return
+    }
+    if d := r.stinger("manual"); d != nil {
+        r.nextStorm = now.Add(20 * time.Second)
+        r.broadcastStingerLocked(d)
+    }
 }
 
 // ForwardMedia fans a binary media message from the publisher out to every

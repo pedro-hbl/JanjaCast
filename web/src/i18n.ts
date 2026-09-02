@@ -236,6 +236,17 @@ const en = {
   "st.errUpload": "upload refused ({status})",
   "st.errSave": "couldn't save that ({status})",
   "st.errDelete": "couldn't delete that ({status})",
+  // --- reactions -----------------------------------------------------
+  "reactions.bar.label": "React",
+  "reactions.aria.fire": "Fire reaction",
+  "reactions.aria.laugh": "Laugh reaction",
+  "reactions.aria.heart": "Heart reaction",
+  "reactions.aria.skull": "Skull reaction",
+  "reactions.aria.clap": "Clap reaction",
+  "reactions.aria.shock": "Shock reaction",
+  "reactions.hype.calm": "Chill",
+  "reactions.hype.warm": "Heating up",
+  "reactions.hype.storm": "STORM!",
 } satisfies Record<string, Message>;
 
 export type MessageKey = keyof typeof en;
@@ -431,6 +442,17 @@ const ptBR: Record<MessageKey, Message> = {
   "st.errUpload": "envio recusado ({status})",
   "st.errSave": "não deu pra salvar ({status})",
   "st.errDelete": "não deu pra apagar ({status})",
+  // --- reactions -----------------------------------------------------
+  "reactions.bar.label": "Reagir",
+  "reactions.aria.fire": "Reação de fogo",
+  "reactions.aria.laugh": "Reação de risada",
+  "reactions.aria.heart": "Reação de coração",
+  "reactions.aria.skull": "Reação de caveira",
+  "reactions.aria.clap": "Reação de palmas",
+  "reactions.aria.shock": "Reação de susto",
+  "reactions.hype.calm": "De boa",
+  "reactions.hype.warm": "Esquentando",
+  "reactions.hype.storm": "REBU!",
 };
 
 const dictionaries: Record<Locale, Record<MessageKey, Message>> = {

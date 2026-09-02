@@ -35,6 +35,8 @@ export type ControlType =
   | "stage_queue"
   | "stage_turn"
   | "stage_cancel"
+  | "reaction"
+  | "reaction_burst"
   | "error";
 
 /** The privacy panic button. `blank` is publisher→relay, `blank_state` is
@@ -103,6 +105,19 @@ export interface StageCancelData {
   userId: string;
   reason: StageCancelReason;
 }
+
+// --- reactions ---------------------------------------------------------------
+export const ReactionEmojis = [
+  "fire",
+  "laugh",
+  "heart",
+  "skull",
+  "clap",
+  "shock",
+] as const;
+export type ReactionEmoji = (typeof ReactionEmojis)[number];
+export interface ReactionData { emoji: ReactionEmoji }
+export interface ReactionBurstData { counts: Record<string, number>; density: number; windowMs: number }
 
 /** Server-chosen stinger: the same image + sound pair (same-origin URLs under
  *  /stingers/) for every participant. "start"/"stop" are the automatic stream

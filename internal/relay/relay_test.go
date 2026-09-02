@@ -1,14 +1,14 @@
 package relay
 
 import (
-	"encoding/json"
-	"fmt"
-	"log/slog"
-	"sync"
-	"testing"
-	"time"
+    "encoding/json"
+    "fmt"
+    "log/slog"
+    "sync"
+    "testing"
+    "time"
 
-	"github.com/pedro-hbl/janjacast/internal/protocol"
+    "github.com/pedro-hbl/janjacast/internal/protocol"
 )
 
 func discard() *slog.Logger {
@@ -665,4 +665,97 @@ func TestStingerDisabled(t *testing.T) {
 	if got := stingersOf(t, collect(bobOut)); len(got) != 0 {
 		t.Fatalf("disabled stingers still fired: %v", got)
 	}
+}
+
+// -------------------------- reactions ---------------------------------------
+
+// testLogger returns a discard logger for helpers that expect one.
+func testLogger(t *testing.T) *slog.Logger { t.Helper(); return discard() }
+
+// drainControls starts a goroutine that forwards control envelopes from c.out
+// into a buffered channel we can poll in tests.
+func drainControls(t *testing.T, c *Client) chan protocol.Control {
+    t.Helper()
+    ch := make(chan protocol.Control, 64)
+    go func() {
+        for m := range c.out {
+            if m.binary { continue }
+            var ctrl protocol.Control
+            _ = json.Unmarshal(m.payload, &ctrl)
+            ch <- ctrl
+        }
+        close(ch)
+    }()
+    return ch
+}
+
+func hasBurst(ch chan protocol.Control) bool {
+    for {
+        select {
+        case ctrl := <-ch:
+            if ctrl.Type == protocol.CtrlReactionBurst { return true }
+        default:
+            return false
+        }
+    }
+}
+
+func assertOneBurstHas(t *testing.T, ch chan protocol.Control, want map[string]int) {
+    t.Helper()
+    deadline := time.Now().Add(500 * time.Millisecond)
+    for time.Now().Before(deadline) {
+        select {
+        case ctrl := <-ch:
+            if ctrl.Type != protocol.CtrlReactionBurst { continue }
+            var d protocol.ReactionBurstData
+            _ = json.Unmarshal(ctrl.Data, &d)
+            for k, v := range want {
+                if d.Counts[k] != v { t.Fatalf("count %s = %d, want %d (all: %+v)", k, d.Counts[k], v, d.Counts) }
+            }
+            if d.Density != 6 || d.WindowMs != 1500 { t.Fatalf("density/window = %d/%d, want 6/1500", d.Density, d.WindowMs) }
+            return
+        default:
+            time.Sleep(5 * time.Millisecond)
+        }
+    }
+    t.Fatalf("no reaction burst received")
+}
+
+func TestReactionAggregation(t *testing.T) {
+    log := testLogger(t)
+    h := NewHub(log)
+    r, a, _ := h.Join("room", "a", "Ana")
+    _, b, _ := h.Join("room", "b", "Beto")
+    _, c, _ := h.Join("room", "c", "Caio")
+
+    gotB := drainControls(t, b)
+    gotC := drainControls(t, c)
+
+    r.mu.Lock()
+    base := time.Now().Add(-400 * time.Millisecond)
+    r.lastReactionBurst = base
+    // Pre-seed events directly with controlled timestamps within 300ms window.
+    r.reactionEvents = nil
+    for i, e := range []string{"fire","fire","laugh","heart","fire"} {
+        r.reactionEvents = append(r.reactionEvents, struct{t time.Time; e string}{t: base.Add(time.Duration(i*60) * time.Millisecond), e: e})
+    }
+    r.mu.Unlock()
+    // Trigger pacing tick with a valid reaction (also counts if outside cooldown for its client).
+    time.Sleep(5 * time.Millisecond)
+    _ = a
+    var from *Client = c
+    r.ForwardControl(from, protocol.CtrlReaction, protocol.ReactionData{Emoji: "fire"})
+    time.Sleep(20 * time.Millisecond)
+
+    // Seeded 5 events plus the pacing tap currently in-window → density 6.
+    wantCounts := map[string]int{"fire":4, "laugh":1, "heart":1}
+    assertOneBurstHas(t, gotB, wantCounts)
+    assertOneBurstHas(t, gotC, wantCounts)
+
+    // A quick follow-up within 200ms is dropped; no immediate new burst.
+    r.ForwardControl(c, protocol.CtrlReaction, protocol.ReactionData{Emoji: "skull"})
+    time.Sleep(10 * time.Millisecond)
+    if hasBurst(gotB) || hasBurst(gotC) {
+        t.Fatalf("unexpected extra burst under cooldown")
+    }
 }

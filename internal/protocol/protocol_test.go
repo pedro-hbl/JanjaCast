@@ -123,7 +123,7 @@ func TestErrorRoundTrip(t *testing.T) {
 // one is a protocol break, so they are pinned here rather than only spelled
 // once in the const block.
 func TestStageControlNames(t *testing.T) {
-	want := map[ControlType]string{
+    want := map[ControlType]string{
 		CtrlStageRequest:  "stage_request",
 		CtrlStageWithdraw: "stage_withdraw",
 		CtrlStagePass:     "stage_pass",
@@ -131,11 +131,35 @@ func TestStageControlNames(t *testing.T) {
 		CtrlStageExtend:   "stage_extend",
 		CtrlStageQueue:    "stage_queue",
 		CtrlStageTurn:     "stage_turn",
-		CtrlStageCancel:   "stage_cancel",
-	}
-	for got, name := range want {
-		if string(got) != name {
-			t.Fatalf("control %q renamed (want %q)", got, name)
-		}
-	}
+        CtrlStageCancel:   "stage_cancel",
+        CtrlReaction:      "reaction",
+        CtrlReactionBurst: "reaction_burst",
+    }
+    for got, name := range want {
+        if string(got) != name {
+            t.Fatalf("control %q renamed (want %q)", got, name)
+        }
+    }
+}
+
+func TestReactionRoundTripAndValidate(t *testing.T) {
+    // Round-trip a client tap.
+    in := ReactionData{Emoji: "fire"}
+    if got := roundTrip(t, CtrlReaction, in); got != in {
+        t.Fatalf("reaction = %+v, want %+v", got, in)
+    }
+    // Round-trip an aggregated burst.
+    burst := ReactionBurstData{Counts: map[string]int{"fire": 3, "laugh": 1}, Density: 4, WindowMs: 1500}
+    if got := roundTrip(t, CtrlReactionBurst, burst); got.Density != 4 || got.WindowMs != 1500 || got.Counts["fire"] != 3 || got.Counts["laugh"] != 1 {
+        t.Fatalf("burst = %+v, want %+v", got, burst)
+    }
+    // Validator accepts curated set and rejects unknown.
+    for _, ok := range []struct{
+        s string
+        v bool
+    }{{"fire", true}, {"laugh", true}, {"heart", true}, {"skull", true}, {"clap", true}, {"shock", true}, {"poop", false}} {
+        if ValidReactionEmoji(ok.s) != ok.v {
+            t.Fatalf("ValidReactionEmoji(%q) = %v, want %v", ok.s, !ok.v, ok.v)
+        }
+    }
 }

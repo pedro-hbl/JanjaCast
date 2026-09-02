@@ -50,6 +50,7 @@ import {
   Wordmark,
 } from "./doodles";
 import { StingerPanel } from "./stingers";
+import { ReactionBar } from "./reactions";
 import "./theme.css";
 
 /**
@@ -491,6 +492,7 @@ const App: Component = () => {
         const key = errorKey(code);
         if (key) setError({ key });
       };
+      ;(window as any)._jcSession = s;
       s.connect();
       setSession(s);
     } catch (e) {
@@ -908,6 +910,9 @@ const App: Component = () => {
             </div>
           </Show>
         </div>
+
+        {/* Edge UI: reactions + hype, never over center safe-zone */}
+        <ReactionBar />
 
         <aside class="sidebar">
           {/* count and label are separate spans so the number can carry the

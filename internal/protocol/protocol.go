@@ -157,7 +157,15 @@ const (
 	// to claim the stage, and the whole room hears about it.
 	CtrlStageTurn ControlType = "stage_turn"
 	// CtrlStageCancel ends a pending turn, saying why.
-	CtrlStageCancel ControlType = "stage_cancel"
+  CtrlStageCancel ControlType = "stage_cancel"
+)
+
+// --- reactions -------------------------------------------------------------
+// Client -> server: a single reaction tap from a member.
+// Relay -> clients: an aggregated burst sampled over a short window.
+const (
+    CtrlReaction      ControlType = "reaction"
+    CtrlReactionBurst ControlType = "reaction_burst"
 )
 
 // Control is the JSON envelope for text messages.
@@ -384,9 +392,39 @@ type StageCancelData struct {
 
 // MarshalControl encodes a control envelope with its payload.
 func MarshalControl(t ControlType, data any) ([]byte, error) {
-	raw, err := json.Marshal(data)
-	if err != nil {
-		return nil, err
-	}
-	return json.Marshal(Control{Type: t, Data: raw})
+    raw, err := json.Marshal(data)
+    if err != nil {
+        return nil, err
+    }
+    return json.Marshal(Control{Type: t, Data: raw})
+}
+
+// --- reactions -----------------------------------------------------------------
+
+// ReactionEmojis is the curated fixed set of allowed reaction identifiers.
+var ReactionEmojis = []string{"fire", "laugh", "heart", "skull", "clap", "shock"}
+
+// ValidReactionEmoji reports whether s is one of ReactionEmojis.
+func ValidReactionEmoji(s string) bool {
+    for _, e := range ReactionEmojis {
+        if s == e {
+            return true
+        }
+    }
+    return false
+}
+
+// ReactionData is the payload of CtrlReaction (client -> relay).
+type ReactionData struct {
+    Emoji string `json:"emoji"`
+}
+
+// ReactionBurstData is the payload of CtrlReactionBurst (relay -> clients).
+// Counts carries per-emoji totals within the server's sliding window.
+// Density is the total reactions observed in-window; WindowMs states the
+// server's window size so a client can scale its UI consistently.
+type ReactionBurstData struct {
+    Counts   map[string]int `json:"counts"`
+    Density  int            `json:"density"`
+    WindowMs int            `json:"windowMs"`
 }

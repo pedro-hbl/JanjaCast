@@ -87,6 +87,8 @@ export class Session {
   onStageCancel: ((cancel: StageCancelData) => void) | null = null;
   /** The server refused something we asked for, with a code to translate. */
   onServerError: ((code: string) => void) | null = null;
+  /** Reaction burst: aggregated counts and density. */
+  onReactionBurst: ((d: { counts: Record<string, number>; density: number; windowMs: number }) => void) | null = null;
 
   constructor(
     private identity: Identity,
@@ -382,6 +384,9 @@ export class Session {
       }
       case "stinger":
         this.onStinger?.(ctrl.data as StingerData);
+        break;
+      case "reaction_burst":
+        this.onReactionBurst?.(ctrl.data as any);
         break;
       case "stage_queue":
         // Whole-state replacement, never a merge: the server's copy is the
