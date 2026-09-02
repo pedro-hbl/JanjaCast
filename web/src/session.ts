@@ -449,6 +449,12 @@ export class Session {
         if (shareToken) this.creds.shareToken = shareToken;
         break;
       }
+      case "awards_ready": {
+        const d = ctrl.data as import('./protocol').AwardsReadyData;
+        // Surface via a DOM event; App listens by overriding onServerError earlier.
+        (window as any).dispatchEvent(new CustomEvent("awards_ready", { detail: d.sessionId }));
+        break;
+      }
       case "error": {
         // A `code` is a refusal the person can act on and gets translated
         // by the UI; a bare `message` is developer-facing English (see

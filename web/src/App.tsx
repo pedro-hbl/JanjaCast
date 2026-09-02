@@ -164,6 +164,7 @@ const App: Component = () => {
     key: MessageKey;
     params?: Params;
   } | null>(null);
+  const [awardsId, setAwardsId] = createSignal<string | null>(null);
   /** Ticks the countdowns. Cheap, and one timer for both clocks means the
    *  turn pill and the rodízio pill never disagree by a frame. */
   const [tick, setTick] = createSignal(0);
@@ -184,6 +185,12 @@ const App: Component = () => {
   let canvasRef!: HTMLCanvasElement;
   let stageRef!: HTMLDivElement;
   let player: Player | null = null;
+  // Listen for awards_ready surfaced by session.
+  onMount(() => {
+    const h = (e: any) => setAwardsId(e.detail as string);
+    (window as any).addEventListener("awards_ready", h);
+    onCleanup(() => (window as any).removeEventListener("awards_ready", h));
+  });
 
   // --- cinema scribbles (local-only helpers) ------------------------------
   const ownStrokes = () => (session()?.cinemaStrokes() ?? []).filter(s => s.userId === session()?.selfId());
@@ -1164,6 +1171,16 @@ const App: Component = () => {
           />
         </Show>
       </main>
+
+      <Show when={awardsId()}>
+        <div class="toast awards-toast">
+          <span>{t("awards.ready")}</span>
+          <button class="crayon-btn crayon-btn--go" onClick={() => openExternal(`/awards/${awardsId()}?lang=${localeParam()}`)}>
+            {t("awards.view")}
+          </button>
+          <button class="toast-x" aria-label={t("awards.dismiss")} onClick={() => setAwardsId(null)}>×</button>
+        </div>
+      </Show>
 
       <footer class="app-footer">
         <Show

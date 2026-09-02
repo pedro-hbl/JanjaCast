@@ -256,6 +256,10 @@ const en = {
   "st.errUpload": "upload refused ({status})",
   "st.errSave": "couldn't save that ({status})",
   "st.errDelete": "couldn't delete that ({status})",
+  // --- awards toast (Activity-side) ---------------------------------
+  "awards.ready": "That's a wrap! The trophy ceremony is ready.",
+  "awards.view": "See the trophies",
+  "awards.dismiss": "Dismiss",
   // --- lobby --------------------------------------------------------
   "lobby.title": "The TV's off",
   "lobby.subtitle": "Nobody's sharing yet",
@@ -477,6 +481,10 @@ const ptBR: Record<MessageKey, Message> = {
   "st.errUpload": "envio recusado ({status})",
   "st.errSave": "não deu pra salvar ({status})",
   "st.errDelete": "não deu pra apagar ({status})",
+  // --- awards toast (Activity-side) ---------------------------------
+  "awards.ready": "Acabou! A entrega de troféus tá pronta.",
+  "awards.view": "Ver os troféus",
+  "awards.dismiss": "Fechar",
   // --- lobby --------------------------------------------------------
   "lobby.title": "A TV tá apagada",
   "lobby.subtitle": "Ninguém tá transmitindo ainda",
