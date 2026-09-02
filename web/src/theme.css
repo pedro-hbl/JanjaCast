@@ -300,6 +300,31 @@
   transform: rotate(-2deg);
 }
 
+/* Stinger overlay: fills the stage (so its box tracks theater/fullscreen),
+   sits above the canvas but below the stage controls (fs-btn/zoom-pill are
+   z-index 5), and never intercepts input. The stage's own overflow:hidden
+   clips the tumble-in from off-screen. */
+.stinger-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+/* The animated image: capped well under the stage (any aspect ratio keeps
+   its shape via the max box), compositor-promoted, with a soft shadow that
+   shrinks with the transform scale for depth. */
+.stinger-img {
+  max-width: 55%;
+  max-height: 40%;
+  object-fit: contain;
+  will-change: transform, opacity;
+  filter: drop-shadow(0 14px 28px rgba(0, 0, 0, 0.45));
+}
+
 .stage-empty {
   display: flex;
   flex-direction: column;

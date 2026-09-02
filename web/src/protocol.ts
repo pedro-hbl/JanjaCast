@@ -23,7 +23,16 @@ export type ControlType =
   | "room_state"
   | "token_refresh"
   | "superseded"
+  | "stinger"
   | "error";
+
+/** Server-chosen stream start/stop stinger: the same random image + sound
+ *  pair (same-origin URLs under /stingers/) for every participant. */
+export interface StingerData {
+  kind: "start" | "stop";
+  image?: string;
+  audio?: string;
+}
 
 /** Publisher clock-sync mark: capture timestamp (µs) ↔ server wall clock
  *  (Unix ms). Lets viewers compute glass-to-glass latency. */

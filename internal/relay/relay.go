@@ -35,16 +35,36 @@ const clientQueueBytes = 1_500_000
 // joiners wait for the next keyframe like before.
 const maxGOPBytes = 16 << 20
 
+// stingerStopDelay is how long the stage must stay empty before the stop
+// stinger fires. Reconnects and takeovers re-take the stage well within this
+// window, so a network blip plays nothing instead of a stop/start pair.
+const stingerStopDelay = 2 * time.Second
+
 // Hub owns all rooms.
 type Hub struct {
 	mu    sync.Mutex
 	rooms map[string]*Room
 	log   *slog.Logger
+
+	// Stinger, when non-nil, picks the start/stop stinger every room client
+	// should play (nil = feature disabled). Set once by the server layer
+	// before the hub serves traffic. It is called while holding Room.mu, so
+	// implementations MUST NOT touch relay state — a pure pick (directory
+	// scan + random choice) only.
+	Stinger func(kind string) *protocol.StingerData
+
+	// StingerStopDelay overrides stingerStopDelay; tests shorten it so they
+	// need not sleep multiple real seconds.
+	StingerStopDelay time.Duration
 }
 
 // NewHub returns an empty hub.
 func NewHub(log *slog.Logger) *Hub {
-	return &Hub{rooms: make(map[string]*Room), log: log}
+	return &Hub{
+		rooms:            make(map[string]*Room),
+		log:              log,
+		StingerStopDelay: stingerStopDelay,
+	}
 }
 
 // Join atomically finds-or-creates the room and adds a participant to it,
@@ -57,9 +77,11 @@ func (h *Hub) Join(roomID, userID, username string) (*Room, *Client, iter.Seq[Ou
 	r, ok := h.rooms[roomID]
 	if !ok {
 		r = &Room{
-			id:      roomID,
-			clients: make(map[*Client]struct{}),
-			log:     h.log.With("room", roomID),
+			id:              roomID,
+			clients:         make(map[*Client]struct{}),
+			log:             h.log.With("room", roomID),
+			stinger:         h.Stinger,
+			stingerStopWait: h.StingerStopDelay,
 		}
 		h.rooms[roomID] = r
 	}
@@ -171,6 +193,7 @@ func (h *Hub) Leave(r *Room, c *Client) {
 		r.config = nil
 		r.clearGOPLocked()
 		r.broadcastStageStateLocked()
+		r.scheduleStingerStopLocked()
 	}
 	r.broadcastRoomStateLocked()
 
@@ -209,6 +232,20 @@ type Room struct {
 	lastKFReq time.Time
 	// lastHint paces rate-hint feedback to the publisher. Guarded by mu.
 	lastHint time.Time
+
+	// stinger and stingerStopWait are copied from the hub at room creation
+	// (under Hub.mu) and never written again, so reads under mu are safe.
+	stinger         func(kind string) *protocol.StingerData
+	stingerStopWait time.Duration
+	// stingerGen is bumped by every successful TakeStage; a pending delayed
+	// stop compares its snapshot against it and no-ops when stale, which is
+	// how a re-take within the stop window cancels the stop. Guarded by mu.
+	stingerGen uint64
+	// stingerLive is true between a fired start stinger and its matching
+	// stop — i.e. "a stop stinger is pending or would be scheduled". While
+	// true, TakeStage fires no start: it is the same stream continuing
+	// (reconnect, takeover, supersede+retake). Guarded by mu.
+	stingerLive bool
 }
 
 // maxTemporalLayer is the highest SVC temporal layer id (L1T3 → 0,1,2).
@@ -308,6 +345,7 @@ func (r *Room) TakeStage(c *Client) {
 	r.clearGOPLocked()
 	r.gateViewersLocked()
 	r.broadcastStageStateLocked()
+	r.stingerStartLocked()
 	r.log.Info("stage taken", "user", c.Username)
 }
 
@@ -360,6 +398,7 @@ func (r *Room) LeaveStage(c *Client) {
 	r.config = nil
 	r.clearGOPLocked()
 	r.broadcastStageStateLocked()
+	r.scheduleStingerStopLocked()
 }
 
 // SetConfig records the publisher's codec config and announces it.
@@ -533,6 +572,57 @@ func (r *Room) broadcastRoomStateLocked() {
 	state := protocol.RoomStateData{Participants: parts}
 	for c := range r.clients {
 		c.enqueueControl(protocol.CtrlRoomState, state)
+	}
+}
+
+// stingerStartLocked runs on every successful TakeStage: it cancels any
+// pending stop stinger (the generation bump), and fires the start stinger
+// only on a genuine idle→live transition. A re-take while stingerLive — a
+// reconnect racing its stop window, a takeover, a supersede+retake — is the
+// same stream continuing and fires nothing. Caller must hold r.mu.
+func (r *Room) stingerStartLocked() {
+	if r.stinger == nil {
+		return
+	}
+	r.stingerGen++ // cancel any pending stop
+	if r.stingerLive {
+		return
+	}
+	if d := r.stinger("start"); d != nil {
+		r.stingerLive = true
+		r.broadcastStingerLocked(d)
+	}
+}
+
+// scheduleStingerStopLocked arms the delayed stop stinger when the stage
+// empties. The timer callback re-takes r.mu and only fires if no TakeStage
+// bumped the generation meanwhile and the stage is still empty. Firing on a
+// reaped room is harmless: the clients map is empty, nothing is resurrected.
+// Caller must hold r.mu.
+func (r *Room) scheduleStingerStopLocked() {
+	if r.stinger == nil || !r.stingerLive {
+		return
+	}
+	gen := r.stingerGen
+	time.AfterFunc(r.stingerStopWait, func() {
+		r.mu.Lock()
+		defer r.mu.Unlock()
+		if r.stingerGen != gen || r.publisher != nil || !r.stingerLive {
+			return
+		}
+		r.stingerLive = false
+		if d := r.stinger("stop"); d != nil {
+			r.broadcastStingerLocked(d)
+		}
+	})
+}
+
+// broadcastStingerLocked fans a stinger out to every room client — the
+// publisher's own connections included, so the sharer's Activity view plays
+// it too. Caller must hold r.mu; all sends are non-blocking.
+func (r *Room) broadcastStingerLocked(d *protocol.StingerData) {
+	for c := range r.clients {
+		c.enqueueControl(protocol.CtrlStinger, d)
 	}
 }
 

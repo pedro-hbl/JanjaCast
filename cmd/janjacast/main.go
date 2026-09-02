@@ -96,6 +96,7 @@ func main() {
 		AllowAnon:           os.Getenv("JANJACAST_ALLOW_ANON") == "1",
 		TokenSecret:         tokenSecret,
 		EgressBudgetKbps:    envInt("JANJACAST_EGRESS_BUDGET_KBPS", 25_000),
+		StingerDir:          os.Getenv("JANJACAST_STINGER_DIR"),
 	}
 
 	// SIGTERM matters: it is what `docker stop` and orchestrators send.

@@ -16,6 +16,7 @@ import {
   type Identity,
 } from "./discord";
 import { Session } from "./session";
+import type { StingerData } from "./protocol";
 import { startCapture, type CaptureHandle } from "./capture";
 import { Player } from "./player";
 import {
@@ -68,6 +69,105 @@ const App: Component = () => {
   let canvasRef!: HTMLCanvasElement;
   let stageRef!: HTMLDivElement;
   let player: Player | null = null;
+
+  // --- stinger overlay ------------------------------------------------------
+  // A stream starting/stopping plays a server-chosen meme + sound for the
+  // whole room. The image runs one continuous WAAPI timeline (compositor-only
+  // transform/opacity, so it never contends with the 60fps drawImage loop):
+  // it tumbles in from off-screen shedding spin until it stands upright at
+  // center, then winds back up while shrinking away into the distance.
+  let stingerLayerRef!: HTMLDivElement;
+  let stingerAnim: Animation | null = null;
+  let stingerImg: HTMLImageElement | null = null;
+  let stingerAudio: HTMLAudioElement | null = null;
+  let stingerSeq = 0; // orders overlapping stingers; newest wins
+
+  const clearStinger = () => {
+    stingerAnim?.cancel();
+    stingerAnim = null;
+    stingerImg?.remove();
+    stingerImg = null;
+    stingerAudio?.pause();
+    stingerAudio = null;
+  };
+
+  const playStinger = async (s: StingerData) => {
+    const seq = ++stingerSeq;
+    let img: HTMLImageElement | null = null;
+    if (s.image) {
+      img = new Image();
+      img.src = apiPath(s.image);
+      img.className = "stinger-img";
+      try {
+        await img.decode(); // fully decoded before the first painted frame
+      } catch {
+        img = null; // broken image: still play the sound
+      }
+    }
+    if (seq !== stingerSeq) return; // a newer stinger arrived mid-decode
+    clearStinger();
+
+    if (s.audio) {
+      const audio = new Audio(apiPath(s.audio));
+      audio.volume = 0.8;
+      stingerAudio = audio;
+      // Autoplay may be rejected before the first user interaction with the
+      // page; the animation still plays, which is acceptable.
+      audio.play().catch(() => {});
+    }
+    if (!img) return;
+    stingerImg = img;
+    stingerLayerRef.appendChild(img);
+
+    // Travel distances derive from the live stage box, so the arc reads the
+    // same in normal, theater, and fullscreen layouts.
+    const w = stingerLayerRef.clientWidth || 800;
+    const h = stingerLayerRef.clientHeight || 450;
+
+    // One continuous timeline — never two chained animations, which would
+    // risk a velocity discontinuity at the joint. Rotation increases
+    // monotonically (-540° → 0° → +720°) with both segment easings flat at
+    // the 42% joint, so angular velocity glides through zero exactly as the
+    // image stands upright: fluid, no snap. The late keyframe carries only
+    // opacity (a partial keyframe), leaving transform to interpolate
+    // uninterrupted across the whole spin-away.
+    stingerAnim = img.animate(
+      [
+        {
+          // enter: tumbling in from off-screen left, slightly low
+          transform: `translate(${(-0.75 * w).toFixed(1)}px, ${(0.07 * h).toFixed(1)}px) rotate(-540deg) scale(0.85)`,
+          opacity: 1,
+          // strong ease-out: high entry speed decaying to zero at upright
+          easing: "cubic-bezier(0.16, 0.7, 0.3, 1)",
+          offset: 0,
+        },
+        {
+          // upright at center, full size, all velocities ~0
+          transform: "translate(0px, 0px) rotate(0deg) scale(1)",
+          opacity: 1,
+          // strong ease-in: winds the spin back up from stillness
+          easing: "cubic-bezier(0.55, 0.02, 0.85, 0.35)",
+          offset: 0.42,
+        },
+        {
+          // opacity holds until the last 15%, then fades as it recedes
+          opacity: 1,
+          easing: "cubic-bezier(0.4, 0, 0.8, 1)",
+          offset: 0.85,
+        },
+        {
+          // exit: spinning away into the distance, drifting slightly up
+          transform: `translate(0px, ${(-0.16 * h).toFixed(1)}px) rotate(720deg) scale(0.02)`,
+          opacity: 0,
+          offset: 1,
+        },
+      ],
+      { duration: 4200, fill: "forwards" },
+    );
+    stingerAnim.onfinish = () => {
+      if (seq === stingerSeq) clearStinger();
+    };
+  };
 
   // Fullscreen when the iframe permits it; otherwise "theater mode" —
   // maximize the stage inside the Activity by hiding all chrome.
@@ -143,6 +243,8 @@ const App: Component = () => {
       // device, a reloaded iframe): this view is terminally disconnected.
       s.onSuperseded = () =>
         setError("Opened elsewhere — this view is disconnected. Close and reopen the Activity here to take over.");
+      // Stream start/stop stinger — the sharer's own view plays it too.
+      s.onStinger = (st) => void playStinger(st);
       s.connect();
       setSession(s);
     } catch (e) {
@@ -173,6 +275,7 @@ const App: Component = () => {
     document.removeEventListener("fullscreenchange", onFsChange);
     if (overlayTimer) clearTimeout(overlayTimer);
     clearInterval(statsTimer);
+    clearStinger();
     capture()?.stop();
     player?.close();
     session()?.close();
@@ -341,6 +444,9 @@ const App: Component = () => {
                   : "none",
             }}
           />
+          {/* Stinger overlay: inside .stage so fullscreen/theater show it;
+              above the canvas, below the stage controls; never interactive. */}
+          <div class="stinger-layer" ref={stingerLayerRef} />
           <Show when={capture() || session()?.ownsStage()}>
             <p class="stage-msg">
               🎥 You are live at {fps()} fps

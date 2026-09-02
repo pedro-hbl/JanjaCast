@@ -51,6 +51,10 @@ type Config struct {
 	// bitrate ceiling. 0 = unlimited (sensible on a VPS; on a residential
 	// uplink set ~60% of the measured upload speed).
 	EgressBudgetKbps int
+	// StingerDir, when set, enables stream start/stop stingers: a directory
+	// of images and sounds (JANJACAST_STINGER_DIR) served under /stingers/
+	// and picked from at random on stage transitions. Empty = disabled.
+	StingerDir string
 }
 
 // Server is the root http.Handler.
@@ -89,6 +93,13 @@ func New(cfg Config, log *slog.Logger) *Server {
 	}
 	if len(cfg.TokenSecret) == 0 {
 		log.Warn("JANJACAST_TOKEN_SECRET unset — share tokens will not survive a server restart")
+	}
+
+	if cfg.StingerDir != "" {
+		// Installed before the hub serves any traffic; called under Room.mu,
+		// so it must stay pure I/O (see pickStinger).
+		s.hub.Stinger = s.pickStinger
+		s.mux.HandleFunc("GET /stingers/{name}", s.handleStinger)
 	}
 
 	s.mux.HandleFunc("POST /api/token", s.handleToken)

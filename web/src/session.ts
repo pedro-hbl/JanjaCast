@@ -10,6 +10,7 @@ import type {
   Control,
   RoomStateData,
   StageStateData,
+  StingerData,
   SyncData,
   WelcomeData,
 } from "./protocol";
@@ -61,6 +62,8 @@ export class Session {
   onRateHint: ((degraded: number, viewers: number) => void) | null = null;
   /** This identity joined from a newer session; this one is done. */
   onSuperseded: (() => void) | null = null;
+  /** A stream started or stopped: play the server-chosen stinger. */
+  onStinger: ((s: StingerData) => void) | null = null;
 
   constructor(
     private identity: Identity,
@@ -281,6 +284,9 @@ export class Session {
         this.onStageTaken?.(byName ?? "someone");
         break;
       }
+      case "stinger":
+        this.onStinger?.(ctrl.data as StingerData);
+        break;
       case "token_refresh": {
         // Fresh share token so reconnects keep working past token expiry.
         const { shareToken } = ctrl.data as { shareToken: string };

@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/pedro-hbl/janjacast/internal/protocol"
 )
@@ -152,7 +153,7 @@ func TestNewJoinerRequiresKeyframe(t *testing.T) {
 // caused send-on-closed-channel panics and hub/room split-brain. Run with
 // -race.
 func TestConcurrentJoinLeave(t *testing.T) {
-	hub := NewHub(discard())
+	hub := stingerHub(time.Millisecond) // stinger timers race the churn too
 
 	var wg sync.WaitGroup
 	for g := 0; g < 8; g++ {
@@ -296,5 +297,231 @@ func TestSessionTakeoverNewestWins(t *testing.T) {
 	room.TakeStage(second)
 	if got := stageOf(room).PublisherID; got != "u1:tab" {
 		t.Fatalf("new session cannot take the stage (publisher %q)", got)
+	}
+}
+
+// ------------------------- stingers ----------------------------------------
+
+// stingerHub returns a hub with stingers enabled and a short stop window so
+// tests need not sleep real seconds.
+func stingerHub(stopDelay time.Duration) *Hub {
+	hub := NewHub(discard())
+	hub.StingerStopDelay = stopDelay
+	hub.Stinger = func(kind string) *protocol.StingerData {
+		return &protocol.StingerData{
+			Kind:  kind,
+			Image: "/stingers/img.webp",
+			Audio: "/stingers/snd.mp3",
+		}
+	}
+	return hub
+}
+
+// stingersOf counts stingers by kind in a drained outbox.
+func stingersOf(t *testing.T, msgs []OutMsg) map[string]int {
+	t.Helper()
+	got := map[string]int{}
+	for _, m := range msgs {
+		if m.Binary() {
+			continue
+		}
+		var ctrl protocol.Control
+		if err := json.Unmarshal(m.Payload(), &ctrl); err != nil {
+			t.Fatal(err)
+		}
+		if ctrl.Type != protocol.CtrlStinger {
+			continue
+		}
+		var d protocol.StingerData
+		if err := json.Unmarshal(ctrl.Data, &d); err != nil {
+			t.Fatal(err)
+		}
+		if d.Image == "" || d.Audio == "" {
+			t.Fatalf("stinger %q missing asset URLs: %+v", d.Kind, d)
+		}
+		got[d.Kind]++
+	}
+	return got
+}
+
+// waitStingerIdle polls until the room's pending stop stinger (if any) has
+// fired, bounding the wait so a broken timer fails fast instead of hanging.
+func waitStingerIdle(t *testing.T, r *Room) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		r.mu.Lock()
+		live := r.stingerLive
+		r.mu.Unlock()
+		if !live {
+			return
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatal("stop stinger never fired")
+}
+
+// TestStingerStartOnFreshTake: a fresh nil→publisher transition plays the
+// start stinger for every room client — the publisher included (their own
+// Activity view is in the room).
+func TestStingerStartOnFreshTake(t *testing.T) {
+	hub := stingerHub(5 * time.Millisecond)
+	room, alice, aliceOut := hub.Join("r1", "a", "alice")
+	_, bob, bobOut := hub.Join("r1", "b", "bob")
+
+	room.TakeStage(alice)
+	hub.Leave(room, bob)
+	hub.Leave(room, alice)
+
+	for name, out := range map[string][]OutMsg{"bob": collect(bobOut), "alice": collect(aliceOut)} {
+		got := stingersOf(t, out)
+		if got["start"] != 1 || got["stop"] != 0 {
+			t.Fatalf("%s got stingers %v, want exactly one start", name, got)
+		}
+	}
+}
+
+// TestStingerStopAfterWindow: the stage staying empty past the debounce
+// window plays the stop stinger.
+func TestStingerStopAfterWindow(t *testing.T) {
+	hub := stingerHub(5 * time.Millisecond)
+	room, alice, _ := hub.Join("r1", "a", "alice")
+	_, bob, bobOut := hub.Join("r1", "b", "bob")
+
+	room.TakeStage(alice)
+	room.LeaveStage(alice)
+	waitStingerIdle(t, room)
+	hub.Leave(room, bob)
+
+	got := stingersOf(t, collect(bobOut))
+	if got["start"] != 1 || got["stop"] != 1 {
+		t.Fatalf("bob got stingers %v, want one start and one stop", got)
+	}
+}
+
+// TestStingerReconnectFiresNothing: a publisher dropping (Leave) and
+// re-joining + re-taking within the stop window is the same stream
+// continuing — the pending stop is cancelled and no duplicate start fires.
+func TestStingerReconnectFiresNothing(t *testing.T) {
+	hub := stingerHub(50 * time.Millisecond)
+	room, alice, _ := hub.Join("r1", "a", "alice")
+	_, bob, bobOut := hub.Join("r1", "b", "bob")
+
+	room.TakeStage(alice)
+	hub.Leave(room, alice) // connection blip: stop is now pending
+
+	room2, alice2, _ := hub.Join("r1", "a", "alice")
+	if room2 != room {
+		t.Fatal("rejoin produced a different room")
+	}
+	room.TakeStage(alice2) // re-take within the window cancels the stop
+
+	time.Sleep(150 * time.Millisecond) // well past the window: nothing may fire
+	hub.Leave(room, bob)
+
+	got := stingersOf(t, collect(bobOut))
+	if got["start"] != 1 || got["stop"] != 0 {
+		t.Fatalf("bob got stingers %v, want exactly the original start", got)
+	}
+}
+
+// TestStingerLeaveStageReconnect: same as above but via LeaveStage + re-take
+// (a restarted share racing the window).
+func TestStingerLeaveStageReconnect(t *testing.T) {
+	hub := stingerHub(50 * time.Millisecond)
+	room, alice, _ := hub.Join("r1", "a", "alice")
+	_, bob, bobOut := hub.Join("r1", "b", "bob")
+
+	room.TakeStage(alice)
+	room.LeaveStage(alice)
+	room.TakeStage(alice)
+
+	time.Sleep(150 * time.Millisecond)
+	hub.Leave(room, bob)
+
+	got := stingersOf(t, collect(bobOut))
+	if got["start"] != 1 || got["stop"] != 0 {
+		t.Fatalf("bob got stingers %v, want exactly the original start", got)
+	}
+}
+
+// TestStingerSupersedeFiresNothing: a publisher's connection being superseded
+// (same identity re-joins) and re-taking the stage fires neither a stop nor a
+// duplicate start — it is the same stream on a fresh connection.
+func TestStingerSupersedeFiresNothing(t *testing.T) {
+	hub := stingerHub(5 * time.Millisecond)
+	room, sharer, _ := hub.Join("r1", "u1:tab", "pedro (sharing)")
+	_, bob, bobOut := hub.Join("r1", "b", "bob")
+
+	room.TakeStage(sharer)
+	_, sharer2, _ := hub.Join("r1", "u1:tab", "pedro (sharing)") // supersedes
+	room.TakeStage(sharer2)
+
+	time.Sleep(50 * time.Millisecond)
+	hub.Leave(room, bob)
+
+	got := stingersOf(t, collect(bobOut))
+	if got["start"] != 1 || got["stop"] != 0 {
+		t.Fatalf("bob got stingers %v, want exactly the original start", got)
+	}
+}
+
+// TestStingerTakeoverFiresNothing: another user taking an occupied stage
+// replaces the publisher directly (never nil→publisher), so no stinger fires
+// for the takeover itself.
+func TestStingerTakeoverFiresNothing(t *testing.T) {
+	hub := stingerHub(5 * time.Millisecond)
+	room, alice, _ := hub.Join("r1", "a", "alice")
+	_, bob, _ := hub.Join("r1", "b", "bob")
+	_, carol, carolOut := hub.Join("r1", "c", "carol")
+
+	room.TakeStage(alice)
+	room.TakeStage(bob) // takes the stage from alice directly
+
+	time.Sleep(50 * time.Millisecond)
+	hub.Leave(room, carol)
+
+	got := stingersOf(t, collect(carolOut))
+	if got["start"] != 1 || got["stop"] != 0 {
+		t.Fatalf("carol got stingers %v, want exactly the original start", got)
+	}
+}
+
+// TestStingerStopTimerOnReapedRoom: the last viewer leaving reaps the room
+// while a stop timer is pending; the callback must neither panic nor
+// resurrect anything.
+func TestStingerStopTimerOnReapedRoom(t *testing.T) {
+	hub := stingerHub(5 * time.Millisecond)
+	room, alice, _ := hub.Join("r1", "a", "alice")
+	_, bob, _ := hub.Join("r1", "b", "bob")
+
+	room.TakeStage(alice)
+	hub.Leave(room, alice) // stop pending
+	hub.Leave(room, bob)   // room emptied and reaped
+
+	if n := hub.Rooms(); n != 0 {
+		t.Fatalf("%d rooms alive after everyone left", n)
+	}
+	time.Sleep(50 * time.Millisecond) // let the timer fire on the reaped room
+	if n := hub.Rooms(); n != 0 {
+		t.Fatalf("stop timer resurrected a room (%d alive)", n)
+	}
+}
+
+// TestStingerDisabled: a nil Hub.Stinger (feature off) must fire nothing and
+// arm no timers.
+func TestStingerDisabled(t *testing.T) {
+	hub := NewHub(discard())
+	hub.StingerStopDelay = time.Millisecond
+	room, alice, _ := hub.Join("r1", "a", "alice")
+	_, bob, bobOut := hub.Join("r1", "b", "bob")
+
+	room.TakeStage(alice)
+	room.LeaveStage(alice)
+	time.Sleep(20 * time.Millisecond)
+	hub.Leave(room, bob)
+
+	if got := stingersOf(t, collect(bobOut)); len(got) != 0 {
+		t.Fatalf("disabled stingers still fired: %v", got)
 	}
 }

@@ -108,6 +108,11 @@ const (
 	// publisher's uplink signal (bufferedAmount) cannot see relay->viewer
 	// pressure; this closes that loop.
 	CtrlRateHint ControlType = "rate_hint"
+
+	// Server -> every room client: play a stinger (a short image animation
+	// plus a sound) marking a stream starting or stopping. The server picks
+	// the random pair so every participant sees and hears the same one.
+	CtrlStinger ControlType = "stinger"
 )
 
 // Control is the JSON envelope for text messages.
@@ -211,6 +216,16 @@ type StageTakenData struct {
 type RateHintData struct {
 	Degraded int `json:"degraded"`
 	Viewers  int `json:"viewers"`
+}
+
+// StingerData is the payload of CtrlStinger: which transition happened and
+// the same-origin URLs (under /stingers/) of the image and sound every
+// participant should play. Either URL may be empty if the stinger directory
+// holds no file of that kind.
+type StingerData struct {
+	Kind  string `json:"kind"` // "start" | "stop"
+	Image string `json:"image,omitempty"`
+	Audio string `json:"audio,omitempty"`
 }
 
 // MarshalControl encodes a control envelope with its payload.
