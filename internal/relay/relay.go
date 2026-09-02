@@ -108,6 +108,11 @@ func (h *Hub) Join(roomID, userID, username string) (*Room, *Client, iter.Seq[Ou
 			r.clearGOPLocked()
 			r.gateViewersLocked()
 			r.broadcastStageStateLocked()
+			// Arm the delayed stop here too: the expected immediate re-take
+			// cancels it silently, but an ABANDONED supersede (new session
+			// never takes the stage) still gets its stop stinger — without
+			// this, stingerLive would stay latched and mute future starts.
+			r.scheduleStingerStopLocked()
 		}
 		r.log.Info("superseded", "user", username, "id", userID)
 	}
