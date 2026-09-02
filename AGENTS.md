@@ -23,18 +23,37 @@ localized.
 - Match the surrounding code style and comment voice (full sentences, the
   "why", no change-log comments).
 
+## Skills (load before coding — they are part of the contract)
+
+Read these three files in full before writing any code; their rules are
+binding, and the REPORT must state you applied each:
+
+- `agents/skills/spec-driven.md` — wire trace first, failing proof first,
+  hop-by-hop implementation, the no-placeholder rule, UI extra proof.
+- `agents/skills/hard-testing.md` — the probe harness (`tools/probe/`): how
+  to write and run wire-level scenarios that boot the real server; the
+  dispatch-coverage rule.
+- `agents/skills/evidence.md` — the EVIDENCE section every issue must carry
+  before its final commit.
+
 ## Working protocol (agentic runs)
 
 1. **Never end your run with a text-only reply while work remains** — a
-   text-only reply terminates the run. Keep calling tools until the final
-   commit exists. Do not ask for permission mid-run; you already have it.
+   text-only reply terminates the run, and a REPORT with a non-empty
+   leftover is a FAILED run. Keep calling tools until the final commit
+   exists. Do not ask for permission mid-run; you already have it.
 2. Implement the issue file(s) in the repo root (`ISSUE*.md`) step by step,
-   running each step's Verify.
-3. **Gates before committing** (check REAL exit codes — piped output masks
-   them):
+   running each step's Verify. **Two-commit rhythm per feature:** commit A =
+   the probe scenario + any unit tests, with their RED run pasted into the
+   issue's EVIDENCE (they must fail for the right reason — an assertion, not
+   a crash); commit B+ = the implementation that turns them green.
+3. **Gates before the final commit** (check REAL exit codes — piped output
+   masks them; if `node_modules` is missing run `npm ci` in web/ first):
    - `cd web && JANJACAST_DISCORD_CLIENT_ID=1544440867799048253 npm run build`
      → must exit 0
    - `go vet ./... && go test ./...` from the repo root → must pass
+   - `node tools/probe/harness.js --scenario tools/probe/scenarios/<feature>.js`
+     → `PROBE RESULT: PASS`, exit 0 (one-time `cd tools/probe && npm install`)
 4. **Self-review before the final commit.** Generate the full diff and send it
    to a *different vendor* for review, ASCII-escaping it first (the gateway
    502s on emoji):
@@ -53,10 +72,12 @@ localized.
    ```
    REPORT
    done: <one line per issue: what shipped>
+   skills: spec-driven applied | hard-testing applied | evidence appended
+   probe: <scenario file> -> PASS (red run captured first: yes/no)
    review: <vendor verdict + what you fixed>
-   gates: web build EXIT:<n>, go test <pass/fail>
+   gates: web build EXIT:<n>, go test <pass/fail>, probe EXIT:<n>
    commits: <shortsha> <subject> (one per line)
-   leftover: <anything not done, or "none">
+   leftover: none   <- anything else means the run FAILED
    ```
 
 ## Environment notes
