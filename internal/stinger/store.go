@@ -40,9 +40,10 @@ const (
 // is enabled and in both pools, which is exactly how a settings-less
 // directory behaved before this feature existed.
 type Flags struct {
-	Enabled     bool `json:"enabled"`
-	PlayOnStart bool `json:"playOnStart"`
-	PlayOnStop  bool `json:"playOnStop"`
+    Enabled     bool `json:"enabled"`
+    PlayOnStart bool `json:"playOnStart"`
+    PlayOnStop  bool `json:"playOnStop"`
+    StormTrigger bool `json:"stormTrigger"`
 }
 
 func defaultFlags() Flags {
@@ -52,9 +53,10 @@ func defaultFlags() Flags {
 // FlagPatch is a partial update: a nil field means "leave it alone", so the
 // UI can send one key per toggle without read-modify-writing the whole set.
 type FlagPatch struct {
-	Enabled     *bool `json:"enabled"`
-	PlayOnStart *bool `json:"playOnStart"`
-	PlayOnStop  *bool `json:"playOnStop"`
+    Enabled     *bool `json:"enabled"`
+    PlayOnStart *bool `json:"playOnStart"`
+    PlayOnStop  *bool `json:"playOnStop"`
+    StormTrigger *bool `json:"stormTrigger"`
 }
 
 // Asset is one stinger file as the API and the UI see it.

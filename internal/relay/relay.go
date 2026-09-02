@@ -9,17 +9,18 @@
 package relay
 
 import (
-    "iter"
-    "log/slog"
-    "math/rand/v2"
-    "slices"
-    "strconv"
-    "strings"
-    "sync"
-    "sync/atomic"
-    "time"
+	"fmt"
+	"iter"
+	"log/slog"
+	"math/rand/v2"
+	"slices"
+	"strconv"
+	"strings"
+	"sync"
+	"sync/atomic"
+	"time"
 
-    "github.com/pedro-hbl/janjacast/internal/protocol"
+	"github.com/pedro-hbl/janjacast/internal/protocol"
 )
 
 // sendBuffer is the per-viewer outgoing queue length. When a viewer's queue
@@ -123,6 +124,9 @@ func (h *Hub) Join(roomID, userID, username string) (*Room, *Client, iter.Seq[Ou
 			stinger:         h.Stinger,
 			stingerStopWait: h.StingerStopDelay,
 			turnWait:        ttl,
+			lastReactionBy:  make(map[*Client]time.Time),
+			placarScores:    make(map[string]int),
+			placarLastVote:  make(map[*Client]time.Time),
 		}
 		h.rooms[roomID] = r
 	}
@@ -182,9 +186,9 @@ func (h *Hub) Join(roomID, userID, username string) (*Room, *Client, iter.Seq[Ou
 	// flight, which rides in this state message rather than as a second
 	// CtrlStageTurn (that one carries the cue, and a joiner must not hear
 	// a cue for a call that went out before they arrived).
-  c.enqueueControl(protocol.CtrlStageQueue, r.stageQueueLocked())
-  // Cinema welcome right after queue state.
-  c.enqueueControl(protocol.CtrlCinemaState, protocol.CinemaStateData{Paused: r.cinemaPaused, Strokes: slices.Clone(r.cinemaStrokes)})
+	c.enqueueControl(protocol.CtrlStageQueue, r.stageQueueLocked())
+	// Cinema welcome right after queue state.
+	c.enqueueControl(protocol.CtrlCinemaState, protocol.CinemaStateData{Paused: r.cinemaPaused, Strokes: slices.Clone(r.cinemaStrokes)})
 
 	// Replay the cached GOP so the newcomer has a picture immediately. If
 	// the replay overflows the queue, the client stays in needKeyframe so a
@@ -201,6 +205,9 @@ func (h *Hub) Join(roomID, userID, username string) (*Room, *Client, iter.Seq[Ou
 		// No usable cache: get this joiner a picture as fast as possible.
 		r.requestKeyframeLocked()
 	}
+
+	// Welcome placar state right after welcome + queue.
+	c.enqueueControl(protocol.CtrlPlacarState, r.placarStateLocked())
 
 	r.clients[c] = struct{}{}
 	r.broadcastRoomStateLocked()
@@ -349,12 +356,31 @@ type Room struct {
 	rodizioStart time.Time
 	// rodizioExtended records the one +5 minutes, reset on every TakeStage.
 	rodizioExtended bool
-  // lastPass is the per-room pass cooldown stamp.
-  lastPass time.Time
+	// lastPass is the per-room pass cooldown stamp.
+	lastPass time.Time
 
-  // --- cinema (paused + shared strokes) ---------------------------------
-  cinemaPaused  bool
-  cinemaStrokes []protocol.StrokeData // FIFO cap 100
+	// --- cinema (paused + shared strokes) ---------------------------------
+	cinemaPaused  bool
+	cinemaStrokes []protocol.StrokeData // FIFO cap 100
+
+	// --- reactions (guarded by mu) --------------------------------------
+	// reaction events over a sliding window; sampled into bursts.
+	reactionEvents []struct {
+		t time.Time
+		e string
+	}
+	lastReactionBurst time.Time
+	// per-client cooldown for CtrlReaction taps
+	lastReactionBy map[*Client]time.Time
+
+	// storm cooldown
+	nextStorm time.Time
+
+	// --- placar (scoreboard), guarded by mu --------------------------
+	placarActive   bool
+	placarPrompt   string
+	placarScores   map[string]int
+	placarLastVote map[*Client]time.Time
 }
 
 // stageTurn is the person currently being called to the stage.
@@ -1016,13 +1042,175 @@ func (r *Room) SetConfig(c *Client, cfg *protocol.ConfigData) {
 func (r *Room) ForwardControl(from *Client, t protocol.ControlType, data any) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if r.publisher != from {
+	switch t {
+	case protocol.CtrlSync:
+		if r.publisher != from {
+			return
+		}
+		for c := range r.clients {
+			if c != from {
+				c.enqueueControl(t, data)
+			}
+		}
+	case protocol.CtrlReaction:
+		// Client tap → append event if valid and not cooling down.
+		if _, ok := r.clients[from]; !ok {
+			return
+		}
+		var d protocol.ReactionData
+		if m, ok := data.(protocol.ReactionData); ok {
+			d = m
+		} else if mp, ok := data.(*protocol.ReactionData); ok && mp != nil {
+			d = *mp
+		} else {
+			return
+		}
+		if !protocol.ValidReactionEmoji(d.Emoji) {
+			return
+		}
+		now := time.Now()
+		if last, ok := r.lastReactionBy[from]; ok && now.Sub(last) < 200*time.Millisecond {
+			return
+		}
+		r.lastReactionBy[from] = now
+		r.reactionEvents = append(r.reactionEvents, struct {
+			t time.Time
+			e string
+		}{t: now, e: d.Emoji})
+		// On a 250ms pace, fan an aggregate only when non-zero; sum includes
+		// all events currently in-window, not just since last pace tick.
+		if now.Sub(r.lastReactionBurst) >= 250*time.Millisecond {
+			r.lastReactionBurst = now
+			// Evict old events (window 1500ms) and sum counts.
+			cutoff := now.Add(-1500 * time.Millisecond)
+			i := 0
+			for _, ev := range r.reactionEvents {
+				if !ev.t.Before(cutoff) {
+					r.reactionEvents[i] = ev
+					i++
+				}
+			}
+			if i > 0 {
+				// Count over the in-window view (prefix [0:i]).
+				counts := make(map[string]int, 6)
+				for _, ev := range r.reactionEvents[:i] {
+					counts[ev.e]++
+				}
+				burst := protocol.ReactionBurstData{Counts: counts, Density: i, WindowMs: 1500}
+				for c := range r.clients {
+					c.enqueueControl(protocol.CtrlReactionBurst, burst)
+				}
+				// Auto-storm trigger: density threshold and 20s cooldown.
+				if i >= 15 {
+					r.maybeStormLocked()
+				}
+			}
+			r.reactionEvents = r.reactionEvents[:i]
+		}
+	default:
+		// Unknown forwarded control: ignore.
+	}
+}
+
+// --- placar (scoreboard) API -----------------------------------------------
+
+// placarStateLocked snapshots the current tally.
+func (r *Room) placarStateLocked() protocol.PlacarStateData {
+	// copy map so callers cannot mutate internal state
+	scores := make(map[string]int, len(r.placarScores))
+	for k, v := range r.placarScores {
+		scores[k] = v
+	}
+	return protocol.PlacarStateData{Active: r.placarActive, Prompt: r.placarPrompt, Scores: scores}
+}
+
+func (r *Room) broadcastPlacarStateLocked() {
+	d := r.placarStateLocked()
+	for c := range r.clients {
+		c.enqueueControl(protocol.CtrlPlacarState, d)
+	}
+}
+
+func (r *Room) CreatePlacar(c *Client, prompt string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.clients[c]; !ok {
+		return nil
+	}
+	if r.publisher == nil || baseID(r.publisher.UserID) != baseID(c.UserID) {
+		return fmt.Errorf("placar.notPublisher")
+	}
+	if r.placarActive {
+		return fmt.Errorf("placar.alreadyActive")
+	}
+	if n := len(strings.TrimSpace(prompt)); n < 1 || n > 60 {
+		return fmt.Errorf("placar.badPrompt")
+	}
+	r.placarActive = true
+	r.placarPrompt = prompt
+	r.placarScores = make(map[string]int, len(r.clients))
+	for cl := range r.clients {
+		r.placarScores[baseID(cl.UserID)] = 0
+	}
+	r.broadcastPlacarStateLocked()
+	return nil
+}
+
+func (r *Room) PlacarVote(c *Client, target string, delta int) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.clients[c]; !ok {
+		return nil
+	}
+	if !r.placarActive {
+		return fmt.Errorf("placar.inactive")
+	}
+	if delta != 1 && delta != -1 {
+		return fmt.Errorf("placar.badDelta")
+	}
+	base := baseID(target)
+	if _, ok := r.placarScores[base]; !ok {
+		return fmt.Errorf("placar.noMember")
+	}
+	now := time.Now()
+	if last, ok := r.placarLastVote[c]; ok && now.Sub(last) < time.Second {
+		return fmt.Errorf("placar.tooFast")
+	}
+	r.placarLastVote[c] = now
+	r.placarScores[base] += delta
+	r.broadcastPlacarStateLocked()
+	return nil
+}
+
+func (r *Room) ClosePlacar(c *Client) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.clients[c]; !ok {
+		return nil
+	}
+	if r.publisher == nil || baseID(r.publisher.UserID) != baseID(c.UserID) {
+		return fmt.Errorf("placar.notPublisher")
+	}
+	r.placarActive = false
+	r.placarPrompt = ""
+	r.placarScores = make(map[string]int)
+	r.broadcastPlacarStateLocked()
+	return nil
+}
+
+// maybeStormLocked broadcasts a random manual stinger when the storm cooldown
+// has elapsed. Caller must hold r.mu.
+func (r *Room) maybeStormLocked() {
+	if r.stinger == nil {
 		return
 	}
-	for c := range r.clients {
-		if c != from {
-			c.enqueueControl(t, data)
-		}
+	now := time.Now()
+	if !r.nextStorm.IsZero() && now.Before(r.nextStorm) {
+		return
+	}
+	if d := r.stinger("manual"); d != nil {
+		r.nextStorm = now.Add(20 * time.Second)
+		r.broadcastStingerLocked(d)
 	}
 }
 
@@ -1047,9 +1235,9 @@ func (r *Room) ForwardMedia(from *Client, msg []byte) {
 	// (web/src/capture.ts drops at the frame-read loop AND suppresses the
 	// encoder output), so reaching here means something raced or lied.
 	// Drop it: while blanked, no captured byte leaves this room.
-    if r.blanked || r.cinemaPaused {
-        return
-    }
+	if r.blanked || r.cinemaPaused {
+		return
+	}
 
 	// Maintain the late-join cache from the video stream. Bounded by both
 	// bytes and chunk count: a GOP that cannot fit a fresh client queue is
@@ -1179,80 +1367,80 @@ func (r *Room) broadcastRoomStateLocked() {
 
 // CinemaPause pauses the room for everyone. Publisher-only.
 func (r *Room) CinemaPause(c *Client) (bool, string) {
-    r.mu.Lock()
-    defer r.mu.Unlock()
-    if r.publisher == nil || baseID(r.publisher.UserID) != baseID(c.UserID) {
-        return false, protocol.ErrCinemaNotPublisher
-    }
-    if r.cinemaPaused {
-        return true, ""
-    }
-    r.cinemaPaused = true
-    r.broadcastCinemaStateLocked()
-    return true, ""
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.publisher == nil || baseID(r.publisher.UserID) != baseID(c.UserID) {
+		return false, protocol.ErrCinemaNotPublisher
+	}
+	if r.cinemaPaused {
+		return true, ""
+	}
+	r.cinemaPaused = true
+	r.broadcastCinemaStateLocked()
+	return true, ""
 }
 
 // CinemaResume resumes playback and clears strokes; requests a keyframe.
 func (r *Room) CinemaResume(c *Client) (bool, string) {
-    r.mu.Lock()
-    defer r.mu.Unlock()
-    if r.publisher == nil || baseID(r.publisher.UserID) != baseID(c.UserID) {
-        return false, protocol.ErrCinemaNotPublisher
-    }
-    if !r.cinemaPaused {
-        return true, ""
-    }
-    r.cinemaPaused = false
-    r.cinemaStrokes = nil
-    r.broadcastCinemaStateLocked()
-    r.requestKeyframeLocked()
-    return true, ""
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.publisher == nil || baseID(r.publisher.UserID) != baseID(c.UserID) {
+		return false, protocol.ErrCinemaNotPublisher
+	}
+	if !r.cinemaPaused {
+		return true, ""
+	}
+	r.cinemaPaused = false
+	r.cinemaStrokes = nil
+	r.broadcastCinemaStateLocked()
+	r.requestKeyframeLocked()
+	return true, ""
 }
 
 // AddCinemaStroke validates and appends a stroke while paused.
 func (r *Room) AddCinemaStroke(c *Client, d *protocol.CinemaStrokeData) (bool, string) {
-    r.mu.Lock()
-    defer r.mu.Unlock()
-    if _, ok := r.clients[c]; !ok {
-        return false, ""
-    }
-    if !r.cinemaPaused {
-        return false, protocol.ErrCinemaBadStroke
-    }
-    // Fixed palette on the server side (tokens mapped client-side).
-    allowed := map[string]bool{"redorange": true, "crayon-blue": true, "yellow": true, "grass": true, "pink": true, "purple": true}
-    if !allowed[d.Color] || len(d.Points) < 2 || len(d.Points) > 1000 {
-        return false, protocol.ErrCinemaBadStroke
-    }
-    for _, p := range d.Points {
-        if p.X < 0 || p.X > 1 || p.Y < 0 || p.Y > 1 {
-            return false, protocol.ErrCinemaBadStroke
-        }
-    }
-    // Per-client rate limit: 10 strokes/s. Reuse lastStingerAsk shape.
-    now := time.Now()
-    if now.Sub(c.lastStingerAsk) < 100*time.Millisecond {
-        return false, protocol.ErrCinemaRateLimited
-    }
-    c.lastStingerAsk = now
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.clients[c]; !ok {
+		return false, ""
+	}
+	if !r.cinemaPaused {
+		return false, protocol.ErrCinemaBadStroke
+	}
+	// Fixed palette on the server side (tokens mapped client-side).
+	allowed := map[string]bool{"redorange": true, "crayon-blue": true, "yellow": true, "grass": true, "pink": true, "purple": true}
+	if !allowed[d.Color] || len(d.Points) < 2 || len(d.Points) > 1000 {
+		return false, protocol.ErrCinemaBadStroke
+	}
+	for _, p := range d.Points {
+		if p.X < 0 || p.X > 1 || p.Y < 0 || p.Y > 1 {
+			return false, protocol.ErrCinemaBadStroke
+		}
+	}
+	// Per-client rate limit: 10 strokes/s. Reuse lastStingerAsk shape.
+	now := time.Now()
+	if now.Sub(c.lastStingerAsk) < 100*time.Millisecond {
+		return false, protocol.ErrCinemaRateLimited
+	}
+	c.lastStingerAsk = now
 
-    id := c.UserID + ":" + strconv.FormatInt(now.UnixNano(), 16)
-    s := protocol.StrokeData{UserID: c.UserID, Color: d.Color, Points: d.Points, StrokeID: id}
-    if len(r.cinemaStrokes) >= 100 {
-        r.cinemaStrokes = r.cinemaStrokes[1:]
-    }
-    r.cinemaStrokes = append(r.cinemaStrokes, s)
-    for cl := range r.clients {
-        cl.enqueueControl(protocol.CtrlCinemaStrokeAdd, s)
-    }
-    return true, ""
+	id := c.UserID + ":" + strconv.FormatInt(now.UnixNano(), 16)
+	s := protocol.StrokeData{UserID: c.UserID, Color: d.Color, Points: d.Points, StrokeID: id}
+	if len(r.cinemaStrokes) >= 100 {
+		r.cinemaStrokes = r.cinemaStrokes[1:]
+	}
+	r.cinemaStrokes = append(r.cinemaStrokes, s)
+	for cl := range r.clients {
+		cl.enqueueControl(protocol.CtrlCinemaStrokeAdd, s)
+	}
+	return true, ""
 }
 
 func (r *Room) broadcastCinemaStateLocked() {
-    d := protocol.CinemaStateData{Paused: r.cinemaPaused, Strokes: slices.Clone(r.cinemaStrokes)}
-    for c := range r.clients {
-        c.enqueueControl(protocol.CtrlCinemaState, d)
-    }
+	d := protocol.CinemaStateData{Paused: r.cinemaPaused, Strokes: slices.Clone(r.cinemaStrokes)}
+	for c := range r.clients {
+		c.enqueueControl(protocol.CtrlCinemaState, d)
+	}
 }
 
 // stingerStartLocked runs on every successful TakeStage: it cancels any

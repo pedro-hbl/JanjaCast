@@ -60,10 +60,10 @@ type Config struct {
 
 // Server is the root http.Handler.
 type Server struct {
-	cfg  Config
-	log  *slog.Logger
-	hub  *relay.Hub
-	mux  *http.ServeMux
+	cfg        Config
+	log        *slog.Logger
+	hub        *relay.Hub
+	mux        *http.ServeMux
 	auth       *authn
 	rl         *rateLimiter
 	uploadRL   *rateLimiter
@@ -83,11 +83,11 @@ type Server struct {
 // New builds the handler.
 func New(cfg Config, log *slog.Logger) *Server {
 	s := &Server{
-		cfg:   cfg,
-		log:   log,
-		hub:   relay.NewHub(log),
-		mux:   http.NewServeMux(),
-		auth:  newAuthn(cfg.TokenSecret, cfg.DiscordClientID),
+		cfg:        cfg,
+		log:        log,
+		hub:        relay.NewHub(log),
+		mux:        http.NewServeMux(),
+		auth:       newAuthn(cfg.TokenSecret, cfg.DiscordClientID),
 		rl:         newRateLimiter(60, time.Minute), // per-IP budget for auth endpoints
 		uploadRL:   newRateLimiter(20, time.Minute), // uploads are far more expensive
 		wsPatterns: originPatterns(cfg),
@@ -407,7 +407,7 @@ func originPatterns(cfg Config) []string {
 func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 	conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{
 		OriginPatterns:     s.wsPatterns,
-		InsecureSkipVerify: s.cfg.AllowAnon, // dev mode: any origin
+		InsecureSkipVerify: s.cfg.AllowAnon,               // dev mode: any origin
 		CompressionMode:    websocket.CompressionDisabled, // media is already compressed
 	})
 	if err != nil {
@@ -665,6 +665,24 @@ func (s *Server) handleControl(room *relay.Room, client *relay.Client, data []by
 			if ok, code := room.AddCinemaStroke(client, &sd); !ok && code != "" {
 				client.SendControl(protocol.CtrlError, protocol.ErrorData{Code: code})
 			}
+		}
+	case protocol.CtrlPlacarCreate:
+		var d protocol.PlacarCreateData
+		if err := json.Unmarshal(ctrl.Data, &d); err == nil {
+			if err2 := room.CreatePlacar(client, d.Prompt); err2 != nil {
+				client.SendControl(protocol.CtrlError, protocol.ErrorData{Code: err2.Error()})
+			}
+		}
+	case protocol.CtrlPlacarVote:
+		var d protocol.PlacarVoteData
+		if err := json.Unmarshal(ctrl.Data, &d); err == nil {
+			if err2 := room.PlacarVote(client, d.TargetUserID, d.Delta); err2 != nil {
+				client.SendControl(protocol.CtrlError, protocol.ErrorData{Code: err2.Error()})
+			}
+		}
+	case protocol.CtrlPlacarClose:
+		if err := room.ClosePlacar(client); err != nil {
+			client.SendControl(protocol.CtrlError, protocol.ErrorData{Code: err.Error()})
 		}
 	}
 }

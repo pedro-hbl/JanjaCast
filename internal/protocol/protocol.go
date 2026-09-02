@@ -5,6 +5,7 @@
 //
 //   - a text message: a JSON control envelope (join, stage requests, codec
 //     config, stats), or
+//
 //   - a binary message: one encoded media chunk with a fixed 13-byte header:
 //
 //     offset 0  uint8   kind      (1 = video, 2 = audio)
@@ -157,7 +158,20 @@ const (
 	// to claim the stage, and the whole room hears about it.
 	CtrlStageTurn ControlType = "stage_turn"
 	// CtrlStageCancel ends a pending turn, saying why.
-  CtrlStageCancel ControlType = "stage_cancel"
+	CtrlStageCancel ControlType = "stage_cancel"
+	// placar (scoreboard)
+	CtrlPlacarCreate ControlType = "placar_create"
+	CtrlPlacarVote   ControlType = "placar_vote"
+	CtrlPlacarClose  ControlType = "placar_close"
+	CtrlPlacarState  ControlType = "placar_state"
+)
+
+// --- reactions -------------------------------------------------------------
+// Client -> server: a single reaction tap from a member.
+// Relay -> clients: an aggregated burst sampled over a short window.
+const (
+	CtrlReaction      ControlType = "reaction"
+	CtrlReactionBurst ControlType = "reaction_burst"
 )
 
 // Control is the JSON envelope for text messages.
@@ -200,11 +214,11 @@ type SyncData struct {
 // ConfigData is the payload of CtrlConfig / part of CtrlStageState: the
 // WebCodecs configuration viewers need to construct their decoders.
 type ConfigData struct {
-	VideoCodec  string `json:"videoCodec"`            // e.g. "avc1.42E01F" or "vp8"
+	VideoCodec  string `json:"videoCodec"` // e.g. "avc1.42E01F" or "vp8"
 	Width       int    `json:"width"`
 	Height      int    `json:"height"`
-	Framerate   int    `json:"framerate"`             // 30 or 60
-	AudioCodec  string `json:"audioCodec,omitempty"`  // e.g. "opus"
+	Framerate   int    `json:"framerate"`            // 30 or 60
+	AudioCodec  string `json:"audioCodec,omitempty"` // e.g. "opus"
 	SampleRate  int    `json:"sampleRate,omitempty"`
 	Channels    int    `json:"channels,omitempty"`
 	Description []byte `json:"description,omitempty"` // avcC extradata when applicable
@@ -251,65 +265,79 @@ type Participant struct {
 // (docs/i18n.md § "What is deliberately not localized"); Code, when set, is a
 // stable identifier the client maps onto its own translated string.
 type ErrorData struct {
-    Message string `json:"message,omitempty"`
-    Code    string `json:"code,omitempty"`
+	Message string `json:"message,omitempty"`
+	Code    string `json:"code,omitempty"`
 }
 
 // Error codes carried by ErrorData.Code. Each has a matching `err.<code>`
 // key in web/src/i18n.ts, in both dictionaries.
 const (
-    ErrNoNextUser  = "stage.noNext"   // nobody in line and nobody to spin for
-    ErrAlreadyExt  = "stage.extended" // the one +5 minutes is already spent
-    ErrPassTooSoon = "stage.cooldown" // passing again inside the cooldown
+	ErrNoNextUser  = "stage.noNext"   // nobody in line and nobody to spin for
+	ErrAlreadyExt  = "stage.extended" // the one +5 minutes is already spent
+	ErrPassTooSoon = "stage.cooldown" // passing again inside the cooldown
 )
 
 // --- cinema mode (pause + shared doodles) -----------------------------------
 
 // Client -> server controls.
 const (
-    CtrlCinemaPause  ControlType = "cinema_pause"
-    CtrlCinemaResume ControlType = "cinema_resume"
-    CtrlCinemaStroke ControlType = "cinema_stroke"
+	CtrlCinemaPause  ControlType = "cinema_pause"
+	CtrlCinemaResume ControlType = "cinema_resume"
+	CtrlCinemaStroke ControlType = "cinema_stroke"
 )
 
 // Server -> client controls.
 const (
-    CtrlCinemaState    ControlType = "cinema_state"
-    CtrlCinemaStrokeAdd ControlType = "cinema_stroke_add"
+	CtrlCinemaState     ControlType = "cinema_state"
+	CtrlCinemaStrokeAdd ControlType = "cinema_stroke_add"
 )
 
 // Point is one 0..1 normalized point.
 type Point struct {
-    X float64 `json:"x"`
-    Y float64 `json:"y"`
+	X float64 `json:"x"`
+	Y float64 `json:"y"`
 }
 
 // CinemaStrokeData is the client->server payload to add a stroke.
 type CinemaStrokeData struct {
-    Color  string  `json:"color"`
-    Points []Point `json:"points"`
+	Color  string  `json:"color"`
+	Points []Point `json:"points"`
 }
 
 // StrokeData is broadcast to all clients when a stroke is accepted.
 type StrokeData struct {
-    UserID  string  `json:"userId"`
-    Color   string  `json:"color"`
-    Points  []Point `json:"points"`
-    StrokeID string `json:"strokeId"`
+	UserID   string  `json:"userId"`
+	Color    string  `json:"color"`
+	Points   []Point `json:"points"`
+	StrokeID string  `json:"strokeId"`
 }
 
 // CinemaStateData is the room-wide cinema state snapshot.
 type CinemaStateData struct {
-    Paused  bool        `json:"paused"`
-    Strokes []StrokeData `json:"strokes"`
+	Paused  bool         `json:"paused"`
+	Strokes []StrokeData `json:"strokes"`
 }
 
 // Cinema error codes mapped to translated strings client-side.
 const (
-    ErrCinemaNotPublisher = "cinema.notPublisher"
-    ErrCinemaRateLimited  = "cinema.rateLimited"
-    ErrCinemaBadStroke    = "cinema.badStroke"
+	ErrCinemaNotPublisher = "cinema.notPublisher"
+	ErrCinemaRateLimited  = "cinema.rateLimited"
+	ErrCinemaBadStroke    = "cinema.badStroke"
 )
+
+// Placar wire shapes.
+type PlacarCreateData struct {
+	Prompt string `json:"prompt"`
+}
+type PlacarVoteData struct {
+	TargetUserID string `json:"targetUserId"`
+	Delta        int    `json:"delta"`
+}
+type PlacarStateData struct {
+	Active bool           `json:"active"`
+	Prompt string         `json:"prompt"`
+	Scores map[string]int `json:"scores"`
+}
 
 // TokenRefreshData is the payload of CtrlTokenRefresh: a fresh share token
 // the companion tab must use on its next reconnect, so long streams outlive
@@ -332,6 +360,9 @@ type RateHintData struct {
 	Degraded int `json:"degraded"`
 	Viewers  int `json:"viewers"`
 }
+
+// --- reactions -----------------------------------------------------------------
+// (definitions appear earlier in this file)
 
 // StingerData is the payload of CtrlStinger: which transition happened and
 // the same-origin URLs (under /stingers/) of the image and sound every
@@ -437,4 +468,34 @@ func MarshalControl(t ControlType, data any) ([]byte, error) {
 		return nil, err
 	}
 	return json.Marshal(Control{Type: t, Data: raw})
+}
+
+// --- reactions -----------------------------------------------------------------
+
+// ReactionEmojis is the curated fixed set of allowed reaction identifiers.
+var ReactionEmojis = []string{"fire", "laugh", "heart", "skull", "clap", "shock"}
+
+// ValidReactionEmoji reports whether s is one of ReactionEmojis.
+func ValidReactionEmoji(s string) bool {
+	for _, e := range ReactionEmojis {
+		if s == e {
+			return true
+		}
+	}
+	return false
+}
+
+// ReactionData is the payload of CtrlReaction (client -> relay).
+type ReactionData struct {
+	Emoji string `json:"emoji"`
+}
+
+// ReactionBurstData is the payload of CtrlReactionBurst (relay -> clients).
+// Counts carries per-emoji totals within the server's sliding window.
+// Density is the total reactions observed in-window; WindowMs states the
+// server's window size so a client can scale its UI consistently.
+type ReactionBurstData struct {
+	Counts   map[string]int `json:"counts"`
+	Density  int            `json:"density"`
+	WindowMs int            `json:"windowMs"`
 }

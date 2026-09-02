@@ -37,6 +37,12 @@ export type ControlType =
   | "stage_cancel"
   | "cinema_state"
   | "cinema_stroke_add"
+  | "reaction"
+  | "reaction_burst"
+  | "placar_create"
+  | "placar_vote"
+  | "placar_close"
+  | "placar_state"
   | "error";
 
 export type OutboundControlType =
@@ -124,6 +130,19 @@ export interface StageCancelData {
   reason: StageCancelReason;
 }
 
+// --- reactions ---------------------------------------------------------------
+export const ReactionEmojis = [
+  "fire",
+  "laugh",
+  "heart",
+  "skull",
+  "clap",
+  "shock",
+] as const;
+export type ReactionEmoji = (typeof ReactionEmojis)[number];
+export interface ReactionData { emoji: ReactionEmoji }
+export interface ReactionBurstData { counts: Record<string, number>; density: number; windowMs: number }
+
 /** Server-chosen stinger: the same image + sound pair (same-origin URLs under
  *  /stingers/) for every participant. "start"/"stop" are the automatic stream
  *  transitions; "manual" is somebody pressing a button in the panel. */
@@ -144,7 +163,13 @@ export interface StingerAsset {
   enabled: boolean;
   playOnStart: boolean;
   playOnStop: boolean;
+  stormTrigger?: boolean;
 }
+
+// --- placar ---------------------------------------------------------------
+export interface PlacarCreateData { prompt: string }
+export interface PlacarVoteData { targetUserId: string; delta: number }
+export interface PlacarStateData { active: boolean; prompt: string; scores: Record<string, number> }
 
 /** GET /api/stingers. */
 export interface StingerListData {
