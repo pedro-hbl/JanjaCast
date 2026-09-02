@@ -158,6 +158,11 @@ const (
 	CtrlStageTurn ControlType = "stage_turn"
 	// CtrlStageCancel ends a pending turn, saying why.
   CtrlStageCancel ControlType = "stage_cancel"
+  // placar (scoreboard)
+  CtrlPlacarCreate ControlType = "placar_create"
+  CtrlPlacarVote   ControlType = "placar_vote"
+  CtrlPlacarClose  ControlType = "placar_close"
+  CtrlPlacarState  ControlType = "placar_state"
 )
 
 // --- reactions -------------------------------------------------------------
@@ -259,17 +264,26 @@ type Participant struct {
 // (docs/i18n.md § "What is deliberately not localized"); Code, when set, is a
 // stable identifier the client maps onto its own translated string.
 type ErrorData struct {
-	Message string `json:"message,omitempty"`
-	Code    string `json:"code,omitempty"`
+  Message string `json:"message,omitempty"`
+  Code    string `json:"code,omitempty"`
 }
 
 // Error codes carried by ErrorData.Code. Each has a matching `err.<code>`
 // key in web/src/i18n.ts, in both dictionaries.
 const (
-	ErrNoNextUser  = "stage.noNext"   // nobody in line and nobody to spin for
-	ErrAlreadyExt  = "stage.extended" // the one +5 minutes is already spent
-	ErrPassTooSoon = "stage.cooldown" // passing again inside the cooldown
+  ErrNoNextUser  = "stage.noNext"   // nobody in line and nobody to spin for
+  ErrAlreadyExt  = "stage.extended" // the one +5 minutes is already spent
+  ErrPassTooSoon = "stage.cooldown" // passing again inside the cooldown
 )
+
+// Placar wire shapes.
+type PlacarCreateData struct { Prompt string `json:"prompt"` }
+type PlacarVoteData struct { TargetUserID string `json:"targetUserId"`; Delta int `json:"delta"` }
+type PlacarStateData struct {
+    Active bool `json:"active"`
+    Prompt string `json:"prompt"`
+    Scores map[string]int `json:"scores"`
+}
 
 // TokenRefreshData is the payload of CtrlTokenRefresh: a fresh share token
 // the companion tab must use on its next reconnect, so long streams outlive
@@ -294,10 +308,7 @@ type RateHintData struct {
 }
 
 // --- reactions -----------------------------------------------------------------
-var ReactionEmojis = []string{"fire", "laugh", "heart", "skull", "clap", "shock"}
-func ValidReactionEmoji(s string) bool { for _, e := range ReactionEmojis { if s == e { return true } }; return false }
-type ReactionData struct{ Emoji string `json:"emoji"` }
-type ReactionBurstData struct{ Counts map[string]int `json:"counts"`; Density int `json:"density"`; WindowMs int `json:"windowMs"` }
+// (definitions appear earlier in this file)
 
 // StingerData is the payload of CtrlStinger: which transition happened and
 // the same-origin URLs (under /stingers/) of the image and sound every

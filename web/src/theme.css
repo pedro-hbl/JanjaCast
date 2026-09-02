@@ -356,6 +356,18 @@
 .hype-gauge::after { content: ""; position: absolute; inset: 0; width: calc(min(var(--val), 20) * 5%); background: var(--crayon-blue); opacity: .9; }
 .hype-label { font-size: var(--step-0); }
 
+/* ---------------- placar ---------------- */
+.placar-panel { margin-top: 10px; background: var(--surface); border: 3px solid var(--outline); border-radius: var(--wobble-sm); box-shadow: var(--shadow-ink); padding: 8px; }
+.placar-title { font-family: var(--font-hand); font-size: var(--step-1); margin: 0 0 6px 0; }
+.placar-list { display: flex; flex-direction: column; gap: 4px; }
+.placar-row { display: grid; grid-template-columns: 22px 1fr auto auto auto; align-items: center; gap: 6px; padding: 4px 6px; border-bottom: 2px dashed var(--outline); }
+.placar-row:last-child { border-bottom: none; }
+.placar-row--self { background: var(--hover-wash); }
+.placar-rank { font-family: var(--font-num); color: var(--muted); }
+.placar-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.placar-score { font-family: var(--font-num); color: var(--crayon-blue); }
+.placar-btn { width: 28px; height: 28px; border: 3px solid var(--outline); border-radius: var(--wobble-sm); background: var(--surface-2); box-shadow: var(--shadow-ink); font-family: var(--font-hand); }
+
 /* the video area is the hero: black letterbox with a wobbly crayon
    frame, everything else stays out of its way */
 .stage {

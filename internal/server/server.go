@@ -650,5 +650,23 @@ func (s *Server) handleControl(room *relay.Room, client *relay.Client, data []by
 		if err := json.Unmarshal(ctrl.Data, &mode); err == nil {
 			room.SetStageMode(client, mode.Mode)
 		}
+	case protocol.CtrlPlacarCreate:
+		var d protocol.PlacarCreateData
+		if err := json.Unmarshal(ctrl.Data, &d); err == nil {
+			if err2 := room.CreatePlacar(client, d.Prompt); err2 != nil {
+				client.SendControl(protocol.CtrlError, protocol.ErrorData{Code: err2.Error()})
+			}
+		}
+	case protocol.CtrlPlacarVote:
+		var d protocol.PlacarVoteData
+		if err := json.Unmarshal(ctrl.Data, &d); err == nil {
+			if err2 := room.PlacarVote(client, d.TargetUserID, d.Delta); err2 != nil {
+				client.SendControl(protocol.CtrlError, protocol.ErrorData{Code: err2.Error()})
+			}
+		}
+	case protocol.CtrlPlacarClose:
+		if err := room.ClosePlacar(client); err != nil {
+			client.SendControl(protocol.CtrlError, protocol.ErrorData{Code: err.Error()})
+		}
 	}
 }

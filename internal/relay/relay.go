@@ -9,12 +9,13 @@
 package relay
 
 import (
-	"iter"
-	"log/slog"
-	"math/rand/v2"
-	"slices"
-	"strings"
-	"sync"
+    "iter"
+    "fmt"
+    "log/slog"
+    "math/rand/v2"
+    "slices"
+    "strings"
+    "sync"
 	"sync/atomic"
 	"time"
 
@@ -123,6 +124,8 @@ func (h *Hub) Join(roomID, userID, username string) (*Room, *Client, iter.Seq[Ou
             stingerStopWait: h.StingerStopDelay,
             turnWait:        ttl,
             lastReactionBy:  make(map[*Client]time.Time),
+            placarScores:    make(map[string]int),
+            placarLastVote:  make(map[*Client]time.Time),
         }
 		h.rooms[roomID] = r
 	}
@@ -193,12 +196,15 @@ func (h *Hub) Join(roomID, userID, username string) (*Room, *Client, iter.Seq[Ou
 			replayed = false
 		}
 	}
-	if len(r.gop) > 0 && replayed {
-		c.needKeyframe = false
-	} else if r.publisher != nil {
-		// No usable cache: get this joiner a picture as fast as possible.
-		r.requestKeyframeLocked()
-	}
+  if len(r.gop) > 0 && replayed {
+      c.needKeyframe = false
+  } else if r.publisher != nil {
+      // No usable cache: get this joiner a picture as fast as possible.
+      r.requestKeyframeLocked()
+  }
+
+    // Welcome placar state right after welcome + queue.
+    c.enqueueControl(protocol.CtrlPlacarState, r.placarStateLocked())
 
 	r.clients[c] = struct{}{}
 	r.broadcastRoomStateLocked()
@@ -362,6 +368,12 @@ type Room struct {
 
   // storm cooldown
   nextStorm time.Time
+
+  // --- placar (scoreboard), guarded by mu --------------------------
+  placarActive  bool
+  placarPrompt  string
+  placarScores  map[string]int
+  placarLastVote map[*Client]time.Time
 }
 
 // stageTurn is the person currently being called to the stage.
@@ -1088,6 +1100,61 @@ func (r *Room) ForwardControl(from *Client, t protocol.ControlType, data any) {
   default:
     // Unknown forwarded control: ignore.
   }
+}
+
+// --- placar (scoreboard) API -----------------------------------------------
+
+// placarStateLocked snapshots the current tally.
+func (r *Room) placarStateLocked() protocol.PlacarStateData {
+    // copy map so callers cannot mutate internal state
+    scores := make(map[string]int, len(r.placarScores))
+    for k, v := range r.placarScores { scores[k] = v }
+    return protocol.PlacarStateData{Active: r.placarActive, Prompt: r.placarPrompt, Scores: scores}
+}
+
+func (r *Room) broadcastPlacarStateLocked() {
+    d := r.placarStateLocked()
+    for c := range r.clients { c.enqueueControl(protocol.CtrlPlacarState, d) }
+}
+
+func (r *Room) CreatePlacar(c *Client, prompt string) error {
+    r.mu.Lock(); defer r.mu.Unlock()
+    if _, ok := r.clients[c]; !ok { return nil }
+    if r.publisher == nil || baseID(r.publisher.UserID) != baseID(c.UserID) { return fmt.Errorf("placar.notPublisher") }
+    if r.placarActive { return fmt.Errorf("placar.alreadyActive") }
+    if n := len(strings.TrimSpace(prompt)); n < 1 || n > 60 { return fmt.Errorf("placar.badPrompt") }
+    r.placarActive = true
+    r.placarPrompt = prompt
+    r.placarScores = make(map[string]int, len(r.clients))
+    for cl := range r.clients { r.placarScores[baseID(cl.UserID)] = 0 }
+    r.broadcastPlacarStateLocked()
+    return nil
+}
+
+func (r *Room) PlacarVote(c *Client, target string, delta int) error {
+    r.mu.Lock(); defer r.mu.Unlock()
+    if _, ok := r.clients[c]; !ok { return nil }
+    if !r.placarActive { return fmt.Errorf("placar.inactive") }
+    if delta != 1 && delta != -1 { return fmt.Errorf("placar.badDelta") }
+    base := baseID(target)
+    if _, ok := r.placarScores[base]; !ok { return fmt.Errorf("placar.noMember") }
+    now := time.Now()
+    if last, ok := r.placarLastVote[c]; ok && now.Sub(last) < time.Second { return fmt.Errorf("placar.tooFast") }
+    r.placarLastVote[c] = now
+    r.placarScores[base] += delta
+    r.broadcastPlacarStateLocked()
+    return nil
+}
+
+func (r *Room) ClosePlacar(c *Client) error {
+    r.mu.Lock(); defer r.mu.Unlock()
+    if _, ok := r.clients[c]; !ok { return nil }
+    if r.publisher == nil || baseID(r.publisher.UserID) != baseID(c.UserID) { return fmt.Errorf("placar.notPublisher") }
+    r.placarActive = false
+    r.placarPrompt = ""
+    r.placarScores = make(map[string]int)
+    r.broadcastPlacarStateLocked()
+    return nil
 }
 
 // maybeStormLocked broadcasts a random manual stinger when the storm cooldown

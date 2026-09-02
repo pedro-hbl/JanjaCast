@@ -27,7 +27,7 @@ import {
 } from "./i18n";
 import { LangToggle } from "./LangToggle";
 import { Session, type SessionStatus } from "./session";
-import type { StageMode, StageTurnData, StingerData } from "./protocol";
+import type { StageMode, StageTurnData, StingerData, PlacarStateData } from "./protocol";
 import { playTurnCue } from "./cue";
 import { startCapture, type CaptureHandle } from "./capture";
 import { Player } from "./player";
@@ -177,6 +177,12 @@ const App: Component = () => {
     kbps: number;
     latencyMs?: number | null;
   }>({ fps: 0, kbps: 0 });
+
+  // --- placar (scoreboard) --------------------------------------------------
+  const [placarActive, setPlacarActive] = createSignal(false);
+  const [placarPrompt, setPlacarPrompt] = createSignal("");
+  const [placarScores, setPlacarScores] = createSignal<Record<string, number>>({});
+  const [placarCooldown, setPlacarCooldown] = createSignal<Record<string, number>>({});
 
   let canvasRef!: HTMLCanvasElement;
   let stageRef!: HTMLDivElement;
@@ -452,6 +458,13 @@ const App: Component = () => {
           stopSharing();
           setError({ key: "err.tookStage", params: { name: byName } });
         }
+      };
+      // Placar state from the relay.
+      s.onPlacarState = (d) => {
+        const pd = d as PlacarStateData;
+        setPlacarActive(Boolean(pd.active));
+        setPlacarPrompt(pd.prompt ?? "");
+        setPlacarScores(pd.scores ?? {});
       };
       // Same Discord user opened the Activity somewhere newer (another
       // device, a reloaded iframe): this view is terminally disconnected.
@@ -751,6 +764,25 @@ const App: Component = () => {
     return [...rows.values()];
   };
 
+  // Placar sorted rows: score desc, ties share rank and sort alphabetically.
+  const placarRows = () => {
+    const rows = roster().map((r) => ({ id: r.id, name: r.name, score: placarScores()[r.id] ?? 0, isSelf: r.isSelf }));
+    rows.sort((a, b) => (b.score - a.score) || a.name.localeCompare(b.name));
+    let rank = 0, lastScore: number | null = null;
+    return rows.map((r, i) => {
+      if (lastScore === null || r.score !== lastScore) { rank = i + 1; lastScore = r.score; }
+      return { ...r, rank };
+    });
+  };
+
+  const vote = (id: string, delta: 1 | -1) => {
+    const cool = placarCooldown();
+    const now = Date.now();
+    if ((cool[id] ?? 0) > now) return; // debounce 1s
+    setPlacarCooldown({ ...cool, [id]: now + 1000 });
+    (session() as any)?.sendControl?.("placar_vote", { targetUserId: id, delta } as any);
+  };
+
   return (
     <div class={appClass()} onMouseMove={onPointerMove}>
       <header class="app-header">
@@ -952,6 +984,26 @@ const App: Component = () => {
               )}
             </For>
           </div>
+
+          {/* Placar panel — margin UI under roster; never over the stage. */}
+          <Show when={placarActive()}>
+            <div class="placar-panel">
+              <h5 class="placar-title">{placarPrompt()}</h5>
+              <div class="placar-list">
+                <For each={placarRows()}>{(r) => (
+                  <div class={r.isSelf ? "placar-row placar-row--self" : "placar-row"}>
+                    <span class="placar-rank">{r.rank}</span>
+                    <span class="placar-name" title={r.name}>{r.name}</span>
+                    <span class="placar-score">{r.score}</span>
+                    <button class="placar-btn" aria-label={t("placar.plus", { name: r.name })} onClick={() => vote(r.id, 1)}>+
+                    </button>
+                    <button class="placar-btn" aria-label={t("placar.minus", { name: r.name })} onClick={() => vote(r.id, -1)}>−
+                    </button>
+                  </div>
+                )}</For>
+              </div>
+            </div>
+          </Show>
 
           {/* The line, as chips. Chrome beside the roster, never over the
               picture (design.md § 2). One emoji per person keeps five in a

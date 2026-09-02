@@ -89,6 +89,8 @@ export class Session {
   onServerError: ((code: string) => void) | null = null;
   /** Reaction burst: aggregated counts and density. */
   onReactionBurst: ((d: { counts: Record<string, number>; density: number; windowMs: number }) => void) | null = null;
+  /** Placar state broadcast. */
+  onPlacarState: ((d: { active: boolean; prompt: string; scores: Record<string, number> }) => void) | null = null;
 
   constructor(
     private identity: Identity,
@@ -387,6 +389,9 @@ export class Session {
         break;
       case "reaction_burst":
         this.onReactionBurst?.(ctrl.data as any);
+        break;
+      case "placar_state":
+        this.onPlacarState?.(ctrl.data as any);
         break;
       case "stage_queue":
         // Whole-state replacement, never a merge: the server's copy is the

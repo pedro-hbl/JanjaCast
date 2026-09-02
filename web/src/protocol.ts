@@ -37,6 +37,10 @@ export type ControlType =
   | "stage_cancel"
   | "reaction"
   | "reaction_burst"
+  | "placar_create"
+  | "placar_vote"
+  | "placar_close"
+  | "placar_state"
   | "error";
 
 /** The privacy panic button. `blank` is publisher→relay, `blank_state` is
@@ -141,6 +145,11 @@ export interface StingerAsset {
   playOnStop: boolean;
   stormTrigger?: boolean;
 }
+
+// --- placar ---------------------------------------------------------------
+export interface PlacarCreateData { prompt: string }
+export interface PlacarVoteData { targetUserId: string; delta: number }
+export interface PlacarStateData { active: boolean; prompt: string; scores: Record<string, number> }
 
 /** GET /api/stingers. */
 export interface StingerListData {
