@@ -116,6 +116,19 @@ const en = {
   "footer.stingers": "🎺 Stingers",
   "footer.stingersTitle": "Add, curate and fire the room's stingers",
 
+  // --- cinema pause + shared doodles ---------------------------------
+  "cinema.pause": "Pause for everyone",
+  "cinema.resume": "Resume",
+  "cinema.interval": "INTERMISSION 🍿",
+  "cinema.canvasTitle": "Group scribbles",
+  "cinema.undo": "Undo",
+  "cinema.colorRed": "red",
+  "cinema.colorBlue": "blue",
+  "cinema.colorYellow": "yellow",
+  "cinema.colorGrass": "green",
+  "cinema.colorPink": "pink",
+  "cinema.colorPurple": "purple",
+
   // --- the stage queue ("pedir a vez") -----------------------------
   // The line is the feature; rodízio is the clock layered on top of it.
   // Informal where the app narrates ("it's yours!"), full verbs on every
@@ -162,6 +175,9 @@ const en = {
   "err.stage.noNext": "⛔ Nobody to hand it to — get someone in line first.",
   "err.stage.extended": "⛔ You already took your +5.",
   "err.stage.cooldown": "⛔ Hold on a second before passing again.",
+  "err.cinema.notPublisher": "⛔ Only the person sharing can pause.",
+  "err.cinema.rateLimited": "⛔ Easy! You're drawing too fast.",
+  "err.cinema.badStroke": "⛔ That stroke didn't go through — try a shorter one.",
 
   // --- takeover modal ----------------------------------------------
   "modal.kick": "✋ Kick {name} off the stage?",
@@ -321,6 +337,19 @@ const ptBR: Record<MessageKey, Message> = {
   "footer.stingers": "🎺 Stingers",
   "footer.stingersTitle": "Adicione, escolha e dispare os stingers da sala",
 
+  // --- cinema pause + shared doodles ---------------------------------
+  "cinema.pause": "Pausar pra galera",
+  "cinema.resume": "Voltar",
+  "cinema.interval": "INTERVALO 🍿",
+  "cinema.canvasTitle": "Rabiscos da galera",
+  "cinema.undo": "Desfazer",
+  "cinema.colorRed": "vermelho",
+  "cinema.colorBlue": "azul",
+  "cinema.colorYellow": "amarelo",
+  "cinema.colorGrass": "verde",
+  "cinema.colorPink": "rosa",
+  "cinema.colorPurple": "roxo",
+
   // A fila é a coisa; o rodízio é o relógio em cima dela. "Pedir a vez" e
   // "é tua!" são as frases que as pessoas usam de verdade — docs/i18n.md § 3.
   "queue.title": "Fila da vez",
@@ -364,6 +393,9 @@ const ptBR: Record<MessageKey, Message> = {
   "err.stage.noNext": "⛔ Não tem pra quem passar — chame alguém pra fila primeiro.",
   "err.stage.extended": "⛔ Você já pegou seus +5.",
   "err.stage.cooldown": "⛔ Espera um pouquinho antes de passar de novo.",
+  "err.cinema.notPublisher": "⛔ Só quem tá transmitindo pode pausar.",
+  "err.cinema.rateLimited": "⛔ Calma! Você tá desenhando rápido demais.",
+  "err.cinema.badStroke": "⛔ Esse traço não foi — tenta um mais curto.",
 
   "modal.kick": "✋ Tirar {name} do palco?",
   "modal.yes": "Bora, minha vez",

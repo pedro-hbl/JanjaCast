@@ -50,6 +50,9 @@ export class Session {
   readonly participants;
   /** Who is in line, what mode the room is in, and the rodízio clock. */
   readonly queue;
+  /** Cinema: paused flag and shared strokes. */
+  readonly cinemaPaused;
+  readonly cinemaStrokes;
 
   private ws: WebSocket | null = null;
   private assignedId: string | null = null;
@@ -63,6 +66,8 @@ export class Session {
   private setStage;
   private setParticipants;
   private setQueue;
+  private setCinemaPaused;
+  private setCinemaStrokes;
 
   /** Called for every incoming binary media message. */
   onMedia: ((buf: ArrayBuffer) => void) | null = null;
@@ -106,6 +111,12 @@ export class Session {
     const [queue, setQueue] = createSignal<StageQueueData>(EMPTY_QUEUE);
     this.queue = queue;
     this.setQueue = setQueue;
+    const [cinemaPaused, setCinemaPaused] = createSignal(false);
+    const [cinemaStrokes, setCinemaStrokes] = createSignal<import('./protocol').StrokeData[]>([]);
+    this.cinemaPaused = cinemaPaused;
+    this.cinemaStrokes = cinemaStrokes;
+    this.setCinemaPaused = setCinemaPaused;
+    this.setCinemaStrokes = setCinemaStrokes;
   }
 
   connect(): void {
@@ -342,6 +353,17 @@ export class Session {
       case "stage_state":
         this.setStage((ctrl.data ?? {}) as StageStateData);
         break;
+      case "cinema_state": {
+        const d = (ctrl.data ?? { paused: false, strokes: [] }) as import('./protocol').CinemaStateData;
+        this.setCinemaPaused(!!d.paused);
+        this.setCinemaStrokes(d.strokes ?? []);
+        break;
+      }
+      case "cinema_stroke_add": {
+        const s = ctrl.data as import('./protocol').StrokeData;
+        this.setCinemaStrokes((xs) => (xs.find(x => x.strokeId === s.strokeId) ? xs : [...xs, s]));
+        break;
+      }
       case "blank_state": {
         // The live edge. `stage_state` also carries `blanked`, so this
         // merges rather than replaces — a blank must never wipe the
