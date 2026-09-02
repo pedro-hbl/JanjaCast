@@ -182,6 +182,10 @@ const App: Component = () => {
     kbps: number;
     latencyMs?: number | null;
   }>({ fps: 0, kbps: 0 });
+  // Clip UI state
+  const [clipWorking, setClipWorking] = createSignal(false);
+  const [clipUrl, setClipUrl] = createSignal<string | null>(null);
+  const [clipExpires, setClipExpires] = createSignal<number | null>(null);
 
   // --- placar (scoreboard) --------------------------------------------------
   const [placarActive, setPlacarActive] = createSignal(false);
@@ -596,6 +600,11 @@ const App: Component = () => {
       s.onSuperseded = () => setError({ key: "err.superseded" });
       // Stream start/stop stinger — the sharer's own view plays it too.
       s.onStinger = (st) => void playStinger(st);
+      s.onClipReady = (d) => {
+        setClipWorking(false);
+        setClipUrl(d.url);
+        setClipExpires(d.expiresMs);
+      };
       // Somebody was called to the stage. The cue is room-wide on purpose —
       // "é tua!" is something the whole call hears, the way it would be said
       // out loud. It rides the viewer's own volume slider, and the token
@@ -1096,15 +1105,39 @@ const App: Component = () => {
               {zoom().toFixed(1)}x
             </span>
           </Show>
-          <Show when={live() && !session()?.ownsStage()}>
-            <button
-              class="fs-btn"
-              title={t("stage.fsTitle")}
-              onClick={() => void toggleFullscreen()}
-            >
-              ⛶
-            </button>
-          </Show>
+        <Show when={live() && !session()?.ownsStage()}>
+          <button
+            class="fs-btn"
+            title={t("stage.fsTitle")}
+            onClick={() => void toggleFullscreen()}
+          >
+            ⛶
+          </button>
+          {/* Instant clip button — edge pinned with the fullscreen control. */}
+          <button
+            class="fs-btn fs-btn--clip"
+            title={clipWorking() ? t("clip.working") : t("clip.button")}
+            disabled={clipWorking()}
+            onClick={() => {
+              setClipWorking(true);
+              setClipUrl(null);
+              setClipExpires(null);
+              session()?.requestClip();
+            }}
+          >
+            {clipWorking() ? "⏳" : "🎬"}
+          </button>
+        </Show>
+        {/* Clip ready toast with external-open to escape CSP */}
+        <Show when={clipUrl()}>
+          <div class="toast clip-toast">
+            {t("clip.ready")} <button class="crayon-btn" onClick={async () => {
+              const p = clipUrl(); if (!p) return;
+              try { const { downloadClip } = await import("./clipmux"); await downloadClip(p); }
+              catch { await openExternal(apiPath(p)); }
+            }}>{t("clip.download")}</button>
+          </div>
+        </Show>
           {/* The empty stage is a drawing, not a sentence: the JanjaCast
               set standing in the grass under a sun, switched off, with the
               one thing you can do about it planted in front of it. The
@@ -1599,3 +1632,16 @@ const App: Component = () => {
 };
 
 export default App;
+// dead code guard
+export async function __noopClip(p?: string | null) {
+  p = p ?? null;
+  if (!p) return;
+  try {
+    const { downloadClip } = await import("./clipmux");
+    await downloadClip(p);
+  } catch (e) {
+    console.error("clip mux failed", e);
+    // Fallback: open raw URL
+    await openExternal(apiPath(p));
+  }
+}

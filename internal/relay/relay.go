@@ -9,6 +9,7 @@
 package relay
 
 import (
+	"encoding/json"
 	"fmt"
 	"iter"
 	"log/slog"
@@ -127,6 +128,8 @@ func (h *Hub) Join(roomID, userID, username string) (*Room, *Client, iter.Seq[Ou
 			lastReactionBy:  make(map[*Client]time.Time),
 			placarScores:    make(map[string]int),
 			placarLastVote:  make(map[*Client]time.Time),
+			clips:           make(map[string]clipItem),
+			lastClipAsk:     make(map[*Client]time.Time),
 		}
 		h.rooms[roomID] = r
 	}
@@ -418,6 +421,17 @@ type Room struct {
 
 	// --- session stats for end-of-session awards (guarded by mu) ---------
 	sessionStats map[string]*ParticipantStats
+
+	// --- instant clips: rolling buffer (video+audio), keyframe-bounded ------
+	// clipBuf stores recent media chunks for instant clips. It is trimmed on
+	// keyframe boundaries and bounded by both wall-time (~30s) and bytes.
+	clipBuf     [][]byte
+	clipBytes   int
+	clipStartTs int64 // microseconds of first chunk in clipBuf; 0 when empty
+	// clip store: token -> bytes with expiry and content type. Guarded by mu.
+	clips map[string]clipItem
+	// per-client cooldown for clip requests.
+	lastClipAsk map[*Client]time.Time
 }
 
 // rAwardsCallback is installed by the server layer to receive assembled
@@ -434,6 +448,45 @@ type ParticipantStats struct {
 	TotalWatch   time.Duration
 	StingerPlays int
 	Disconnects  int
+}
+
+// Mu exposes the hub mutex for read-only traversal by the server layer.
+// Only the server uses it to locate a room; all room state access must still
+// go through Room.mu. Keeping the lock-order invariant: Hub.mu before Room.mu.
+func (h *Hub) Mu() *sync.Mutex { return &h.mu }
+
+// RoomsUnsafe returns a snapshot of rooms map pointer for read-only scan
+// under Hub.mu. Do not hold the pointer beyond Hub.mu.
+func (h *Hub) RoomsUnsafe() map[string]*Room { return h.rooms }
+
+type clipItem struct {
+	data      []byte
+	mime      string
+	expiresAt time.Time
+}
+
+// ClipsTestInit ensures clip maps exist (test helper).
+func (r *Room) ClipsTestInit() *Room {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.clips == nil {
+		r.clips = make(map[string]clipItem)
+	}
+	if r.lastClipAsk == nil {
+		r.lastClipAsk = make(map[*Client]time.Time)
+	}
+	return r
+}
+
+// rTestMint is a test-only wrapper to call mintClipTokenLocked.
+// roomTokenForTest exports token minting to tests in other packages.
+// roomTokenTestShim is referenced by server tests; exported for cross-package tests only.
+// RoomTokenTestShim exposes token minting for server tests.
+func RoomTokenTestShim(r *Room, data []byte, mime string, ttl time.Duration) string {
+	// Caller already under tests; take lock for safety
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.mintClipTokenLocked(data, mime, ttl)
 }
 
 // stageTurn is the person currently being called to the stage.
@@ -1318,6 +1371,61 @@ func (r *Room) ForwardMedia(from *Client, msg []byte) {
 		}
 	}
 
+	// --- rolling clip buffer (video + audio, keyframe-bounded) ---------
+	// Append and trim by time/bytes, dropping whole GOPs only (scan to next
+	// video keyframe when trimming the head). Guarded by r.mu.
+	{
+		const clipWindow = 30 * time.Second
+		const clipMaxBytes = 32 << 20 // 32MB ceiling
+		// Append current chunk.
+		r.clipBuf = append(r.clipBuf, msg)
+		r.clipBytes += len(msg)
+		if r.clipStartTs == 0 {
+			r.clipStartTs = int64(hdr.Timestamp)
+		}
+		// Check caps and trim from head to next keyframe that fits.
+		lastTs := int64(hdr.Timestamp)
+		span := time.Duration(lastTs-r.clipStartTs) * time.Microsecond
+		if span > clipWindow || r.clipBytes > clipMaxBytes {
+			drop := 0
+			acc := 0
+			for i := 0; i < len(r.clipBuf); i++ {
+				h, err := protocol.ParseMediaHeader(r.clipBuf[i])
+				if err != nil {
+					continue
+				}
+				if h.Kind == protocol.KindVideo && h.Keyframe() {
+					// bytes from i..end
+					bytes := 0
+					for j := i; j < len(r.clipBuf); j++ {
+						bytes += len(r.clipBuf[j])
+					}
+					span2 := time.Duration(int64(hdr.Timestamp)-int64(h.Timestamp)) * time.Microsecond
+					if bytes <= clipMaxBytes && span2 <= clipWindow {
+						drop = i
+						break
+					}
+				}
+			}
+			for k := 0; k < drop; k++ {
+				acc += len(r.clipBuf[k])
+			}
+			if drop > 0 {
+				r.clipBuf = slices.Delete(r.clipBuf, 0, drop)
+				r.clipBytes -= acc
+				if len(r.clipBuf) > 0 {
+					if nh, err := protocol.ParseMediaHeader(r.clipBuf[0]); err == nil {
+						r.clipStartTs = int64(nh.Timestamp)
+					} else {
+						r.clipStartTs = 0
+					}
+				} else {
+					r.clipStartTs = 0
+				}
+			}
+		}
+	}
+
 	now := time.Now()
 	for c := range r.clients {
 		if c == from {
@@ -1510,6 +1618,104 @@ func (r *Room) AddCinemaStroke(c *Client, d *protocol.CinemaStrokeData) (bool, s
 		cl.enqueueControl(protocol.CtrlCinemaStrokeAdd, s)
 	}
 	return true, ""
+}
+
+// buildRawClipLocked snapshots the rolling buffer into the wire framing served
+// by /clip/{token}. Caller must hold r.mu.
+func (r *Room) buildRawClipLocked() []byte {
+	// Magic + JSON header length + JSON bytes, then per-chunk records.
+	// Magic
+	out := []byte{'J', 'C', 'L', 'P'}
+	// Header
+	hdr := map[string]any{}
+	if r.config != nil {
+		hdr["videoCodec"] = r.config.VideoCodec
+		hdr["width"] = r.config.Width
+		hdr["height"] = r.config.Height
+		hdr["framerate"] = r.config.Framerate
+		if r.config.AudioCodec != "" {
+			hdr["audioCodec"] = r.config.AudioCodec
+			hdr["sampleRate"] = r.config.SampleRate
+			hdr["channels"] = r.config.Channels
+		}
+	}
+	j, _ := json.Marshal(hdr)
+	// uint32 length big-endian
+	out = append(out, byte(len(j)>>24), byte(len(j)>>16), byte(len(j)>>8), byte(len(j)))
+	out = append(out, j...)
+	// Chunks
+	for _, b := range r.clipBuf {
+		if len(b) < protocol.HeaderSize {
+			continue
+		}
+		h, err := protocol.ParseMediaHeader(b)
+		if err != nil {
+			continue
+		}
+		// kind uint8, flags(uint8 keyframe), uint32 payload len, uint64 ts, payload
+		out = append(out, byte(h.Kind))
+		flags := uint8(0)
+		if h.Keyframe() {
+			flags = 1
+		}
+		out = append(out, flags)
+		payloadLen := len(b) - protocol.HeaderSize
+		out = append(out, byte(payloadLen>>24), byte(payloadLen>>16), byte(payloadLen>>8), byte(payloadLen))
+		ts := h.Timestamp
+		out = append(out,
+			byte(ts>>56), byte(ts>>48), byte(ts>>40), byte(ts>>32),
+			byte(ts>>24), byte(ts>>16), byte(ts>>8), byte(ts))
+		out = append(out, b[protocol.HeaderSize:]...)
+	}
+	return out
+}
+
+// mintClipTokenLocked stores the clip bytes and returns a pseudo-random token.
+// Caller must hold r.mu.
+func (r *Room) mintClipTokenLocked(data []byte, mime string, ttl time.Duration) string {
+	if r.clips == nil {
+		r.clips = make(map[string]clipItem)
+	}
+	// Random hex token
+	t := strconv.FormatInt(time.Now().UnixNano(), 36) + strconv.FormatInt(rand.Int64(), 36)
+	r.clips[t] = clipItem{data: data, mime: mime, expiresAt: time.Now().Add(ttl)}
+	return t
+}
+
+// GetClip returns clip bytes and mime if token is valid and not expired.
+func (r *Room) GetClip(token string) ([]byte, string, bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	it, ok := r.clips[token]
+	if !ok || time.Now().After(it.expiresAt) {
+		return nil, "", false
+	}
+	return it.data, it.mime, true
+}
+
+// RequestClip handles a client's clip request: enforces per-client cooldown,
+// snapshots the buffer, remuxes, stores a short-lived token, and unicasts a
+// CtrlClipReady back to the requester.
+func (r *Room) RequestClip(c *Client) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.clients[c]; !ok {
+		return
+	}
+	// 5s per-client cooldown
+	now := time.Now()
+	if last, ok := r.lastClipAsk[c]; ok && now.Sub(last) < 5*time.Second {
+		return
+	}
+	r.lastClipAsk[c] = now
+	if len(r.clipBuf) == 0 {
+		return
+	}
+	data := r.buildRawClipLocked()
+	token := r.mintClipTokenLocked(data, "application/octet-stream", 2*time.Minute)
+	// Relay-origin URL path; actual host determined by client.
+	url := "/clip/" + token
+	c.enqueueControl(protocol.CtrlClipReady, protocol.ClipReadyData{URL: url, ExpiresMs: time.Now().Add(2 * time.Minute).UnixMilli()})
 }
 
 func (r *Room) broadcastCinemaStateLocked() {

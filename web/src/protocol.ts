@@ -13,6 +13,7 @@ export type ControlType =
   | "leave_stage"
   | "config"
   | "ping"
+  | "clip_request"
   | "pong"
   | "sync"
   | "keyframe_request"
@@ -24,6 +25,7 @@ export type ControlType =
   | "token_refresh"
   | "superseded"
   | "stinger"
+  | "clip_ready"
   | "stinger_play"
   | "blank"
   | "blank_state"
@@ -53,6 +55,7 @@ export type OutboundControlType =
   | "leave_stage"
   | "config"
   | "ping"
+  | "clip_request"
   | "keyframe_request"
   | "stinger_play"
   | "blank"
@@ -64,6 +67,11 @@ export type OutboundControlType =
   | "cinema_pause"
   | "cinema_resume"
   | "cinema_stroke";
+
+export interface ClipReadyData {
+  url: string;
+  expiresMs: number;
+}
 
 /** The privacy panic button. `blank` is publisher→relay, `blank_state` is
  *  relay→everyone; one shape both ways. `on` is never omitted — an

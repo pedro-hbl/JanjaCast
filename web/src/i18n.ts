@@ -290,6 +290,14 @@ const en = {
   "lobby.cta": "Turn on the TV",
   "lobby.here": { one: "{count} person here", other: "{count} people here" } as Message,
   "lobby.alone": "Just you for now",
+  
+  // --- instant clips -------------------------------------------------
+  "clip.button": "Clip that!",
+  "clip.working": "Cutting the last 30s...",
+  "clip.ready": "Clip's ready — grab it",
+  "clip.download": "Download",
+  "clip.cooldown": "Hang on a sec",
+  "clip.expired": "That clip expired",
 } satisfies Record<string, Message>;
 
 export type MessageKey = keyof typeof en;
@@ -539,6 +547,14 @@ const ptBR: Record<MessageKey, Message> = {
   "lobby.cta": "Acender a TV",
   "lobby.here": { one: "{count} pessoa por aqui", other: "{count} pessoas por aqui" },
   "lobby.alone": "Só você por enquanto",
+  
+  // --- clipe instantâneo --------------------------------------------
+  "clip.button": "Clipa isso!",
+  "clip.working": "Recortando os últimos 30s...",
+  "clip.ready": "Clipe pronto — pega aí",
+  "clip.download": "Baixar",
+  "clip.cooldown": "Calma aí, já já",
+  "clip.expired": "Esse clipe expirou",
 };
 
 const dictionaries: Record<Locale, Record<MessageKey, Message>> = {

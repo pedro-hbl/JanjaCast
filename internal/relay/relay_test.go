@@ -112,6 +112,40 @@ func TestNonPublisherMediaIgnored(t *testing.T) {
 	}
 }
 
+// Rolling clip buffer: ensure start is a video keyframe and span/bytes bounded
+func TestClipRollingBufferKeyframeTrim(t *testing.T) {
+    hub := NewHub(discard())
+    room, alice, _ := hub.Join("r1", "a", "alice")
+    room.TakeStage(alice)
+    start := time.Now()
+    for s := 0; s < 40; s++ {
+        // video each second, keyframe every 3s
+        v := make([]byte, protocol.HeaderSize+100)
+        v[0] = protocol.KindVideo
+        if s%3 == 0 { v[1] = protocol.FlagKeyframe }
+        ts := start.Add(time.Duration(s) * time.Second).UnixMicro()
+        v[5] = byte(ts >> 56); v[6] = byte(ts >> 48); v[7] = byte(ts >> 40); v[8] = byte(ts >> 32)
+        v[9] = byte(ts >> 24); v[10] = byte(ts >> 16); v[11] = byte(ts >> 8); v[12] = byte(ts)
+        room.ForwardMedia(alice, v)
+        // audio alongside
+        a := make([]byte, protocol.HeaderSize+40)
+        a[0] = protocol.KindAudio
+        a[5] = byte(ts >> 56); a[6] = byte(ts >> 48); a[7] = byte(ts >> 40); a[8] = byte(ts >> 32)
+        a[9] = byte(ts >> 24); a[10] = byte(ts >> 16); a[11] = byte(ts >> 8); a[12] = byte(ts)
+        room.ForwardMedia(alice, a)
+    }
+    room.mu.Lock()
+    defer room.mu.Unlock()
+    if len(room.clipBuf) == 0 { t.Fatal("clip buffer empty") }
+    h, err := protocol.ParseMediaHeader(room.clipBuf[0])
+    if err != nil { t.Fatalf("parse: %v", err) }
+    if h.Kind != protocol.KindVideo || !h.Keyframe() { t.Fatalf("clip start not a video keyframe") }
+    last, _ := protocol.ParseMediaHeader(room.clipBuf[len(room.clipBuf)-1])
+    span := time.Duration(int64(last.Timestamp-h.Timestamp)) * time.Microsecond
+    if span > 32*time.Second { t.Fatalf("clip span too large: %v", span) }
+    if room.clipBytes <= 0 || room.clipBytes > (32<<20) { t.Fatalf("clip bytes out of bounds: %d", room.clipBytes) }
+}
+
 func TestPublisherLeavingFreesStage(t *testing.T) {
 	hub := NewHub(discard())
 	room, alice, _ := hub.Join("r1", "a", "alice")

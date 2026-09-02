@@ -80,6 +80,9 @@ const (
 	CtrlLeaveStage ControlType = "leave_stage" // stop publishing
 	CtrlConfig     ControlType = "config"      // publisher announces codec config
 	CtrlPing       ControlType = "ping"        // clock sync probe
+	// CtrlClip asks the relay to cut an instant clip from the rolling buffer.
+	// No payload.
+	CtrlClip ControlType = "clip_request"
 	// CtrlKeyframeRequest asks the publisher for an immediate keyframe —
 	// sent by viewers stuck waiting (late join with no cache, drop-to-live)
 	// and by the relay itself when it starts dropping a viewer's video.
@@ -150,6 +153,10 @@ const (
 	// the random pair so every participant sees and hears the same one.
 	CtrlStinger ControlType = "stinger"
 
+	// CtrlClipReady is a unicast reply to the requester with a relay-origin
+	// URL to download and the absolute expiry timestamp (Unix ms).
+	CtrlClipReady ControlType = "clip_ready"
+
 	// Server -> every room client: the stage queue plus the rodízio clock,
 	// in ONE message. One state broadcast rather than three keeps every
 	// client's answer to "who is next" consistent by construction.
@@ -183,6 +190,12 @@ const (
 type Control struct {
 	Type ControlType     `json:"type"`
 	Data json.RawMessage `json:"data,omitempty"`
+}
+
+// ClipReadyData is the payload of CtrlClipReady.
+type ClipReadyData struct {
+	URL       string `json:"url"`
+	ExpiresMs int64  `json:"expiresMs"`
 }
 
 // JoinData is the payload of CtrlJoin. Exactly one credential is expected

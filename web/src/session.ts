@@ -96,6 +96,8 @@ export class Session {
   onReactionBurst: ((d: { counts: Record<string, number>; density: number; windowMs: number }) => void) | null = null;
   /** Placar state broadcast. */
   onPlacarState: ((d: { active: boolean; prompt: string; scores: Record<string, number> }) => void) | null = null;
+  /** A clip is ready to download. */
+  onClipReady: ((d: { url: string; expiresMs: number }) => void) | null = null;
 
   constructor(
     private identity: Identity,
@@ -247,6 +249,8 @@ export class Session {
   /** One reaction tap. The relay validates the emoji, applies the per-client
    *  cooldown, and answers the whole room with aggregated bursts. */
   sendReaction(emoji: string): void { this.sendControl("reaction" as any, { emoji }); }
+  // Instant clip: viewer requests the relay to cut the last ~30s.
+  requestClip(): void { this.sendControl("clip_request" as any, {}); }
 
   /** Local-only undo: hide this client's most recent stroke. There is no
    *  cinema_undo on the wire, so a later full `cinema_state` (pause/resume)
@@ -426,6 +430,11 @@ export class Session {
           viewers: number;
         };
         this.onRateHint?.(degraded ?? 0, viewers ?? 0);
+        break;
+      }
+      case "clip_ready": {
+        const d = ctrl.data as { url: string; expiresMs: number };
+        if (d && typeof d.url === "string") this.onClipReady?.(d);
         break;
       }
       case "stage_taken": {
