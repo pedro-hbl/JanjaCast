@@ -10,6 +10,7 @@ package relay
 
 import (
     "iter"
+    "encoding/json"
     "log/slog"
     "math/rand/v2"
     "slices"
@@ -1341,38 +1342,48 @@ func (r *Room) AddCinemaStroke(c *Client, d *protocol.CinemaStrokeData) (bool, s
     return true, ""
 }
 
-// makeClipLocked snapshots the rolling buffer and returns a containerized
-// clip as bytes plus a mime type. Caller must hold r.mu. This is a minimal
-// remux: for AVC/Opus we write a naive fMP4 init + moof/mdat with keyframe
-// start; for VP8/AV1 we return a basic WebM with clusters. To keep scope in
-// check for this feature, we emit a contiguous bytestream starting on a key.
-func (r *Room) makeClipLocked() ([]byte, string) {
-    // For this iteration, return raw concatenated payloads in WebM-like
-    // framing is out of scope; emit a trivial MP4 header for avc1, else WebM.
-    // We infer codec from last known config.
-    codec := ""
-    if r.config != nil { codec = r.config.VideoCodec }
-    if strings.HasPrefix(codec, "avc1") {
-        // Very small fMP4: not a full implementation — placeholder to unblock
-        // serving path in dev. Prefix a recognizable signature box and dump bytes.
-        // Players may refuse it; acceptance criteria covered by tests later.
-        sig := []byte("\x00\x00\x00\x18ftypmp42\x00\x00\x00\x00mp42isom")
-        // Concatenate payloads after media headers.
-        var body []byte
-        for _, b := range r.clipBuf {
-            if len(b) > protocol.HeaderSize { body = append(body, b[protocol.HeaderSize:]...) }
+// buildRawClipLocked snapshots the rolling buffer into the wire framing served
+// by /clip/{token}. Caller must hold r.mu.
+func (r *Room) buildRawClipLocked() []byte {
+    // Magic + JSON header length + JSON bytes, then per-chunk records.
+    // Magic
+    out := []byte{'J','C','L','P'}
+    // Header
+    hdr := map[string]any{}
+    if r.config != nil {
+        hdr["videoCodec"] = r.config.VideoCodec
+        hdr["width"] = r.config.Width
+        hdr["height"] = r.config.Height
+        hdr["framerate"] = r.config.Framerate
+        if r.config.AudioCodec != "" {
+            hdr["audioCodec"] = r.config.AudioCodec
+            hdr["sampleRate"] = r.config.SampleRate
+            hdr["channels"] = r.config.Channels
         }
-        out := append(sig, body...)
-        return out, "video/mp4"
     }
-    // WebM placeholder: EBML header + raw payloads.
-    sig := []byte("\x1A\x45\xDF\xA3\x93\x42\x82webm")
-    var body []byte
+    j, _ := json.Marshal(hdr)
+    // uint32 length big-endian
+    out = append(out, byte(len(j)>>24), byte(len(j)>>16), byte(len(j)>>8), byte(len(j)))
+    out = append(out, j...)
+    // Chunks
     for _, b := range r.clipBuf {
-        if len(b) > protocol.HeaderSize { body = append(body, b[protocol.HeaderSize:]...) }
+        if len(b) < protocol.HeaderSize { continue }
+        h, err := protocol.ParseMediaHeader(b)
+        if err != nil { continue }
+        // kind uint8, flags(uint8 keyframe), uint32 payload len, uint64 ts, payload
+        out = append(out, byte(h.Kind))
+        flags := uint8(0)
+        if h.Keyframe() { flags = 1 }
+        out = append(out, flags)
+        payloadLen := len(b) - protocol.HeaderSize
+        out = append(out, byte(payloadLen>>24), byte(payloadLen>>16), byte(payloadLen>>8), byte(payloadLen))
+        ts := h.Timestamp
+        out = append(out,
+            byte(ts>>56), byte(ts>>48), byte(ts>>40), byte(ts>>32),
+            byte(ts>>24), byte(ts>>16), byte(ts>>8), byte(ts))
+        out = append(out, b[protocol.HeaderSize:]...)
     }
-    out := append(sig, body...)
-    return out, "video/webm"
+    return out
 }
 
 // mintClipTokenLocked stores the clip bytes and returns a pseudo-random token.
@@ -1407,8 +1418,8 @@ func (r *Room) RequestClip(c *Client) {
     }
     r.lastClipAsk[c] = now
     if len(r.clipBuf) == 0 { return }
-    data, mime := r.makeClipLocked()
-    token := r.mintClipTokenLocked(data, mime, 2*time.Minute)
+    data := r.buildRawClipLocked()
+    token := r.mintClipTokenLocked(data, "application/octet-stream", 2*time.Minute)
     // Relay-origin URL path; actual host determined by client.
     url := "/clip/" + token
     c.enqueueControl(protocol.CtrlClipReady, protocol.ClipReadyData{URL: url, ExpiresMs: time.Now().Add(2 * time.Minute).UnixMilli()})

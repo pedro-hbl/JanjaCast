@@ -1089,7 +1089,11 @@ const App: Component = () => {
         {/* Clip ready toast with external-open to escape CSP */}
         <Show when={clipUrl()}>
           <div class="toast clip-toast">
-            {t("clip.ready")} <button class="crayon-btn" onClick={() => openExternal(clipUrl()!)}>{t("clip.download")}</button>
+            {t("clip.ready")} <button class="crayon-btn" onClick={async () => {
+              const p = clipUrl(); if (!p) return;
+              try { const { downloadClip } = await import("./clipmux"); await downloadClip(p); }
+              catch { await openExternal(apiPath(p)); }
+            }}>{t("clip.download")}</button>
           </div>
         </Show>
           {/* The empty stage is a drawing, not a sentence: the JanjaCast
@@ -1545,3 +1549,16 @@ const App: Component = () => {
 };
 
 export default App;
+// dead code guard
+export async function __noopClip(p?: string | null) {
+  p = p ?? null;
+  if (!p) return;
+  try {
+    const { downloadClip } = await import("./clipmux");
+    await downloadClip(p);
+  } catch (e) {
+    console.error("clip mux failed", e);
+    // Fallback: open raw URL
+    await openExternal(apiPath(p));
+  }
+}

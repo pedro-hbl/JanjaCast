@@ -23,12 +23,12 @@ func TestServeClipOK(t *testing.T) {
     // store a clip via test helper
     // Use relay API within same package via a small wrapper here
     // Use symbol defined in relay package for tests; linkname not needed here since it's exported.
-    token := relay.RoomTokenTestShim(room, []byte("hi"), "video/mp4", time.Minute)
+    token := relay.RoomTokenTestShim(room, []byte("JCLP\x00\x00\x00\x00"), "application/octet-stream", time.Minute)
     req := httptest.NewRequest("GET", "/clip/"+token, nil)
     w := httptest.NewRecorder()
     s.ServeHTTP(w, req)
     if w.Result().StatusCode != 200 { t.Fatalf("status %d, want 200", w.Result().StatusCode) }
-    if ct := w.Header().Get("Content-Type"); ct != "video/mp4" { t.Fatalf("ct %q", ct) }
+    if ct := w.Header().Get("Content-Type"); ct != "application/octet-stream" { t.Fatalf("ct %q", ct) }
 }
 
 // MintTestClipLocked helper on Room for tests

@@ -696,7 +696,7 @@ func (s *Server) handleClip(w http.ResponseWriter, r *http.Request) {
     if !found { http.NotFound(w, r); return }
     // Serve outside of Hub.mu
     w.Header().Set("Content-Type", mime)
-    w.Header().Set("Content-Disposition", "attachment; filename=\"janjacast-clip"+map[bool]string{true:".mp4", false:".webm"}[mime=="video/mp4"]+"\"")
+    w.Header().Set("Content-Disposition", "attachment; filename=\"janjacast-clip.jclp\"")
     w.Header().Set("Cache-Control", "no-store")
     _, _ = w.Write(data)
 }
