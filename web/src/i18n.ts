@@ -256,6 +256,14 @@ const en = {
   "st.errUpload": "upload refused ({status})",
   "st.errSave": "couldn't save that ({status})",
   "st.errDelete": "couldn't delete that ({status})",
+  
+  // --- instant clips -------------------------------------------------
+  "clip.button": "Clip that!",
+  "clip.working": "Cutting the last 30s...",
+  "clip.ready": "Clip's ready — grab it",
+  "clip.download": "Download",
+  "clip.cooldown": "Hang on a sec",
+  "clip.expired": "That clip expired",
 } satisfies Record<string, Message>;
 
 export type MessageKey = keyof typeof en;
@@ -471,6 +479,14 @@ const ptBR: Record<MessageKey, Message> = {
   "st.errUpload": "envio recusado ({status})",
   "st.errSave": "não deu pra salvar ({status})",
   "st.errDelete": "não deu pra apagar ({status})",
+  
+  // --- clipe instantâneo --------------------------------------------
+  "clip.button": "Clipa isso!",
+  "clip.working": "Recortando os últimos 30s...",
+  "clip.ready": "Clipe pronto — pega aí",
+  "clip.download": "Baixar",
+  "clip.cooldown": "Calma aí, já já",
+  "clip.expired": "Esse clipe expirou",
 };
 
 const dictionaries: Record<Locale, Record<MessageKey, Message>> = {
