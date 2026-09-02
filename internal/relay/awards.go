@@ -97,3 +97,6 @@ func durShort(d time.Duration) string {
     m := int(d.Round(time.Minute)/time.Minute)
     return fmt.Sprintf("%dm", m)
 }
+
+// RSetAwardsCallback installs the server layer callback.
+func RSetAwardsCallback(cb func(roomID string, awards []AwardData)) { rAwardsCallback = cb }
