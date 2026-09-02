@@ -35,7 +35,27 @@ export type ControlType =
   | "stage_queue"
   | "stage_turn"
   | "stage_cancel"
+  | "cinema_state"
+  | "cinema_stroke_add"
   | "error";
+
+export type OutboundControlType =
+  | "join"
+  | "take_stage"
+  | "leave_stage"
+  | "config"
+  | "ping"
+  | "keyframe_request"
+  | "stinger_play"
+  | "blank"
+  | "stage_request"
+  | "stage_withdraw"
+  | "stage_pass"
+  | "stage_mode"
+  | "stage_extend"
+  | "cinema_pause"
+  | "cinema_resume"
+  | "cinema_stroke";
 
 /** The privacy panic button. `blank` is publisher→relay, `blank_state` is
  *  relay→everyone; one shape both ways. `on` is never omitted — an
@@ -144,6 +164,11 @@ export interface Control<T = unknown> {
   type: ControlType;
   data?: T;
 }
+
+export interface Point { x: number; y: number }
+export interface CinemaStrokeData { color: string; points: Point[] }
+export interface StrokeData { userId: string; color: string; points: Point[]; strokeId: string }
+export interface CinemaStateData { paused: boolean; strokes: StrokeData[] }
 
 export interface ConfigData {
   videoCodec: string;

@@ -9,16 +9,17 @@
 package relay
 
 import (
-	"iter"
-	"log/slog"
-	"math/rand/v2"
-	"slices"
-	"strings"
-	"sync"
-	"sync/atomic"
-	"time"
+    "iter"
+    "log/slog"
+    "math/rand/v2"
+    "slices"
+    "strconv"
+    "strings"
+    "sync"
+    "sync/atomic"
+    "time"
 
-	"github.com/pedro-hbl/janjacast/internal/protocol"
+    "github.com/pedro-hbl/janjacast/internal/protocol"
 )
 
 // sendBuffer is the per-viewer outgoing queue length. When a viewer's queue
@@ -181,7 +182,9 @@ func (h *Hub) Join(roomID, userID, username string) (*Room, *Client, iter.Seq[Ou
 	// flight, which rides in this state message rather than as a second
 	// CtrlStageTurn (that one carries the cue, and a joiner must not hear
 	// a cue for a call that went out before they arrived).
-	c.enqueueControl(protocol.CtrlStageQueue, r.stageQueueLocked())
+  c.enqueueControl(protocol.CtrlStageQueue, r.stageQueueLocked())
+  // Cinema welcome right after queue state.
+  c.enqueueControl(protocol.CtrlCinemaState, protocol.CinemaStateData{Paused: r.cinemaPaused, Strokes: slices.Clone(r.cinemaStrokes)})
 
 	// Replay the cached GOP so the newcomer has a picture immediately. If
 	// the replay overflows the queue, the client stays in needKeyframe so a
@@ -346,8 +349,12 @@ type Room struct {
 	rodizioStart time.Time
 	// rodizioExtended records the one +5 minutes, reset on every TakeStage.
 	rodizioExtended bool
-	// lastPass is the per-room pass cooldown stamp.
-	lastPass time.Time
+  // lastPass is the per-room pass cooldown stamp.
+  lastPass time.Time
+
+  // --- cinema (paused + shared strokes) ---------------------------------
+  cinemaPaused  bool
+  cinemaStrokes []protocol.StrokeData // FIFO cap 100
 }
 
 // stageTurn is the person currently being called to the stage.
@@ -1040,9 +1047,9 @@ func (r *Room) ForwardMedia(from *Client, msg []byte) {
 	// (web/src/capture.ts drops at the frame-read loop AND suppresses the
 	// encoder output), so reaching here means something raced or lied.
 	// Drop it: while blanked, no captured byte leaves this room.
-	if r.blanked {
-		return
-	}
+    if r.blanked || r.cinemaPaused {
+        return
+    }
 
 	// Maintain the late-join cache from the video stream. Bounded by both
 	// bytes and chunk count: a GOP that cannot fit a fresh client queue is
@@ -1166,6 +1173,86 @@ func (r *Room) broadcastRoomStateLocked() {
 	for c := range r.clients {
 		c.enqueueControl(protocol.CtrlRoomState, state)
 	}
+}
+
+// --- cinema: pause/resume/state/strokes -------------------------------------
+
+// CinemaPause pauses the room for everyone. Publisher-only.
+func (r *Room) CinemaPause(c *Client) (bool, string) {
+    r.mu.Lock()
+    defer r.mu.Unlock()
+    if r.publisher == nil || baseID(r.publisher.UserID) != baseID(c.UserID) {
+        return false, protocol.ErrCinemaNotPublisher
+    }
+    if r.cinemaPaused {
+        return true, ""
+    }
+    r.cinemaPaused = true
+    r.broadcastCinemaStateLocked()
+    return true, ""
+}
+
+// CinemaResume resumes playback and clears strokes; requests a keyframe.
+func (r *Room) CinemaResume(c *Client) (bool, string) {
+    r.mu.Lock()
+    defer r.mu.Unlock()
+    if r.publisher == nil || baseID(r.publisher.UserID) != baseID(c.UserID) {
+        return false, protocol.ErrCinemaNotPublisher
+    }
+    if !r.cinemaPaused {
+        return true, ""
+    }
+    r.cinemaPaused = false
+    r.cinemaStrokes = nil
+    r.broadcastCinemaStateLocked()
+    r.requestKeyframeLocked()
+    return true, ""
+}
+
+// AddCinemaStroke validates and appends a stroke while paused.
+func (r *Room) AddCinemaStroke(c *Client, d *protocol.CinemaStrokeData) (bool, string) {
+    r.mu.Lock()
+    defer r.mu.Unlock()
+    if _, ok := r.clients[c]; !ok {
+        return false, ""
+    }
+    if !r.cinemaPaused {
+        return false, protocol.ErrCinemaBadStroke
+    }
+    // Fixed palette on the server side (tokens mapped client-side).
+    allowed := map[string]bool{"redorange": true, "crayon-blue": true, "yellow": true, "grass": true, "pink": true, "purple": true}
+    if !allowed[d.Color] || len(d.Points) < 2 || len(d.Points) > 1000 {
+        return false, protocol.ErrCinemaBadStroke
+    }
+    for _, p := range d.Points {
+        if p.X < 0 || p.X > 1 || p.Y < 0 || p.Y > 1 {
+            return false, protocol.ErrCinemaBadStroke
+        }
+    }
+    // Per-client rate limit: 10 strokes/s. Reuse lastStingerAsk shape.
+    now := time.Now()
+    if now.Sub(c.lastStingerAsk) < 100*time.Millisecond {
+        return false, protocol.ErrCinemaRateLimited
+    }
+    c.lastStingerAsk = now
+
+    id := c.UserID + ":" + strconv.FormatInt(now.UnixNano(), 16)
+    s := protocol.StrokeData{UserID: c.UserID, Color: d.Color, Points: d.Points, StrokeID: id}
+    if len(r.cinemaStrokes) >= 100 {
+        r.cinemaStrokes = r.cinemaStrokes[1:]
+    }
+    r.cinemaStrokes = append(r.cinemaStrokes, s)
+    for cl := range r.clients {
+        cl.enqueueControl(protocol.CtrlCinemaStrokeAdd, s)
+    }
+    return true, ""
+}
+
+func (r *Room) broadcastCinemaStateLocked() {
+    d := protocol.CinemaStateData{Paused: r.cinemaPaused, Strokes: slices.Clone(r.cinemaStrokes)}
+    for c := range r.clients {
+        c.enqueueControl(protocol.CtrlCinemaState, d)
+    }
 }
 
 // stingerStartLocked runs on every successful TakeStage: it cancels any

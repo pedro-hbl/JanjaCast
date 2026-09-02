@@ -650,5 +650,21 @@ func (s *Server) handleControl(room *relay.Room, client *relay.Client, data []by
 		if err := json.Unmarshal(ctrl.Data, &mode); err == nil {
 			room.SetStageMode(client, mode.Mode)
 		}
+	// --- cinema -------------------------------------------------------------
+	case protocol.CtrlCinemaPause:
+		if ok, code := room.CinemaPause(client); !ok && code != "" {
+			client.SendControl(protocol.CtrlError, protocol.ErrorData{Code: code})
+		}
+	case protocol.CtrlCinemaResume:
+		if ok, code := room.CinemaResume(client); !ok && code != "" {
+			client.SendControl(protocol.CtrlError, protocol.ErrorData{Code: code})
+		}
+	case protocol.CtrlCinemaStroke:
+		var sd protocol.CinemaStrokeData
+		if err := json.Unmarshal(ctrl.Data, &sd); err == nil {
+			if ok, code := room.AddCinemaStroke(client, &sd); !ok && code != "" {
+				client.SendControl(protocol.CtrlError, protocol.ErrorData{Code: code})
+			}
+		}
 	}
 }

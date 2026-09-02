@@ -726,6 +726,28 @@ export const LinkDot: Component<{ class?: string }> = (props) => (
   </svg>
 );
 
+// Cinema icons — two wobbly pause bars, uneven play triangle, and a counter-
+// clockwise undo arrow. All aria-hidden; buttons carry the words (t()).
+export const PauseDoodle: Component<{ class?: string }> = (props) => (
+  <svg class={props.class} width="20" height="20" viewBox="0 0 24 24" aria-hidden="true">
+    <path d="M8 4 8 20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>
+    <path d="M16 4 16 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+  </svg>
+);
+
+export const PlayDoodle: Component<{ class?: string }> = (props) => (
+  <svg class={props.class} width="20" height="20" viewBox="0 0 24 24" aria-hidden="true">
+    <path d="M7 5 19 12 7 19Z" fill="currentColor" />
+  </svg>
+);
+
+export const UndoDoodle: Component<{ class?: string }> = (props) => (
+  <svg class={props.class} width="20" height="20" viewBox="0 0 24 24" aria-hidden="true">
+    <path d="M8 7 4 11 8 15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+    <path d="M6 11C14 11 18 11 18 17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+  </svg>
+);
+
 /**
  * The queue heading's mark: a raised hand — "pedir a vez" drawn rather than
  * described. It sits at 17px beside a 13.5px label, which is why it is four

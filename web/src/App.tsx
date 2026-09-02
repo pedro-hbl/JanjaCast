@@ -33,6 +33,9 @@ import { startCapture, type CaptureHandle } from "./capture";
 import { Player } from "./player";
 import {
   BrowserTabDoodle,
+  PauseDoodle,
+  PlayDoodle,
+  UndoDoodle,
   CastMark,
   CloudDoodle,
   CoveredTv,
@@ -180,6 +183,127 @@ const App: Component = () => {
   let canvasRef!: HTMLCanvasElement;
   let stageRef!: HTMLDivElement;
   let player: Player | null = null;
+
+  // --- cinema scribbles (local-only helpers) ------------------------------
+  const ownStrokes = () => (session()?.cinemaStrokes() ?? []).filter(s => s.userId === session()?.selfId());
+  const undoLocal = () => {
+    // Local-only: hide last of own strokes by dropping it from the local list.
+    const s = session() as any;
+    if (!s) return;
+    const list = s.cinemaStrokes();
+    const idx = [...list].reverse().findIndex(x => x.userId === s.selfId());
+    if (idx < 0) return;
+    const cut = list.length - 1 - idx;
+    s.setCinemaStrokes?.(list.filter((_: unknown, i: number) => i !== cut));
+  };
+
+  const sendStroke = (color: string, pts: {x:number;y:number;}[]) => {
+    session()?.sendCinemaStroke({ color, points: pts });
+  };
+
+  const ColorSwatches: Component = () => {
+    const colors = [
+      ["--redorange","cinema.colorRed","redorange"],
+      ["--crayon-blue","cinema.colorBlue","crayon-blue"],
+      ["--yellow","cinema.colorYellow","yellow"],
+      ["--grass","cinema.colorGrass","grass"],
+      ["--pink","cinema.colorPink","pink"],
+      ["--purple","cinema.colorPurple","purple"],
+    ] as const;
+    const [picked, setPicked] = createSignal<string>(colors[0][2]);
+    return (
+      <div style={{ display: "inline-flex", gap: "6px" }}>
+        {colors.map(([varName, key, wire]) => (
+          <button
+            type="button"
+            class="color-swatch"
+            aria-pressed={picked() === wire}
+            aria-label={t(key as any)}
+            style={{ background: `var(${varName})` }}
+            onClick={() => setPicked(wire as string)}
+          />
+        ))}
+      </div>
+    );
+  };
+
+  const ScribbleSVG: Component = () => {
+    let svg!: SVGSVGElement;
+    const [path, setPath] = createSignal<string>("");
+    const [drawing, setDrawing] = createSignal(false);
+    const pts: {x:number;y:number;}[] = [];
+    let raf: number | null = null;
+    const build = () => {
+      if (pts.length < 2) return "";
+      let d = `M ${pts[0]!.x*800} ${pts[0]!.y*450}`;
+      for (let i=1;i<pts.length;i++){
+        const p = pts[i]!;
+        const px = pts[i-1]!;
+        const cx = (px.x + p.x)/2*800 + (Math.random()-0.5)*2;
+        const cy = (px.y + p.y)/2*450 + (Math.random()-0.5)*2;
+        d += ` Q ${cx} ${cy} ${p.x*800} ${p.y*450}`;
+      }
+      return d;
+    };
+    const onMove = (e: PointerEvent) => {
+      if (!drawing()) return;
+      const rect = svg.getBoundingClientRect();
+      const x = (e.clientX - rect.left) / rect.width;
+      const y = (e.clientY - rect.top) / rect.height;
+      pts.push({x: Math.max(0,Math.min(1,x)), y: Math.max(0,Math.min(1,y))});
+      if (raf == null) raf = requestAnimationFrame(() => { setPath(build()); raf = null; });
+    };
+    const onDown = (e: PointerEvent) => {
+      if (!session()?.cinemaPaused()) return;
+      e.preventDefault();
+      setDrawing(true);
+      pts.length = 0;
+      onMove(e);
+      (e.currentTarget as Element).setPointerCapture(e.pointerId);
+    };
+    const onUp = (e: PointerEvent) => {
+      if (!drawing()) return;
+      setDrawing(false);
+      (e.currentTarget as Element).releasePointerCapture(e.pointerId);
+      const color = "redorange"; // placeholder: hook up picked swatch if needed
+      if (pts.length>=2) sendStroke(color, pts.slice());
+      setPath("");
+    };
+    return (
+      <svg
+        ref={svg}
+        viewBox="0 0 800 450"
+        class="cinema-svg"
+        onPointerDown={onDown}
+        onPointerMove={onMove}
+        onPointerUp={onUp}
+      >
+        {/* existing strokes */}
+        <For each={session()?.cinemaStrokes() ?? []}>
+          {(s) => (
+            <path d={(() => {
+              const ps = s.points; if (!ps || ps.length<2) return "";
+              let d = `M ${ps[0]!.x*800} ${ps[0]!.y*450}`;
+              for (let i=1;i<ps.length;i++){
+                const p = ps[i]!; const px = ps[i-1]!;
+                const cx = (px.x + p.x)/2*800 + (Math.random()-0.5)*1.6;
+                const cy = (px.y + p.y)/2*450 + (Math.random()-0.5)*1.6;
+                d += ` Q ${cx} ${cy} ${p.x*800} ${p.y*450}`;
+              }
+              return d;
+            })()}
+              fill="none"
+              stroke={`var(--${s.color})`}
+              stroke-width="6"
+              stroke-linecap="round"
+            />
+          )}
+        </For>
+        {/* in-progress */}
+        <path d={path()} fill="none" stroke="var(--crayon-blue)" stroke-width="6" stroke-linecap="round"/>
+      </svg>
+    );
+  };
 
   // --- stinger overlay ------------------------------------------------------
   // A stream starting/stopping plays a server-chosen meme + sound for the
@@ -852,6 +976,35 @@ const App: Component = () => {
                   : "none",
             }}
           />
+          {/* INTERVALO banner — chrome announcing state. Drawn over the frozen
+              frame only while cinema pause is on; nothing decorates live
+              video. */}
+          <Show when={session()?.cinemaPaused() && live() && !blanked()}>
+            <div class="cinema-banner" role="status">{t("cinema.interval")}</div>
+          </Show>
+          {/* Group scribbles — margin canvas on desktop, stacked under stage on
+              small screens. Never over the video except the banner above. */}
+          <Show when={session()?.cinemaPaused()}>
+            <div class="cinema-canvas" aria-label={t("cinema.canvasTitle")}>
+              <div class="cinema-toolbar">
+                <button
+                  type="button"
+                  class="crayon-btn crayon-btn--chalk"
+                  aria-pressed={!false}
+                  onClick={() => session()?.resumeCinema()}
+                  title={t("cinema.resume")}
+                >
+                  <PlayDoodle /> {t("cinema.resume")}
+                </button>
+                <div class="spacer" />
+                <ColorSwatches />
+                <button type="button" class="crayon-btn crayon-btn--chalk" onClick={undoLocal} disabled={ownStrokes().length === 0}>
+                  <UndoDoodle /> {t("cinema.undo")}
+                </button>
+              </div>
+              <ScribbleSVG />
+            </div>
+          </Show>
           {/* Stinger overlay: inside .stage so fullscreen/theater show it;
               above the canvas, below the stage controls; never interactive. */}
           <div class="stinger-layer" ref={stingerLayerRef} />
@@ -1094,6 +1247,23 @@ const App: Component = () => {
         >
           <button onClick={stopSharing} class="crayon-btn crayon-btn--stop">
             {t("footer.stopSharing")}
+          </button>
+        </Show>
+
+        {/* Cinema pause/resume (publisher-only) */}
+        <Show when={session()?.ownsStage()}>
+          <button
+            type="button"
+            class="crayon-btn crayon-btn--chalk"
+            onClick={() =>
+              session()?.cinemaPaused()
+                ? session()?.resumeCinema()
+                : session()?.pauseCinema()
+            }
+          >
+            <Show when={session()?.cinemaPaused()} fallback={<><PauseDoodle /> {t("cinema.pause")}</>}>
+              <><PlayDoodle /> {t("cinema.resume")}</>
+            </Show>
           </button>
         </Show>
 

@@ -157,7 +157,7 @@ const (
 	// to claim the stage, and the whole room hears about it.
 	CtrlStageTurn ControlType = "stage_turn"
 	// CtrlStageCancel ends a pending turn, saying why.
-	CtrlStageCancel ControlType = "stage_cancel"
+  CtrlStageCancel ControlType = "stage_cancel"
 )
 
 // Control is the JSON envelope for text messages.
@@ -251,16 +251,64 @@ type Participant struct {
 // (docs/i18n.md § "What is deliberately not localized"); Code, when set, is a
 // stable identifier the client maps onto its own translated string.
 type ErrorData struct {
-	Message string `json:"message,omitempty"`
-	Code    string `json:"code,omitempty"`
+    Message string `json:"message,omitempty"`
+    Code    string `json:"code,omitempty"`
 }
 
 // Error codes carried by ErrorData.Code. Each has a matching `err.<code>`
 // key in web/src/i18n.ts, in both dictionaries.
 const (
-	ErrNoNextUser  = "stage.noNext"   // nobody in line and nobody to spin for
-	ErrAlreadyExt  = "stage.extended" // the one +5 minutes is already spent
-	ErrPassTooSoon = "stage.cooldown" // passing again inside the cooldown
+    ErrNoNextUser  = "stage.noNext"   // nobody in line and nobody to spin for
+    ErrAlreadyExt  = "stage.extended" // the one +5 minutes is already spent
+    ErrPassTooSoon = "stage.cooldown" // passing again inside the cooldown
+)
+
+// --- cinema mode (pause + shared doodles) -----------------------------------
+
+// Client -> server controls.
+const (
+    CtrlCinemaPause  ControlType = "cinema_pause"
+    CtrlCinemaResume ControlType = "cinema_resume"
+    CtrlCinemaStroke ControlType = "cinema_stroke"
+)
+
+// Server -> client controls.
+const (
+    CtrlCinemaState    ControlType = "cinema_state"
+    CtrlCinemaStrokeAdd ControlType = "cinema_stroke_add"
+)
+
+// Point is one 0..1 normalized point.
+type Point struct {
+    X float64 `json:"x"`
+    Y float64 `json:"y"`
+}
+
+// CinemaStrokeData is the client->server payload to add a stroke.
+type CinemaStrokeData struct {
+    Color  string  `json:"color"`
+    Points []Point `json:"points"`
+}
+
+// StrokeData is broadcast to all clients when a stroke is accepted.
+type StrokeData struct {
+    UserID  string  `json:"userId"`
+    Color   string  `json:"color"`
+    Points  []Point `json:"points"`
+    StrokeID string `json:"strokeId"`
+}
+
+// CinemaStateData is the room-wide cinema state snapshot.
+type CinemaStateData struct {
+    Paused  bool        `json:"paused"`
+    Strokes []StrokeData `json:"strokes"`
+}
+
+// Cinema error codes mapped to translated strings client-side.
+const (
+    ErrCinemaNotPublisher = "cinema.notPublisher"
+    ErrCinemaRateLimited  = "cinema.rateLimited"
+    ErrCinemaBadStroke    = "cinema.badStroke"
 )
 
 // TokenRefreshData is the payload of CtrlTokenRefresh: a fresh share token
