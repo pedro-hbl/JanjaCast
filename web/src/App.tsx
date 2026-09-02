@@ -1054,15 +1054,23 @@ const App: Component = () => {
               {zoom().toFixed(1)}x
             </span>
           </Show>
-          <Show when={live() && !session()?.ownsStage()}>
-            <button
-              class="fs-btn"
-              title={t("stage.fsTitle")}
-              onClick={() => void toggleFullscreen()}
-            >
-              ⛶
-            </button>
-          </Show>
+        <Show when={live() && !session()?.ownsStage()}>
+          <button
+            class="fs-btn"
+            title={t("stage.fsTitle")}
+            onClick={() => void toggleFullscreen()}
+          >
+            ⛶
+          </button>
+          {/* Instant clip button — edge pinned with the fullscreen control. */}
+          <button
+            class="fs-btn fs-btn--clip"
+            title={t("clip.button")}
+            onClick={() => session()?.sendControl("clip_request")}
+          >
+            🎬
+          </button>
+        </Show>
           {/* The empty stage is a drawing, not a sentence: the JanjaCast
               set standing in the grass under a sun, switched off, with the
               one thing you can do about it planted in front of it. The

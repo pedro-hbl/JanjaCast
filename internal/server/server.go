@@ -122,6 +122,11 @@ func New(cfg Config, log *slog.Logger) *Server {
 	s.mux.HandleFunc("POST /api/share-token", s.handleShareToken)
 	s.mux.HandleFunc("GET /api/health", s.handleHealth)
 	s.mux.HandleFunc("GET /api/config", s.handleConfig)
+	// Placeholder clip route; Step 4 wires serving ready clips.
+	s.mux.HandleFunc("GET /clip/{token}", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-store")
+		http.NotFound(w, r)
+	})
 	s.mux.HandleFunc("GET /ws", s.handleWS)
 
 	var dist fs.FS

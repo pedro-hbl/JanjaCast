@@ -222,10 +222,13 @@ type StageStateData struct {
 	PublisherID   string      `json:"publisherId,omitempty"` // empty = stage free
 	PublisherName string      `json:"publisherName,omitempty"`
 	Config        *ConfigData `json:"config,omitempty"`
-	// Blanked is the privacy panic state. It rides the ordinary stage
+    // Blanked is the privacy panic state. It rides the ordinary stage
 	// handshake so a late joiner learns it inside CtrlWelcome, before any
 	// media could arrive (there is none — blanking evicts the GOP cache).
-	Blanked bool `json:"blanked,omitempty"`
+    Blanked bool `json:"blanked,omitempty"`
+    // Reserved for future: whether the relay has a clip buffer live. Client
+    // shows the clip CTA only while live; rolling buffer follows live.
+    // Presently derives from PublisherID != "".
 }
 
 // BlankData is the payload of CtrlBlank (publisher -> relay) and

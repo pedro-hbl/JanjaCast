@@ -355,6 +355,13 @@ type Room struct {
   // --- cinema (paused + shared strokes) ---------------------------------
   cinemaPaused  bool
   cinemaStrokes []protocol.StrokeData // FIFO cap 100
+
+  // --- instant clips: rolling buffer (video+audio), keyframe-bounded ------
+  // clipBuf stores recent media chunks for instant clips. It is trimmed on
+  // keyframe boundaries and bounded by both wall-time (~30s) and bytes.
+  clipBuf      [][]byte
+  clipBytes    int
+  clipStartTs  int64 // microseconds of first chunk in clipBuf; 0 when empty
 }
 
 // stageTurn is the person currently being called to the stage.
@@ -1054,9 +1061,9 @@ func (r *Room) ForwardMedia(from *Client, msg []byte) {
 	// Maintain the late-join cache from the video stream. Bounded by both
 	// bytes and chunk count: a GOP that cannot fit a fresh client queue is
 	// useless as a replay (and would deliver a stale burst instead).
-	if hdr.Kind == protocol.KindVideo {
-		switch {
-		case hdr.Keyframe():
+    if hdr.Kind == protocol.KindVideo {
+        switch {
+        case hdr.Keyframe():
 			// Fresh slice: reslicing the old backing array would pin the
 			// previous GOP's chunks in unused capacity.
 			r.gop = [][]byte{msg}
@@ -1067,6 +1074,53 @@ func (r *Room) ForwardMedia(from *Client, msg []byte) {
 			} else {
 				r.gop = append(r.gop, msg)
 				r.gopBytes += len(msg)
+			}
+		}
+	}
+
+	// --- rolling clip buffer (video + audio, keyframe-bounded) ---------
+	// Append and trim by time/bytes, dropping whole GOPs only (scan to next
+	// video keyframe when trimming the head). Guarded by r.mu.
+	{
+		const clipWindow = 30 * time.Second
+		const clipMaxBytes = 32 << 20 // 32MB ceiling
+		// Append current chunk.
+		r.clipBuf = append(r.clipBuf, msg)
+		r.clipBytes += len(msg)
+		if r.clipStartTs == 0 {
+			r.clipStartTs = int64(hdr.Timestamp)
+		}
+		// Check caps and trim from head to next keyframe that fits.
+		lastTs := int64(hdr.Timestamp)
+		span := time.Duration(lastTs-r.clipStartTs) * time.Microsecond
+		if span > clipWindow || r.clipBytes > clipMaxBytes {
+			drop := 0
+			acc := 0
+			for i := 0; i < len(r.clipBuf); i++ {
+				h, err := protocol.ParseMediaHeader(r.clipBuf[i])
+				if err != nil { continue }
+				if h.Kind == protocol.KindVideo && h.Keyframe() {
+					// bytes from i..end
+					bytes := 0
+					for j := i; j < len(r.clipBuf); j++ { bytes += len(r.clipBuf[j]) }
+					span2 := time.Duration(int64(hdr.Timestamp)-int64(h.Timestamp)) * time.Microsecond
+					if bytes <= clipMaxBytes && span2 <= clipWindow {
+						drop = i
+						break
+					}
+				}
+			}
+			for k := 0; k < drop; k++ { acc += len(r.clipBuf[k]) }
+			if drop > 0 {
+				r.clipBuf = slices.Delete(r.clipBuf, 0, drop)
+				r.clipBytes -= acc
+				if len(r.clipBuf) > 0 {
+					if nh, err := protocol.ParseMediaHeader(r.clipBuf[0]); err == nil {
+						r.clipStartTs = int64(nh.Timestamp)
+					} else { r.clipStartTs = 0 }
+				} else {
+					r.clipStartTs = 0
+				}
 			}
 		}
 	}
