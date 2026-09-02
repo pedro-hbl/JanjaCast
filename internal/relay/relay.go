@@ -11,6 +11,8 @@ package relay
 import (
 	"iter"
 	"log/slog"
+	"math/rand/v2"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -40,6 +42,34 @@ const maxGOPBytes = 16 << 20
 // window, so a network blip plays nothing instead of a stop/start pair.
 const stingerStopDelay = 2 * time.Second
 
+// --- the stage queue -------------------------------------------------------
+
+// maxQueue caps the visible line. Five emoji chips fit beside the roster and
+// five is already more waiting than any call sustains; a sixth request is
+// silently ignored rather than answered with an error nobody can act on.
+const maxQueue = 5
+
+// turnTTL is how long the chosen person has to actually take the stage before
+// the line moves on without them. Short on purpose: the whole room just heard
+// "é tua!", and a stage nobody claims is worse than a stage that keeps moving.
+const turnTTL = 20 * time.Second
+
+// rodizioTurn is one sharer's slot in rodízio mode, and rodizioExtension is
+// the single "+5 min" they may spend. Both are fixed — the only choice this
+// feature exposes is livre vs rodízio (docs/design.md § 8, "settings creep").
+const (
+	rodizioTurn      = 20 * time.Minute
+	rodizioExtension = 5 * time.Minute
+)
+
+// passCooldown keeps a jittery double-tap on "Passar a vez" from burning two
+// people's turns. Per room, because passing is a room-wide event.
+const passCooldown = 2 * time.Second
+
+// fallbackEmoji stands in when a name does not start with a Latin letter, so
+// every chip is exactly one glyph wide whoever is in the room.
+const fallbackEmoji = "🟣"
+
 // Hub owns all rooms.
 type Hub struct {
 	mu    sync.Mutex
@@ -56,6 +86,10 @@ type Hub struct {
 	// StingerStopDelay overrides stingerStopDelay; tests shorten it so they
 	// need not sleep multiple real seconds.
 	StingerStopDelay time.Duration
+
+	// TurnTTL overrides turnTTL for the same reason — a test for the
+	// "nobody claimed it, move on" path must not sleep twenty seconds.
+	TurnTTL time.Duration
 }
 
 // NewHub returns an empty hub.
@@ -64,6 +98,7 @@ func NewHub(log *slog.Logger) *Hub {
 		rooms:            make(map[string]*Room),
 		log:              log,
 		StingerStopDelay: stingerStopDelay,
+		TurnTTL:          turnTTL,
 	}
 }
 
@@ -76,12 +111,17 @@ func (h *Hub) Join(roomID, userID, username string) (*Room, *Client, iter.Seq[Ou
 	defer h.mu.Unlock()
 	r, ok := h.rooms[roomID]
 	if !ok {
+		ttl := h.TurnTTL
+		if ttl <= 0 {
+			ttl = turnTTL
+		}
 		r = &Room{
 			id:              roomID,
 			clients:         make(map[*Client]struct{}),
 			log:             h.log.With("room", roomID),
 			stinger:         h.Stinger,
 			stingerStopWait: h.StingerStopDelay,
+			turnWait:        ttl,
 		}
 		h.rooms[roomID] = r
 	}
@@ -108,6 +148,11 @@ func (h *Hub) Join(roomID, userID, username string) (*Room, *Client, iter.Seq[Ou
 			r.clearGOPLocked()
 			r.clearBlankLocked()
 			r.gateViewersLocked()
+			// The rodízio clock stops with the stage. The expected
+			// immediate re-take starts a fresh twenty minutes, which is
+			// the kind thing to do after a connection blip.
+			r.stopRodizioClockLocked()
+			r.broadcastStageQueueLocked()
 			r.broadcastStageStateLocked()
 			// Arm the delayed stop here too: the expected immediate re-take
 			// cancels it silently, but an ABANDONED supersede (new session
@@ -131,6 +176,12 @@ func (h *Hub) Join(roomID, userID, username string) (*Room, *Client, iter.Seq[Ou
 		StageStateData: r.stageStateLocked(),
 		SelfID:         c.UserID,
 	})
+	// Right behind the welcome, so a late joiner renders the mode, the
+	// rodízio clock and the line immediately — including a turn already in
+	// flight, which rides in this state message rather than as a second
+	// CtrlStageTurn (that one carries the cue, and a joiner must not hear
+	// a cue for a call that went out before they arrived).
+	c.enqueueControl(protocol.CtrlStageQueue, r.stageQueueLocked())
 
 	// Replay the cached GOP so the newcomer has a picture immediately. If
 	// the replay overflows the queue, the client stays in needKeyframe so a
@@ -199,9 +250,19 @@ func (h *Hub) Leave(r *Room, c *Client) {
 		r.config = nil
 		r.clearGOPLocked()
 		r.clearBlankLocked()
+		r.stopRodizioClockLocked()
 		r.broadcastStageStateLocked()
 		r.scheduleStingerStopLocked()
 	}
+	// A departing person never lingers in the line, and a turn called on
+	// somebody who just closed their tab advances immediately instead of
+	// burning its whole window on a ghost.
+	r.removeFromQueueLocked(c.UserID)
+	if r.turn != nil && r.turn.UserID == c.UserID {
+		r.cancelTurnLocked(protocol.CancelLeft)
+		r.advanceTurnLocked()
+	}
+	r.broadcastStageQueueLocked()
 	r.broadcastRoomStateLocked()
 
 	// Identity check: only reap the exact Room object registered under this
@@ -260,6 +321,41 @@ type Room struct {
 	// true, TakeStage fires no start: it is the same stream continuing
 	// (reconnect, takeover, supersede+retake). Guarded by mu.
 	stingerLive bool
+
+	// --- the stage queue ("pedir a vez"), all guarded by mu -----------
+
+	// queue is the visible line, FIFO, at most maxQueue long and at most
+	// one entry per person (by baseID: the Activity and its companion tab
+	// are one person).
+	queue []protocol.QueueEntry
+	// mode is "" (livre) or protocol.ModeRodizio. Stored empty rather than
+	// "livre" so a zero-value Room is already in the default mode.
+	mode string
+	// turn is the pending "é tua!", nil when nobody has been called.
+	turn *stageTurn
+	// turnGen invalidates a pending TTL timer the same way stingerGen
+	// invalidates a pending stop stinger: the timer compares its snapshot
+	// and no-ops when stale. Every cancel and every grant bumps it.
+	turnGen uint64
+	// turnWait is copied from the hub at room creation (under Hub.mu) and
+	// never written again, so reads under mu are safe.
+	turnWait time.Duration
+	// rodizioStart is when the current publisher took the stage; zero when
+	// the stage is free. Server time is the only clock — a client with a
+	// skewed clock renders a wrong countdown, never a different answer.
+	rodizioStart time.Time
+	// rodizioExtended records the one +5 minutes, reset on every TakeStage.
+	rodizioExtended bool
+	// lastPass is the per-room pass cooldown stamp.
+	lastPass time.Time
+}
+
+// stageTurn is the person currently being called to the stage.
+type stageTurn struct {
+	UserID   string
+	Username string
+	Method   string // protocol.MethodQueue | protocol.MethodWheel
+	Ends     time.Time
 }
 
 // maxTemporalLayer is the highest SVC temporal layer id (L1T3 → 0,1,2).
@@ -370,6 +466,25 @@ func (r *Room) TakeStage(c *Client) {
 	r.gateViewersLocked()
 	r.broadcastStageStateLocked()
 	r.stingerStartLocked()
+
+	// The queue resolves against whoever actually ended up on the stage.
+	// The person who was called takes it: that closes their turn happily.
+	// Anybody else taking it mid-call is a takeover, so the call is voided
+	// and the line restarts under the new publisher.
+	if r.turn != nil {
+		if baseID(r.turn.UserID) == baseID(c.UserID) {
+			r.cancelTurnLocked(protocol.CancelAccepted)
+		} else {
+			r.cancelTurnLocked(protocol.CancelStageChanged)
+			r.advanceTurnLocked()
+		}
+	}
+	// Taking the stage leaves the line: you are not waiting for a thing
+	// you are already doing.
+	r.removeFromQueueLocked(c.UserID)
+	r.rodizioStart = time.Now()
+	r.rodizioExtended = false
+	r.broadcastStageQueueLocked()
 	r.log.Info("stage taken", "user", c.Username)
 }
 
@@ -477,6 +592,350 @@ func (r *Room) PlayStinger(c *Client, d *protocol.StingerData) bool {
 	return true
 }
 
+// --- the stage queue -------------------------------------------------------
+//
+// Shaped exactly like RequestKeyframeFrom and PlayStinger: every entry point
+// takes r.mu and only r.mu (never Hub.mu, so the Hub-before-Room order is
+// untouched), validates membership so a departed client can never act on a
+// room it left, and fans out with enqueueControl — non-blocking, on channels
+// that are never closed. The TTL timer follows scheduleStingerStopLocked:
+// AfterFunc re-takes r.mu and compares a generation snapshot, so a stale
+// timer firing on a reaped room is a harmless no-op.
+
+// RequestStage puts c in the line ("pedir a vez"). Duplicates, overflow, the
+// current publisher and the person already being called are all silently
+// ignored — there is nothing useful for the client to do about any of them,
+// and the queue broadcast tells it the truth either way.
+func (r *Room) RequestStage(c *Client) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.clients[c]; !ok {
+		return
+	}
+	if r.publisher != nil && baseID(r.publisher.UserID) == baseID(c.UserID) {
+		return // already on stage
+	}
+	if r.turn != nil && baseID(r.turn.UserID) == baseID(c.UserID) {
+		return // already called
+	}
+	if r.queueIndexLocked(c.UserID) >= 0 || len(r.queue) >= maxQueue {
+		return
+	}
+	name := plainName(c.Username)
+	r.queue = append(r.queue, protocol.QueueEntry{
+		UserID:        c.UserID,
+		Username:      name,
+		InitialsEmoji: initialsEmoji(name),
+	})
+	r.broadcastStageQueueLocked()
+}
+
+// WithdrawStage takes c back out of the line.
+func (r *Room) WithdrawStage(c *Client) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.removeFromQueueLocked(c.UserID) {
+		r.broadcastStageQueueLocked()
+	}
+}
+
+// SetStageMode switches the room between livre and rodízio. Any member may
+// flip it — this is a room of friends, not a permissions model — and an
+// unknown value is ignored rather than trusted.
+//
+// Switching INTO rodízio restarts the clock so the mode always begins with a
+// full slot; switching out leaves the line alone, because the line is the
+// feature and the clock is the layer on top of it.
+func (r *Room) SetStageMode(c *Client, mode string) {
+	if mode != protocol.ModeLivre && mode != protocol.ModeRodizio {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.clients[c]; !ok {
+		return
+	}
+	if r.modeLocked() == mode {
+		return
+	}
+	if mode == protocol.ModeRodizio {
+		r.mode = protocol.ModeRodizio
+		if r.publisher != nil {
+			r.rodizioStart = time.Now()
+			r.rodizioExtended = false
+		}
+	} else {
+		r.mode = ""
+	}
+	r.broadcastStageQueueLocked()
+}
+
+// PassStage is "Passar a vez": the publisher calls the next person and gets
+// off the stage in one tap. It reports whether the pass happened and, when it
+// did not, a protocol error code the client can translate (an empty code means
+// "silently ignored" — a non-publisher or a ghost asking).
+//
+// The chosen person then claims the stage through the ordinary CtrlTakeStage
+// path. There is deliberately no stage-transfer mechanism: the relay still
+// has at most one publisher by construction.
+func (r *Room) PassStage(c *Client) (bool, string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.clients[c]; !ok {
+		return false, ""
+	}
+	if r.publisher == nil || baseID(r.publisher.UserID) != baseID(c.UserID) {
+		return false, ""
+	}
+	now := time.Now()
+	if now.Sub(r.lastPass) < passCooldown {
+		return false, protocol.ErrPassTooSoon
+	}
+	next, method, ok := r.pickNextLocked()
+	if !ok {
+		return false, protocol.ErrNoNextUser
+	}
+	r.lastPass = now
+	r.grantTurnLocked(next, method)
+	r.leaveStageLocked()
+	r.log.Info("stage passed", "from", c.Username, "to", next.Username, "how", method)
+	return true, ""
+}
+
+// ExtendStage spends the publisher's single +5 minutes.
+func (r *Room) ExtendStage(c *Client) (bool, string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.clients[c]; !ok {
+		return false, ""
+	}
+	if r.publisher == nil || baseID(r.publisher.UserID) != baseID(c.UserID) {
+		return false, ""
+	}
+	if r.rodizioStart.IsZero() {
+		return false, ""
+	}
+	if r.rodizioExtended {
+		return false, protocol.ErrAlreadyExt
+	}
+	r.rodizioExtended = true
+	r.broadcastStageQueueLocked()
+	return true, ""
+}
+
+// pickNextLocked answers "who is up". The visible line always wins; only when
+// nobody has asked does rodízio spin for a random member — which is what makes
+// the wheel honest rather than an animation over a decided outcome. Entries
+// whose connection has gone are skipped, so a stale queue never wastes a turn.
+// Caller must hold r.mu.
+func (r *Room) pickNextLocked() (protocol.QueueEntry, string, bool) {
+	for len(r.queue) > 0 {
+		e := r.queue[0]
+		r.queue = slices.Delete(r.queue, 0, 1)
+		if r.clientByIDLocked(e.UserID) != nil {
+			return e, protocol.MethodQueue, true
+		}
+	}
+	if r.modeLocked() != protocol.ModeRodizio {
+		return protocol.QueueEntry{}, "", false
+	}
+	// The wheel: one entry per person (a companion tab is not a candidate
+	// of its own), never the sharer who is passing.
+	var pool []protocol.QueueEntry
+	seen := map[string]bool{}
+	for c := range r.clients {
+		id := baseID(c.UserID)
+		if seen[id] || (r.publisher != nil && baseID(r.publisher.UserID) == id) {
+			continue
+		}
+		if strings.HasSuffix(c.UserID, ":tab") {
+			continue // a capture tab has no UI to be called into
+		}
+		seen[id] = true
+		name := plainName(c.Username)
+		pool = append(pool, protocol.QueueEntry{
+			UserID:        c.UserID,
+			Username:      name,
+			InitialsEmoji: initialsEmoji(name),
+		})
+	}
+	if len(pool) == 0 {
+		return protocol.QueueEntry{}, "", false
+	}
+	// Sorted first, so the pick depends only on the room's membership and
+	// the random draw — never on Go's map iteration order.
+	slices.SortFunc(pool, func(a, b protocol.QueueEntry) int {
+		return strings.Compare(a.UserID, b.UserID)
+	})
+	return pool[rand.IntN(len(pool))], protocol.MethodWheel, true
+}
+
+// grantTurnLocked calls one person to the stage and arms the window in which
+// they may claim it. Caller must hold r.mu.
+func (r *Room) grantTurnLocked(e protocol.QueueEntry, method string) {
+	r.turnGen++
+	gen := r.turnGen
+	wait := r.turnWait
+	r.turn = &stageTurn{
+		UserID:   e.UserID,
+		Username: e.Username,
+		Method:   method,
+		Ends:     time.Now().Add(wait),
+	}
+	d := protocol.StageTurnData{
+		UserID:   e.UserID,
+		Username: e.Username,
+		TTLMs:    int(wait / time.Millisecond),
+		Method:   method,
+	}
+	for c := range r.clients {
+		c.enqueueControl(protocol.CtrlStageTurn, d)
+	}
+	r.broadcastStageQueueLocked()
+
+	time.AfterFunc(wait, func() {
+		r.mu.Lock()
+		defer r.mu.Unlock()
+		if r.turnGen != gen || r.turn == nil {
+			return // superseded by a cancel, an accept, or a newer turn
+		}
+		r.cancelTurnLocked(protocol.CancelTimeout)
+		r.advanceTurnLocked()
+		r.broadcastStageQueueLocked()
+	})
+}
+
+// cancelTurnLocked ends the pending turn and says why. Bumping the generation
+// is what makes the armed TTL timer a no-op. Caller must hold r.mu.
+func (r *Room) cancelTurnLocked(reason string) {
+	if r.turn == nil {
+		return
+	}
+	d := protocol.StageCancelData{UserID: r.turn.UserID, Reason: reason}
+	r.turn = nil
+	r.turnGen++
+	for c := range r.clients {
+		c.enqueueControl(protocol.CtrlStageCancel, d)
+	}
+}
+
+// advanceTurnLocked calls the next person in line, if there is one. It only
+// ever reads the QUEUE — an unclaimed turn never re-spins the wheel, so a
+// room where nobody is paying attention goes quiet instead of pestering
+// everybody in it one after another. Caller must hold r.mu.
+func (r *Room) advanceTurnLocked() {
+	for len(r.queue) > 0 {
+		e := r.queue[0]
+		r.queue = slices.Delete(r.queue, 0, 1)
+		if r.clientByIDLocked(e.UserID) != nil {
+			r.grantTurnLocked(e, protocol.MethodQueue)
+			return
+		}
+	}
+}
+
+// stopRodizioClockLocked zeroes the turn clock; the stage is free.
+// Caller must hold r.mu.
+func (r *Room) stopRodizioClockLocked() {
+	r.rodizioStart = time.Time{}
+	r.rodizioExtended = false
+}
+
+func (r *Room) modeLocked() string {
+	if r.mode == protocol.ModeRodizio {
+		return protocol.ModeRodizio
+	}
+	return protocol.ModeLivre
+}
+
+func (r *Room) queueIndexLocked(userID string) int {
+	return slices.IndexFunc(r.queue, func(e protocol.QueueEntry) bool {
+		return baseID(e.UserID) == baseID(userID)
+	})
+}
+
+// removeFromQueueLocked drops a person from the line, reporting whether they
+// were in it. Caller must hold r.mu.
+func (r *Room) removeFromQueueLocked(userID string) bool {
+	i := r.queueIndexLocked(userID)
+	if i < 0 {
+		return false
+	}
+	r.queue = slices.Delete(r.queue, i, i+1)
+	return true
+}
+
+// clientByIDLocked finds a live connection by exact user id. Caller holds mu.
+func (r *Room) clientByIDLocked(userID string) *Client {
+	for c := range r.clients {
+		if c.UserID == userID {
+			return c
+		}
+	}
+	return nil
+}
+
+// stageQueueLocked snapshots the line and the rodízio clock. TurnLenMs already
+// carries the +5 when it has been spent, so no client repeats that maths.
+// Caller must hold r.mu.
+func (r *Room) stageQueueLocked() protocol.StageQueueData {
+	d := protocol.StageQueueData{
+		Queue:     slices.Clone(r.queue),
+		Mode:      r.modeLocked(),
+		TurnLenMs: int(rodizioTurn / time.Millisecond),
+	}
+	if d.Queue == nil {
+		d.Queue = []protocol.QueueEntry{}
+	}
+	if r.rodizioExtended {
+		d.TurnLenMs += int(rodizioExtension / time.Millisecond)
+		d.Extended = true
+	}
+	if !r.rodizioStart.IsZero() {
+		d.TimerStartMs = r.rodizioStart.UnixMilli()
+	}
+	if r.turn != nil {
+		d.TurnUserID = r.turn.UserID
+		d.TurnEndsMs = r.turn.Ends.UnixMilli()
+	}
+	return d
+}
+
+// broadcastStageQueueLocked fans the whole queue state out. Caller must hold
+// r.mu; all sends are non-blocking so holding the lock is cheap.
+func (r *Room) broadcastStageQueueLocked() {
+	d := r.stageQueueLocked()
+	for c := range r.clients {
+		c.enqueueControl(protocol.CtrlStageQueue, d)
+	}
+}
+
+// initialsEmoji maps a name's first Latin letter onto its regional-indicator
+// symbol (A → 🇦), so the line reads as a row of little cards rather than a
+// row of truncated names. Anything else — a name starting with a digit, an
+// emoji, a CJK glyph — gets the neutral chip.
+func initialsEmoji(name string) string {
+	for _, r := range strings.TrimSpace(name) {
+		switch {
+		case r >= 'A' && r <= 'Z':
+			return string(rune(0x1F1E6 + (r - 'A')))
+		case r >= 'a' && r <= 'z':
+			return string(rune(0x1F1E6 + (r - 'a')))
+		}
+		break
+	}
+	return fallbackEmoji
+}
+
+// plainName strips the companion tab's "(sharing)" suffix. The queue is a
+// list of PEOPLE, exactly like the roster (docs/design.md § 5.5).
+func plainName(name string) string {
+	if cut, ok := strings.CutSuffix(strings.TrimSpace(name), "(sharing)"); ok {
+		return strings.TrimSpace(cut)
+	}
+	return name
+}
+
 // gateViewersLocked puts every non-publisher behind the keyframe gate —
 // called when the GOP cache is invalidated by a stage or config change, so
 // stale-parameter deltas are not forwarded. Caller must hold r.mu.
@@ -510,11 +969,21 @@ func (r *Room) LeaveStage(c *Client) {
 	if r.publisher == nil || (r.publisher != c && baseID(r.publisher.UserID) != baseID(c.UserID)) {
 		return
 	}
+	r.leaveStageLocked()
+}
+
+// leaveStageLocked frees the stage and stops the rodízio clock. A pending
+// turn deliberately SURVIVES: passing the stage is exactly "call the next
+// person, then get off", and cancelling the call here would undo the pass.
+// Caller must hold r.mu and must already have checked who is asking.
+func (r *Room) leaveStageLocked() {
 	r.publisher = nil
 	r.config = nil
 	r.clearGOPLocked()
 	r.clearBlankLocked()
+	r.stopRodizioClockLocked()
 	r.broadcastStageStateLocked()
+	r.broadcastStageQueueLocked()
 	r.scheduleStingerStopLocked()
 }
 

@@ -710,6 +710,37 @@ a green dot and no badge.
 It stays on the dark ground only. On cream the wait state would have to be
 yellow, which is invisible there (§ 3.1), so `/share` keeps its words.
 
+### 5.12 The stage queue — `.queue-panel`, `.turn-toast`, `.wheel`
+
+"Pedir a vez": a visible FIFO line, and — in rodízio mode — a clock on each
+turn. Four surfaces, and the rule they all obey is § 2: **none of them is
+ever drawn on the picture.**
+
+| Surface | Where | Why there |
+| ------- | ----- | --------- |
+| `.queue-panel` | sidebar, under the roster, behind a dashed rule | The line is a list of people, so it belongs with the other list of people. Chips are one emoji each — five names do not fit 186px, and only the *next* one has to be read, so only that one is spelled out. |
+| the two buttons | footer | *Pedir a vez* / *Passar a vez* and the Livre \| Rodízio `.seg`. Everything a person can **do** stays reachable at 440px, where the sidebar is gone; only the display goes. |
+| `.turn-toast` | footer, beside `.error-text` | A toast floating over the stage is exactly what § 2 rules out. The footer is where this app already keeps its one transient line. |
+| the `.modal-scrim` prompts | over everything | "É tua!" and the rodízio time-up card reuse `.share-card` (§ 5.7) — the same paper object as the takeover confirm, because it is the same question from the other side. A modal is chrome; it is allowed over the video, an overlay is not. |
+
+Three things that are decisions rather than styling:
+
+- **The queue heading takes no scribble.** "in the room" directly above it
+  already spends the sidebar's one underline (§ 3.5), and two waves in one
+  narrow column read as a pattern instead of a hand.
+- **The wheel only spins on a real draw.** It runs when a rodízio pass finds
+  the line empty and the relay genuinely picks at random — never over a
+  decided outcome. An animation that pretends to decide something would be
+  the § 8 "animation that carries information on its own" failure inverted,
+  and worse: a lie.
+- **`.wheel-arrow` pivots at its base, not its centre.** It is a needle. Its
+  shaft takes `currentColor` rather than `--outline` — it is drawn *on* the
+  wheel's surface, and ink on the dark ground is ink on ink.
+
+`HandUpDoodle` (the raised hand on the queue heading) and `WheelArrow` follow
+§ 6: four fat fingers rather than five even ones, because at 17px five gaps
+close up and the hand becomes a mitten.
+
 ---
 
 ## 6. Iconography
@@ -746,7 +777,8 @@ Drawing rules:
 
 Current set: `CastMark`, `OnAirDot`, `ScribbleDot`, `StickFigure`, `EyesDoodle`,
 `MegaphoneDoodle`, `CloudDoodle`, `SunDoodle`, `StarDoodle`, `DiceDoodle`,
-`BoomDoodle`, `SceneTv`, `BrowserTabDoodle`, `ScribbleLoader`, `LinkDot`.
+`BoomDoodle`, `SceneTv`, `BrowserTabDoodle`, `ScribbleLoader`, `LinkDot`,
+`HandUpDoodle`, `WheelArrow`.
 `Wordmark` also lives in `doodles.tsx` — it is a drawing made of letters, not
 a component.
 

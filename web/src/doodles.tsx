@@ -725,3 +725,86 @@ export const LinkDot: Component<{ class?: string }> = (props) => (
     />
   </svg>
 );
+
+/**
+ * The queue heading's mark: a raised hand — "pedir a vez" drawn rather than
+ * described. It sits at 17px beside a 13.5px label, which is why it is four
+ * fat fingers and a thumb rather than an anatomical hand: at that size the
+ * gaps between five even fingers close up and the whole thing reads as a
+ * mitten. Uneven finger heights are what keep the silhouette legible.
+ *
+ * Takes `currentColor`, so it inherits whatever the heading is inked in.
+ */
+export const HandUpDoodle: Component<{ class?: string }> = (props) => (
+  <svg
+    class={props.class}
+    width="17"
+    height="17"
+    viewBox="0 0 24 24"
+    aria-hidden="true"
+  >
+    {/* the palm: a lopsided bag, never a rounded rectangle */}
+    <path
+      d="M6.4 11.4Q6.1 8.6 8.4 8.5L15.6 8.2Q18.1 8.1 18.2 10.6L18.4 16.2Q18.5 20.8 13.6 21.1L11.2 21.2Q7.1 21.4 6.7 17.2Z"
+      fill="currentColor"
+      stroke="var(--outline)"
+      stroke-width="2"
+      stroke-linejoin="round"
+    />
+    {/* three fingers at three different heights, plus a thumb kicked out
+        sideways so the hand has a direction */}
+    <path
+      d="M9.1 8.7 8.6 3.9M12.3 8.5 12.1 2.6M15.4 8.4 15.7 4.6"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="2.8"
+      stroke-linecap="round"
+    />
+    <path
+      d="M9.1 8.7 8.6 3.9M12.3 8.5 12.1 2.6M15.4 8.4 15.7 4.6M6.6 12.4 3.4 10.1"
+      fill="none"
+      stroke="var(--outline)"
+      stroke-width="1.4"
+      stroke-linecap="round"
+    />
+  </svg>
+);
+
+/**
+ * The rodízio wheel's pointer, for the spin that happens when nobody asked
+ * and the app has to pick. One fat crayon arrow with a wobbly shaft — it is
+ * rotated by CSS about its own base, so the drawing points straight up at
+ * rest and everything about the animation lives in `.wheel-arrow`
+ * (design.md § 7: the drawing still means the same thing standing still).
+ *
+ * The shaft takes `currentColor`, not `--outline`: it is drawn ON the wheel's
+ * surface, and ink on the dark ground is ink on ink. Only the head keeps an
+ * outline, because it is a filled shape and can carry one.
+ */
+export const WheelArrow: Component<{ class?: string }> = (props) => (
+  <svg
+    class={props.class}
+    width="30"
+    height="30"
+    viewBox="0 0 24 24"
+    aria-hidden="true"
+  >
+    {/* shaft: a quadratic, so the arrow is drawn by a hand that wavered */}
+    <path
+      d="M12.2 21.4Q11.2 15.4 11.9 8.6"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="3.4"
+      stroke-linecap="round"
+    />
+    {/* head: three points that do not agree, filled in the attention crayon */}
+    <path
+      d="M11.9 2.2 16.4 9.9 11.6 8.4 7.4 10.4Z"
+      fill="var(--yellow)"
+      stroke="var(--outline)"
+      stroke-width="2"
+      stroke-linejoin="round"
+    />
+  </svg>
+);
+

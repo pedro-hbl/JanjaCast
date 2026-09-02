@@ -1206,6 +1206,264 @@ label.fps-label {
   justify-content: center;
   flex-wrap: wrap;
 }
+/* A title in the modal card: only the two prompts that ANNOUNCE something
+   ("É tua!", "Tua vez acabou!") take one — the takeover confirm is a
+   question and stays a single line of message. Hand face, because this is
+   the app talking. */
+.modal-title {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin: 0;
+  font-family: var(--font-hand);
+  font-size: var(--step-2);
+  line-height: 1.1;
+  color: var(--text);
+  /* its own angle: the card leans −0.6°, so this leans the other way */
+  transform: rotate(1deg);
+}
+.modal-title-icon {
+  flex: none;
+  color: var(--yellow);
+  transform: rotate(-8deg);
+}
+
+/* ======================= the stage queue ==========================
+   "Pedir a vez": a visible line beside the roster, and — in rodízio mode —
+   a clock on each turn. Everything here is CHROME. The wheel and the "é
+   tua!" prompt are modal scrims, which is chrome too; nothing in this
+   feature is ever drawn on the picture (design.md § 2).
+   ================================================================== */
+
+/* --- the line, in the sidebar under the roster ---------------------- */
+
+.queue-panel {
+  margin-top: 16px;
+  padding-top: 12px;
+  /* dashed, so it reads as a fold in the paper rather than a second
+     panel: the roster and the line are one list of people */
+  border-top: 2px dashed var(--outline);
+}
+/* NOT underlined. "in the room" above it already spends this region's one
+   scribble, and two waves in one column read as a pattern (design.md § 3.5). */
+.queue-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 8px;
+  font-family: var(--font-hand);
+  font-size: var(--step-0);
+  font-weight: 700;
+  color: var(--text);
+  transform: rotate(-0.8deg);
+}
+.queue-title-icon {
+  flex: none;
+  color: var(--crayon-blue);
+  transform: rotate(6deg);
+}
+.queue-empty {
+  margin: 0;
+  font-size: var(--step--1);
+  color: var(--muted);
+}
+.queue-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+/* One person, one chip. The emoji is the whole content — a name would not
+   fit five across a 186px sidebar, and the name is in the chip's title and
+   its screen-reader label, plus spelled out below for whoever is next. */
+.queue-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  font-size: 15px;
+  line-height: 1;
+  background: var(--surface-2);
+  border: 2px solid var(--outline);
+  /* a different wobble from the roster's blob ring right above it */
+  border-radius: var(--wobble-sm);
+}
+/* every other chip leans the other way — nobody draws five identical cards */
+.queue-chips > .queue-chip:nth-child(even) { transform: rotate(3deg); }
+.queue-chips > .queue-chip:nth-child(odd) { transform: rotate(-2.5deg); }
+/* whoever is next is the only actionable item in the list, so it is the
+   one that is coloured — emphasis on one chip, not a column of state */
+.queue-chip--next {
+  background-color: var(--yellow);
+  background-image: var(--crayon-streaks);
+  box-shadow: 2px 3px 0 var(--shadow-ink);
+}
+.queue-next {
+  margin: 6px 0 0;
+  font-size: var(--step--1);
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+/* --- the turn countdown, in the footer ------------------------------ */
+/* Still a `.stat-pill` — a number being read (design.md § 5.6) — it just
+   happens to be an urgent one, so it borrows the attention crayon for its
+   border and keeps the ledger face for the digits. */
+.stat-pill--turn {
+  color: var(--text);
+  border-color: var(--angry);
+  background-color: rgba(217, 58, 58, 0.16);
+}
+
+/* --- who is up, for everybody who is not ---------------------------- */
+/* A transient line in the FOOTER, beside the error line — not a toast
+   floating over the stage. Anything centred on the picture is precisely
+   what design.md § 2 rules out, and the footer is where this app already
+   keeps its one passing message. */
+.turn-toast {
+  display: inline-block;
+  padding: 4px 11px 5px;
+  font-family: var(--font-hand);
+  font-size: var(--step-0);
+  color: var(--text);
+  background: var(--surface-2);
+  border: 2px solid var(--outline);
+  /* the error line beside it takes no box at all, and the stat pill uses
+     --wobble-sm, so this takes the mirrored recipe */
+  border-radius: var(--wobble-b);
+  transform: rotate(-0.8deg);
+  white-space: nowrap;
+  animation: toast-in 260ms cubic-bezier(0.2, 0.7, 0.3, 1) both;
+}
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(6px) rotate(-0.8deg); }
+  to { opacity: 1; transform: translateY(0) rotate(-0.8deg); }
+}
+
+/* --- the rodízio wheel ---------------------------------------------- */
+/* Only ever runs when the pick was ACTUALLY random (nobody was in line), so
+   the spin is showing a result rather than dressing up a decided one. */
+
+.wheel-scrim {
+  flex-direction: column;
+  gap: 18px;
+}
+.wheel {
+  --wheel-size: min(300px, 76vw);
+  position: relative;
+  width: var(--wheel-size);
+  aspect-ratio: 1;
+  border: 3px dashed var(--outline);
+  border-radius: 50%;
+  background: var(--surface);
+}
+/* Cards ride the rim: rotate out to their angle, translate up the radius,
+   then counter-rotate so the words stay level and readable. */
+.wheel-card {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  max-width: 84px;
+  padding: 4px 8px 5px;
+  font-family: var(--font-hand);
+  font-size: var(--step--1);
+  color: var(--text);
+  text-align: center;
+  overflow-wrap: anywhere;
+  background: var(--surface-2);
+  border: 2px solid var(--outline);
+  border-radius: var(--wobble-sm);
+  transform: translate(-50%, -50%) rotate(var(--card-angle))
+    translateY(calc(var(--wheel-size) / -2 + 26px))
+    rotate(calc(var(--card-angle) * -1));
+}
+.wheel-card--won {
+  color: var(--outline);
+  background-color: var(--yellow);
+  background-image: var(--crayon-streaks);
+  font-weight: 700;
+  animation: wheel-won 420ms 2s cubic-bezier(0.2, 0.7, 0.3, 1) both;
+}
+@keyframes wheel-won {
+  0% { box-shadow: 0 0 0 0 var(--yellow); }
+  100% { box-shadow: 2px 3px 0 var(--shadow-ink); }
+}
+/* A needle, so it pivots about its BASE rather than its middle: the shaft's
+   foot sits on the wheel's centre and the head sweeps the rim. The negative
+   margins put that pivot on the centre; `transform-origin` then matches the
+   foot of the drawing inside its own box (the shaft ends at y≈21.4 of 24).
+   Two whole turns, ease-out only: it decelerates into its answer rather than
+   stopping dead. */
+.wheel-arrow {
+  --arrow-h: 108px;
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: var(--arrow-h);
+  height: var(--arrow-h);
+  margin-top: calc(var(--arrow-h) * -0.89);
+  margin-left: calc(var(--arrow-h) / -2);
+  color: var(--text);
+  transform-origin: 50% 89%;
+  animation: wheel-spin 2s cubic-bezier(0.12, 0.72, 0.2, 1) both;
+}
+@keyframes wheel-spin {
+  from { transform: rotate(-720deg) scale(0.9); }
+  to { transform: rotate(0deg) scale(1); }
+}
+.wheel-name {
+  margin: 0;
+  font-family: var(--font-hand);
+  font-size: var(--step-2);
+  color: var(--text);
+  transform: rotate(-1.5deg);
+  animation: toast-in 300ms 2s both;
+}
+
+/* --- the rodízio clock, on the cream sheet -------------------------- */
+
+.rodizio-line {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 0;
+}
+/* the pass control sits inline with the clock, so it is one object: a
+   readout and the one thing you can do about it */
+.crayon-btn--tiny {
+  padding: 5px 12px 6px;
+  font-size: 13.5px;
+}
+.rodizio-warn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 7px 10px 8px;
+  font-family: var(--font-hand);
+  font-size: var(--step-0);
+  color: var(--text);
+  background: var(--surface-2);
+  border: 2px dashed var(--outline);
+  border-radius: var(--wobble-sm);
+  transform: rotate(-0.6deg);
+}
+.rodizio-warn-close {
+  margin-left: auto;
+  min-width: 24px;
+  min-height: 24px; /* SC 2.5.8 */
+  font-family: var(--font-hand);
+  font-size: 17px;
+  line-height: 1;
+  color: var(--muted);
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+.rodizio-warn-close:hover { color: var(--text); }
 
 /* ------------------------- stingers panel ------------------------ */
 /* Drop-in memes and airhorns the whole room plays. The panel is a DRAWER
@@ -1224,7 +1482,13 @@ label.fps-label {
   color: var(--text);
   border-radius: var(--wobble-sm);
 }
-.crayon-btn--chalk:hover:not(:disabled) { background-color: #313850; }
+/* Was a literal dark hex, which was fine while chalk only ever appeared in
+   the Activity. The rodízio prompt puts a chalk button on the cream sheet
+   too, so the hover has to be derived from the ground instead of assumed
+   (design.md § 8: no hard-coded hex inside a component). */
+.crayon-btn--chalk:hover:not(:disabled) {
+  background-color: color-mix(in srgb, var(--surface-2) 86%, var(--text));
+}
 
 .stinger-drawer {
   position: absolute;
@@ -1551,6 +1815,10 @@ label.fps-label {
   .live-wave { opacity: 1; }
   /* the loader's wave settles fully drawn rather than half-erased */
   .wait-scribble path { stroke-dashoffset: 0 !important; }
+  /* Collapsing durations does not touch delays, so the wheel's winner name
+     would sit invisible for its whole two-second cue. Drop the delay: the
+     pick is the information and it must be there standing still. */
+  .wheel-name, .wheel-card--won { animation-delay: 0s !important; }
 }
 
 /* ==================================================================

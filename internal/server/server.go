@@ -627,5 +627,28 @@ func (s *Server) handleControl(room *relay.Room, client *relay.Client, data []by
 		if err := json.Unmarshal(ctrl.Data, &play); err == nil {
 			s.playStingerFor(room, client, play)
 		}
+
+	// --- the stage queue -------------------------------------------
+	// Identity is the connection's, never the payload's. A refusal the
+	// sender can act on comes back as a CtrlError carrying a code the
+	// client translates; everything else is ignored silently, because a
+	// duplicate queue request has nothing useful to report.
+	case protocol.CtrlStageRequest:
+		room.RequestStage(client)
+	case protocol.CtrlStageWithdraw:
+		room.WithdrawStage(client)
+	case protocol.CtrlStagePass:
+		if _, code := room.PassStage(client); code != "" {
+			client.SendControl(protocol.CtrlError, protocol.ErrorData{Code: code})
+		}
+	case protocol.CtrlStageExtend:
+		if _, code := room.ExtendStage(client); code != "" {
+			client.SendControl(protocol.CtrlError, protocol.ErrorData{Code: code})
+		}
+	case protocol.CtrlStageMode:
+		var mode protocol.StageModeData
+		if err := json.Unmarshal(ctrl.Data, &mode); err == nil {
+			room.SetStageMode(client, mode.Mode)
+		}
 	}
 }

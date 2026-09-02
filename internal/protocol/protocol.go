@@ -97,6 +97,24 @@ const (
 	// eviction), so a leaked frame would have to defeat both sides.
 	CtrlBlank ControlType = "blank"
 
+	// --- the stage queue ("pedir a vez") -----------------------------
+	// Identity always comes from the authenticated connection, never the
+	// payload — exactly like CtrlStingerPlay.
+
+	// CtrlStageRequest joins the line. No payload.
+	CtrlStageRequest ControlType = "stage_request"
+	// CtrlStageWithdraw leaves the line again. No payload.
+	CtrlStageWithdraw ControlType = "stage_withdraw"
+	// CtrlStagePass is the publisher handing the stage on: the relay pops
+	// the queue head (or, in rodízio mode with an empty line, spins for a
+	// random member), announces the turn, and frees the stage. No payload.
+	CtrlStagePass ControlType = "stage_pass"
+	// CtrlStageMode switches the room between "livre" and "rodízio" — see
+	// StageModeData. Any member may flip it; it is room-wide.
+	CtrlStageMode ControlType = "stage_mode"
+	// CtrlStageExtend spends the publisher's one +5 minutes. No payload.
+	CtrlStageExtend ControlType = "stage_extend"
+
 	// Server -> client.
 	CtrlWelcome      ControlType = "welcome"       // join accepted, current room state
 	CtrlStageState   ControlType = "stage_state"   // publisher changed / config changed
@@ -130,6 +148,16 @@ const (
 	// plus a sound) marking a stream starting or stopping. The server picks
 	// the random pair so every participant sees and hears the same one.
 	CtrlStinger ControlType = "stinger"
+
+	// Server -> every room client: the stage queue plus the rodízio clock,
+	// in ONE message. One state broadcast rather than three keeps every
+	// client's answer to "who is next" consistent by construction.
+	CtrlStageQueue ControlType = "stage_queue"
+	// CtrlStageTurn is the "é tua!" moment: one person has a short window
+	// to claim the stage, and the whole room hears about it.
+	CtrlStageTurn ControlType = "stage_turn"
+	// CtrlStageCancel ends a pending turn, saying why.
+	CtrlStageCancel ControlType = "stage_cancel"
 )
 
 // Control is the JSON envelope for text messages.
@@ -219,10 +247,21 @@ type Participant struct {
 	Username string `json:"username"`
 }
 
-// ErrorData is the payload of CtrlError.
+// ErrorData is the payload of CtrlError. Message is developer-facing English
+// (docs/i18n.md § "What is deliberately not localized"); Code, when set, is a
+// stable identifier the client maps onto its own translated string.
 type ErrorData struct {
-	Message string `json:"message"`
+	Message string `json:"message,omitempty"`
+	Code    string `json:"code,omitempty"`
 }
+
+// Error codes carried by ErrorData.Code. Each has a matching `err.<code>`
+// key in web/src/i18n.ts, in both dictionaries.
+const (
+	ErrNoNextUser  = "stage.noNext"   // nobody in line and nobody to spin for
+	ErrAlreadyExt  = "stage.extended" // the one +5 minutes is already spent
+	ErrPassTooSoon = "stage.cooldown" // passing again inside the cooldown
+)
 
 // TokenRefreshData is the payload of CtrlTokenRefresh: a fresh share token
 // the companion tab must use on its next reconnect, so long streams outlive
@@ -264,6 +303,83 @@ type StingerPlayData struct {
 	Image  string `json:"image,omitempty"`
 	Audio  string `json:"audio,omitempty"`
 	Random bool   `json:"random,omitempty"`
+}
+
+// --- the stage queue -------------------------------------------------------
+
+// Stage queue modes, the value of StageModeData.Mode and StageQueueData.Mode.
+//
+// Livre is the default and the zero value: the line exists, the sharer hands
+// it on whenever they feel like it. Rodizio adds a clock — the sharer is
+// prompted when their twenty minutes are up, and passing with an empty line
+// spins for a random member instead of refusing.
+const (
+	ModeLivre   = "livre"
+	ModeRodizio = "rodizio"
+)
+
+// Reasons carried by StageCancelData.Reason.
+const (
+	CancelTimeout      = "timeout"       // the turn's window elapsed
+	CancelLeft         = "left"          // the chosen person disconnected
+	CancelAccepted     = "accepted"      // they took the stage — the happy path
+	CancelStageChanged = "stage_changed" // somebody else grabbed the stage
+)
+
+// How the next person was chosen, carried by StageTurnData.Method.
+const (
+	MethodQueue = "queue" // popped off the visible line
+	MethodWheel = "wheel" // rodízio spin: nobody had asked
+)
+
+// QueueEntry is one person waiting for the stage. InitialsEmoji is computed
+// once at enqueue so every client draws the same chip.
+type QueueEntry struct {
+	UserID        string `json:"userId"`
+	Username      string `json:"username"`
+	InitialsEmoji string `json:"initialsEmoji"`
+}
+
+// StageQueueData is the payload of CtrlStageQueue: everything about "who is
+// next", in one message.
+//
+// TimerStartMs / TurnLenMs are the rodízio clock as SERVER wall time (Unix
+// ms), so a client with a skewed clock renders a wrong countdown rather than
+// getting a different answer than the room. TurnLenMs already includes the
+// +5 minutes once Extended is true — the client never repeats that maths.
+type StageQueueData struct {
+	Queue []QueueEntry `json:"queue"`
+	Mode  string       `json:"mode"` // ModeLivre | ModeRodizio
+
+	TimerStartMs int64 `json:"timerStartMs,omitempty"` // 0 = stage is free
+	TurnLenMs    int   `json:"turnLenMs"`
+	Extended     bool  `json:"extended,omitempty"`
+
+	// The pending turn, so a late joiner renders it without hearing the
+	// cue that CtrlStageTurn carries.
+	TurnUserID string `json:"turnUserId,omitempty"`
+	TurnEndsMs int64  `json:"turnEndsMs,omitempty"`
+}
+
+// StageModeData is the payload of CtrlStageMode.
+type StageModeData struct {
+	Mode string `json:"mode"` // ModeLivre | ModeRodizio
+}
+
+// StageTurnData is the payload of CtrlStageTurn: it is UserID's turn, they
+// have TTLMs to claim the stage, and Method says how they were picked (a
+// wheel pick is the one the client animates).
+type StageTurnData struct {
+	UserID   string `json:"userId"`
+	Username string `json:"username"`
+	TTLMs    int    `json:"ttlMs"`
+	Method   string `json:"method"`
+}
+
+// StageCancelData is the payload of CtrlStageCancel.
+type StageCancelData struct {
+	UserID string `json:"userId"`
+	Reason string `json:"reason"`
 }
 
 // MarshalControl encodes a control envelope with its payload.

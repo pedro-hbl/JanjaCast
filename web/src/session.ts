@@ -10,7 +10,11 @@ import type {
   ConfigData,
   Control,
   RoomStateData,
+  StageCancelData,
+  StageMode,
+  StageQueueData,
   StageStateData,
+  StageTurnData,
   StingerData,
   SyncData,
   WelcomeData,
@@ -32,10 +36,20 @@ export interface Credentials {
 const PING_INTERVAL_MS = 10_000;
 const MAX_BACKOFF_MS = 8_000;
 
+/** The stage queue as the client holds it. Mirrors the server's one-message
+ *  state broadcast: the line, the mode, and the rodízio clock together. */
+const EMPTY_QUEUE: StageQueueData = {
+  queue: [],
+  mode: "livre",
+  turnLenMs: 20 * 60 * 1000,
+};
+
 export class Session {
   readonly status;
   readonly stage;
   readonly participants;
+  /** Who is in line, what mode the room is in, and the rodízio clock. */
+  readonly queue;
 
   private ws: WebSocket | null = null;
   private assignedId: string | null = null;
@@ -48,6 +62,7 @@ export class Session {
   private setStatus;
   private setStage;
   private setParticipants;
+  private setQueue;
 
   /** Called for every incoming binary media message. */
   onMedia: ((buf: ArrayBuffer) => void) | null = null;
@@ -65,6 +80,13 @@ export class Session {
   onSuperseded: (() => void) | null = null;
   /** A stream started or stopped: play the server-chosen stinger. */
   onStinger: ((s: StingerData) => void) | null = null;
+  /** Somebody was called to the stage — "é tua!". The whole room gets this,
+   *  so it is a cue plus a prompt, not a private notification. */
+  onStageTurn: ((turn: StageTurnData) => void) | null = null;
+  /** The pending turn ended, with the reason it did. */
+  onStageCancel: ((cancel: StageCancelData) => void) | null = null;
+  /** The server refused something we asked for, with a code to translate. */
+  onServerError: ((code: string) => void) | null = null;
 
   constructor(
     private identity: Identity,
@@ -81,6 +103,9 @@ export class Session {
     this.setStage = setStage;
     this.participants = participants;
     this.setParticipants = setParticipants;
+    const [queue, setQueue] = createSignal<StageQueueData>(EMPTY_QUEUE);
+    this.queue = queue;
+    this.setQueue = setQueue;
   }
 
   connect(): void {
@@ -220,6 +245,47 @@ export class Session {
     this.sendControl("stinger_play", opts);
   }
 
+  // --- the stage queue ------------------------------------------------------
+  // Every one of these is fire-and-forget: the server answers with the whole
+  // queue state, so the client never optimistically edits its own copy and
+  // the two can therefore never disagree. A refusal the sender can act on
+  // arrives as an error code; the rest are silent by design (a duplicate
+  // "pedir a vez" has nothing useful to report).
+
+  /** "Pedir a vez" — join the line. */
+  requestStage(): void {
+    this.sendControl("stage_request", {});
+  }
+
+  /** "Sair da fila" — leave it again. */
+  withdrawStage(): void {
+    this.sendControl("stage_withdraw", {});
+  }
+
+  /** "Passar a vez" — publisher only: call the next person and step off. */
+  passStage(): void {
+    this.sendControl("stage_pass", {});
+  }
+
+  /** Publisher only: spend the one +5 minutes of this rodízio turn. */
+  extendStage(): void {
+    this.sendControl("stage_extend", {});
+  }
+
+  /** Flip the room between livre and rodízio. Room-wide, any member. */
+  setStageMode(mode: StageMode): void {
+    this.sendControl("stage_mode", { mode });
+  }
+
+  /** True when this person is the one currently being called to the stage —
+   *  which is also what lets the Share button skip the takeover confirm. */
+  hasTurn(): boolean {
+    const id = this.queue().turnUserId;
+    if (!id) return false;
+    const strip = (v: string) => (v.endsWith(":tab") ? v.slice(0, -4) : v);
+    return strip(id) === strip(this.selfId());
+  }
+
   sendMedia(buf: ArrayBuffer): void {
     if (this.ws?.readyState === WebSocket.OPEN) this.ws.send(buf);
   }
@@ -317,15 +383,36 @@ export class Session {
       case "stinger":
         this.onStinger?.(ctrl.data as StingerData);
         break;
+      case "stage_queue":
+        // Whole-state replacement, never a merge: the server's copy is the
+        // only copy, and a missing `queue` means an empty line.
+        this.setQueue({
+          ...EMPTY_QUEUE,
+          ...(ctrl.data as StageQueueData),
+          queue: (ctrl.data as StageQueueData)?.queue ?? [],
+        });
+        break;
+      case "stage_turn":
+        this.onStageTurn?.(ctrl.data as StageTurnData);
+        break;
+      case "stage_cancel":
+        this.onStageCancel?.(ctrl.data as StageCancelData);
+        break;
       case "token_refresh": {
         // Fresh share token so reconnects keep working past token expiry.
         const { shareToken } = ctrl.data as { shareToken: string };
         if (shareToken) this.creds.shareToken = shareToken;
         break;
       }
-      case "error":
-        console.error("server error:", ctrl.data);
+      case "error": {
+        // A `code` is a refusal the person can act on and gets translated
+        // by the UI; a bare `message` is developer-facing English (see
+        // docs/i18n.md) and belongs in the console.
+        const { code } = (ctrl.data ?? {}) as { code?: string };
+        if (code) this.onServerError?.(code);
+        else console.error("server error:", ctrl.data);
         break;
+      }
     }
   }
 }
