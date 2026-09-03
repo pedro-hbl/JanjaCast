@@ -106,7 +106,8 @@ class Harness {
     for (let i = 0; i < n; i++) {
       const id = `probe_${i}_${Math.random().toString(36).slice(2, 8)}`;
       const ws = new WebSocket(WS_URL);
-      const ctrl = [];
+      const ctrl = [];    // full receive transcript (never consumed)
+      const pending = []; // unconsumed controls; onCtrl pops from here
       const bin = [];
       const waiters = [];
 
@@ -119,14 +120,19 @@ class Harness {
         if (isBinary) { bin.push(Buffer.from(data)); return; }
         let msg; try { msg = JSON.parse(data.toString()); } catch { return; }
         ctrl.push(msg);
-        for (let j = waiters.length - 1; j >= 0; j--) {
-          if (waiters[j].type === msg.type) { waiters.splice(j, 1)[0].resolve(msg); }
+        let claimed = false;
+        for (let j = 0; j < waiters.length; j++) {
+          if (waiters[j].type === msg.type) { waiters.splice(j, 1)[0].resolve(msg); claimed = true; break; }
         }
+        if (!claimed) pending.push(msg);
       });
 
+      // Each control message is delivered to exactly ONE onCtrl call:
+      // consuming from `pending` (or claiming the next live frame) means two
+      // sequential onCtrl('x') calls always see two DIFFERENT messages.
       const onCtrl = (type, timeoutMs = 2500) => {
-        const seen = ctrl.find((m) => m.type === type);
-        if (seen) return Promise.resolve(seen);
+        const idx = pending.findIndex((m) => m.type === type);
+        if (idx >= 0) return Promise.resolve(pending.splice(idx, 1)[0]);
         return new Promise((resolve, reject) => {
           const w = { type, resolve };
           waiters.push(w);
@@ -136,13 +142,22 @@ class Harness {
           }, timeoutMs);
         });
       };
+      /** Consume and discard every pending message of `type` (plus any that
+       *  arrive within graceMs). Use before asserting on the NEXT broadcast
+       *  of a type the client may have accumulated. */
+      const drain = async (type, graceMs = 150) => {
+        await new Promise((r) => setTimeout(r, graceMs));
+        for (let j = pending.length - 1; j >= 0; j--) {
+          if (pending[j].type === type) pending.splice(j, 1);
+        }
+      };
       const sendCtrl = (type, data) => ws.send(JSON.stringify({ type, data }));
       const sendMedia = (buf) => ws.send(buf);
 
       sendCtrl("join", { room, userId: id, username: id });
       await onCtrl("welcome");
       this.note("client_joined", { id, room });
-      out.push({ id, ws, ctrl, bin, onCtrl, sendCtrl, sendMedia, close: () => ws.close() });
+      out.push({ id, ws, ctrl, bin, onCtrl, drain, sendCtrl, sendMedia, close: () => ws.close() });
     }
     return out;
   }
