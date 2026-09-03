@@ -223,6 +223,11 @@ const (
 	CtrlSubscribe   ControlType = "subscribe"   // client -> server {slots:[u8]}
 	CtrlUnsubscribe ControlType = "unsubscribe" // client -> server {slots:[u8]}
 
+	// CtrlSlotsMax opens the room's extra chairs (multistream Seam 4). Any
+	// member may set 1..6; rooms that never send it keep exactly the legacy
+	// single-stage semantics, takeover and all.
+	CtrlSlotsMax ControlType = "slots_max" // client -> server {max}
+
 	// Aposta paralela: on-the-spot 1v1 side-bets. The challenger writes the
 	// bet's text live; the target answers; the current publisher judges.
 	CtrlApostaChallenge ControlType = "aposta_challenge" // client -> server {target, text}
@@ -250,6 +255,11 @@ type Control struct {
 type ClipReadyData struct {
 	URL       string `json:"url"`
 	ExpiresMs int64  `json:"expiresMs"`
+}
+
+// SlotsMaxData raises the room's chair count.
+type SlotsMaxData struct {
+	Max int `json:"max"`
 }
 
 // SubscribeData names slot indices to (un)subscribe. Set semantics,
@@ -392,6 +402,9 @@ type StageStateData struct {
 	// Slots is the multi-slot view of the stage — additive beside the
 	// legacy singleton fields, which stay byte-identical until Seam 4.
 	Slots []SlotInfo `json:"slots,omitempty"`
+	// MaxSlots is how many chairs this room currently allows (1 unless the
+	// room opted into multistream via slots_max).
+	MaxSlots int `json:"maxSlots,omitempty"`
 	// Phase is the overall room phase: "lobby" when nobody is publishing,
 	// "live" when there is an active publisher. It rides CtrlWelcome so a
 	// late joiner never guesses.
@@ -415,6 +428,11 @@ type SlotInfo struct {
 	Idx          int    `json:"idx"`
 	OccupantID   string `json:"occupantId,omitempty"`
 	OccupantName string `json:"occupantName,omitempty"`
+	// Config is this chair's codec announcement — a viewer needs it to
+	// build the decoder for this tile.
+	Config *ConfigData `json:"config,omitempty"`
+	// Blanked is this chair's privacy state.
+	Blanked bool `json:"blanked,omitempty"`
 }
 
 type WelcomeData struct {
