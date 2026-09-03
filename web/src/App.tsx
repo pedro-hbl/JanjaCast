@@ -200,6 +200,11 @@ const App: Component = () => {
   // Corrente da tela: the nomination banner state — server-driven.
   const [corrente, setCorrente] = createSignal<{ target: string; targetName: string; by: string; endsAtMs: number } | null>(null);
   const [correnteTally, setCorrenteTally] = createSignal<{ vai: number; calma: number }>({ vai: 0, calma: 0 });
+  // Aposta paralela: current bet card + session win counts, all server truth.
+  const [aposta, setAposta] = createSignal<{ id: string; phase: string; text: string; challengerId: string; challengerName: string; targetId: string; targetName: string; winnerId?: string } | null>(null);
+  const [apostaWins, setApostaWins] = createSignal<Record<string, number>>({});
+  const [betting, setBetting] = createSignal<{ id: string; name: string } | null>(null);
+  const [betText, setBetText] = createSignal("");
   // "Cadê todo mundo?": the room's attention, publisher-only knowledge.
   const [attention, setAttention] = createSignal<{ watching: number; total: number } | null>(null);
   // Pitacos: bezel sticky notes, purely transient — each removes itself.
@@ -668,6 +673,13 @@ const App: Component = () => {
       s.onPitacoShow = (d) => {
         setPitacos((xs) => [...xs.filter((p) => p.id !== d.id), d]);
         setTimeout(() => setPitacos((xs) => xs.filter((p) => p.id !== d.id)), d.ttlMs || 10_000);
+      };
+      s.onApostaState = (d) => {
+        if (d.wins) setApostaWins(d.wins);
+        setAposta(d);
+        if (d.phase === "resolved" || d.phase === "declined" || d.phase === "expired") {
+          setTimeout(() => setAposta((a) => (a && a.id === d.id ? null : a)), 6000);
+        }
       };
       s.onCorrenteStarted = (d) => { setCorrente(d); setCorrenteTally({ vai: 0, calma: 0 }); };
       s.onCorrenteTally = (d) => setCorrenteTally(d);
@@ -1460,6 +1472,15 @@ const App: Component = () => {
                       {t("roster.sharing")}
                     </span>
                   </Show>
+                  <Show when={!p.isSelf}>
+                    <button
+                      class="aposta-dare"
+                      title={t("aposta.dare", { name: p.name })}
+                      onClick={() => { setBetting({ id: p.id, name: p.name }); setBetText(""); }}
+                    >
+                      🎲
+                    </button>
+                  </Show>
                   <Show when={p.isSelf && !p.sharing}>
                     <span class="participant-tag participant-tag--you">
                       {t("roster.you")}
@@ -1510,6 +1531,66 @@ const App: Component = () => {
                   {t("replay.close")}
                 </button>
               </div>
+            </div>
+          </Show>
+
+          {/* Aposta paralela: the composer (writes the bet on the spot) and
+              the live bet card — margin UI, the room as witness bench. */}
+          <Show when={betting()}>
+            <div class="aposta-compose">
+              <span class="aposta-vs">{t("aposta.against", { name: betting()!.name })}</span>
+              <input
+                class="varal-input"
+                maxlength="80"
+                placeholder={t("aposta.placeholder")}
+                value={betText()}
+                onInput={(e) => setBetText(e.currentTarget.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Escape") setBetting(null);
+                  if (e.key !== "Enter") return;
+                  const txt = betText().trim();
+                  if (!txt) return;
+                  session()?.challengeAposta(betting()!.id, txt);
+                  setBetting(null);
+                }}
+              />
+            </div>
+          </Show>
+          <Show when={aposta()}>
+            <div class={`aposta-card aposta-card--${aposta()!.phase}`}>
+              <span class="aposta-head">
+                {aposta()!.challengerName} 🆚 {aposta()!.targetName}
+              </span>
+              <span class="aposta-text">“{aposta()!.text}”</span>
+              <Show when={aposta()!.phase === "offered" && baseId(aposta()!.targetId) === baseId(me())}>
+                <div class="aposta-actions">
+                  <button class="crayon-btn crayon-btn--go" onClick={() => session()?.answerAposta(aposta()!.id, true)}>{t("aposta.accept")}</button>
+                  <button class="crayon-btn crayon-btn--chalk" onClick={() => session()?.answerAposta(aposta()!.id, false)}>{t("aposta.decline")}</button>
+                </div>
+              </Show>
+              <Show when={aposta()!.phase === "offered" && baseId(aposta()!.targetId) !== baseId(me())}>
+                <span class="aposta-note">{t("aposta.waiting", { name: aposta()!.targetName })}</span>
+              </Show>
+              <Show when={aposta()!.phase === "on" && session()?.ownsStage()}>
+                <div class="aposta-actions">
+                  <button class="crayon-btn" title={t("aposta.judgeChallenger")} onClick={() => session()?.judgeAposta(aposta()!.id, "challenger")}>👍 {aposta()!.challengerName}</button>
+                  <button class="crayon-btn" title={t("aposta.judgeTarget")} onClick={() => session()?.judgeAposta(aposta()!.id, "target")}>👍 {aposta()!.targetName}</button>
+                </div>
+              </Show>
+              <Show when={aposta()!.phase === "on" && !session()?.ownsStage()}>
+                <span class="aposta-note">{t("aposta.live")}</span>
+              </Show>
+              <Show when={aposta()!.phase === "resolved"}>
+                <span class="aposta-note aposta-note--won">
+                  {t("aposta.won", { name: baseId(aposta()!.winnerId ?? "") === baseId(aposta()!.challengerId) ? aposta()!.challengerName : aposta()!.targetName })}
+                </span>
+              </Show>
+              <Show when={aposta()!.phase === "declined"}>
+                <span class="aposta-note">{t("aposta.declined")}</span>
+              </Show>
+              <Show when={aposta()!.phase === "expired"}>
+                <span class="aposta-note">{t("aposta.expired")}</span>
+              </Show>
             </div>
           </Show>
 

@@ -495,6 +495,12 @@ type Room struct {
 	pitacoExpiry map[string]time.Time // "left:0".."right:3" -> busy until
 	pitacoLast   map[string]time.Time // base user id -> last post
 	pitacoSeq    uint64
+
+	// --- apostas (guarded by mu): live 1v1 side-bets + session win counts.
+	apostas    map[string]*apostaState
+	apostaWins map[string]int
+	apostaLast map[string]time.Time // challenger base id -> last challenge
+	apostaSeq  uint64
 }
 
 // rAwardsCallback is installed by the server layer to receive assembled
@@ -2540,6 +2546,166 @@ func (r *Room) PitacoPost(c *Client, text, side string) {
 	for cl := range r.clients {
 		cl.enqueueControl(protocol.CtrlPitacoShow, d)
 	}
+}
+
+// --- aposta paralela --------------------------------------------------------
+
+const (
+	apostaOfferTTL  = 30 * time.Second
+	apostaCooldown  = 15 * time.Second
+	apostaMaxText   = 80
+	apostaMaxActive = 3
+)
+
+type apostaState struct {
+	id             string
+	phase          string
+	text           string
+	challengerID   string
+	challengerName string
+	targetID       string
+	targetName     string
+	gen            uint64
+}
+
+func (r *Room) broadcastApostaLocked(a *apostaState, winnerID string) {
+	d := protocol.ApostaStateData{
+		ID: a.id, Phase: a.phase, Text: a.text,
+		ChallengerID: a.challengerID, ChallengerName: a.challengerName,
+		TargetID: a.targetID, TargetName: a.targetName,
+		WinnerID: winnerID,
+	}
+	if len(r.apostaWins) > 0 {
+		d.Wins = make(map[string]int, len(r.apostaWins))
+		for k, v := range r.apostaWins {
+			d.Wins[k] = v
+		}
+	}
+	for cl := range r.clients {
+		cl.enqueueControl(protocol.CtrlApostaState, d)
+	}
+}
+
+// ApostaChallenge opens a bet written on the spot. Free text, sanitized;
+// the whole room becomes the witness bench from the first broadcast.
+func (r *Room) ApostaChallenge(c *Client, target, text string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.clients[c]; !ok {
+		return
+	}
+	text = pitacoTagRe.ReplaceAllString(text, "")
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return
+	}
+	if len(text) > apostaMaxText {
+		text = text[:apostaMaxText]
+	}
+	tc := r.clientByIDLocked(target)
+	if tc == nil || baseID(target) == baseID(c.UserID) {
+		c.enqueueControl(protocol.CtrlError, protocol.ErrorData{Code: "aposta.badTarget"})
+		return
+	}
+	if r.apostaLast == nil {
+		r.apostaLast = make(map[string]time.Time)
+	}
+	now := time.Now()
+	if now.Sub(r.apostaLast[baseID(c.UserID)]) < apostaCooldown {
+		c.enqueueControl(protocol.CtrlError, protocol.ErrorData{Code: "aposta.cooldown"})
+		return
+	}
+	if r.apostas == nil {
+		r.apostas = make(map[string]*apostaState)
+	}
+	active := 0
+	for _, a := range r.apostas {
+		if a.phase == "offered" || a.phase == "on" {
+			active++
+		}
+	}
+	if active >= apostaMaxActive {
+		c.enqueueControl(protocol.CtrlError, protocol.ErrorData{Code: "aposta.full"})
+		return
+	}
+	r.apostaLast[baseID(c.UserID)] = now
+	r.apostaSeq++
+	a := &apostaState{
+		id:             strconv.FormatUint(r.apostaSeq, 10),
+		phase:          "offered",
+		text:           text,
+		challengerID:   c.UserID,
+		challengerName: c.Username,
+		targetID:       tc.UserID,
+		targetName:     tc.Username,
+	}
+	a.gen++
+	gen := a.gen
+	r.apostas[a.id] = a
+	r.broadcastApostaLocked(a, "")
+	time.AfterFunc(apostaOfferTTL, func() {
+		r.mu.Lock()
+		defer r.mu.Unlock()
+		if cur, ok := r.apostas[a.id]; ok && cur.gen == gen && cur.phase == "offered" {
+			cur.phase = "expired"
+			r.broadcastApostaLocked(cur, "")
+			delete(r.apostas, a.id)
+		}
+	})
+}
+
+// ApostaAnswer handles accept/decline (target only).
+func (r *Room) ApostaAnswer(c *Client, id string, accept bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.clients[c]; !ok {
+		return
+	}
+	a := r.apostas[id]
+	if a == nil || a.phase != "offered" {
+		return
+	}
+	if baseID(c.UserID) != baseID(a.targetID) {
+		c.enqueueControl(protocol.CtrlError, protocol.ErrorData{Code: "aposta.notTarget"})
+		return
+	}
+	a.gen++ // disarm the offer expiry
+	if accept {
+		a.phase = "on"
+		r.broadcastApostaLocked(a, "")
+		return
+	}
+	a.phase = "declined"
+	r.broadcastApostaLocked(a, "")
+	delete(r.apostas, id)
+}
+
+// ApostaJudge resolves a live bet — the current publisher's whistle alone.
+func (r *Room) ApostaJudge(c *Client, id, winner string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.clients[c]; !ok {
+		return
+	}
+	if r.publisher == nil || baseID(r.publisher.UserID) != baseID(c.UserID) {
+		c.enqueueControl(protocol.CtrlError, protocol.ErrorData{Code: "aposta.notJudge"})
+		return
+	}
+	a := r.apostas[id]
+	if a == nil || a.phase != "on" {
+		return
+	}
+	winnerID := a.challengerID
+	if winner == "target" {
+		winnerID = a.targetID
+	}
+	if r.apostaWins == nil {
+		r.apostaWins = make(map[string]int)
+	}
+	r.apostaWins[winnerID]++
+	a.phase = "resolved"
+	r.broadcastApostaLocked(a, winnerID)
+	delete(r.apostas, id)
 }
 
 // baseID strips the companion-tab suffix, yielding the person's identity.

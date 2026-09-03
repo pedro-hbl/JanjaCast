@@ -210,6 +210,14 @@ const (
 	// Mural de pitacos: ephemeral sticky notes on the bezel around the video.
 	CtrlPitacoPost ControlType = "pitaco_post" // client -> server {text, side}
 	CtrlPitacoShow ControlType = "pitaco_show" // server -> all {id, text, side, slot, authorName, ttlMs}
+
+	// Aposta paralela: on-the-spot 1v1 side-bets. The challenger writes the
+	// bet's text live; the target answers; the current publisher judges.
+	CtrlApostaChallenge ControlType = "aposta_challenge" // client -> server {target, text}
+	CtrlApostaAccept    ControlType = "aposta_accept"    // target -> server {id}
+	CtrlApostaDecline   ControlType = "aposta_decline"   // target -> server {id}
+	CtrlApostaJudge     ControlType = "aposta_judge"     // publisher -> server {id, winner}
+	CtrlApostaState     ControlType = "aposta_state"     // server -> all
 	// Varal (session memory board)
 	CtrlVaralPin    ControlType = "varal_pin"
 	CtrlVaralRemove ControlType = "varal_remove"
@@ -261,6 +269,32 @@ type PitacoShowData struct {
 	Slot       int    `json:"slot"`
 	AuthorName string `json:"authorName"`
 	TTLMs      int    `json:"ttlMs"`
+}
+
+// ApostaChallengeData opens a bet with text written on the spot.
+type ApostaChallengeData struct {
+	Target string `json:"target"`
+	Text   string `json:"text"`
+}
+
+// ApostaAnswerData accepts, declines or judges by bet id.
+type ApostaAnswerData struct {
+	ID     string `json:"id"`
+	Winner string `json:"winner,omitempty"` // judge only: "challenger" | "target"
+}
+
+// ApostaStateData is the whole bet, every time it changes, to everyone —
+// witnesses included; Wins is the session scoreboard by user id.
+type ApostaStateData struct {
+	ID             string         `json:"id"`
+	Phase          string         `json:"phase"` // offered|on|declined|resolved|expired
+	Text           string         `json:"text"`
+	ChallengerID   string         `json:"challengerId"`
+	ChallengerName string         `json:"challengerName"`
+	TargetID       string         `json:"targetId"`
+	TargetName     string         `json:"targetName"`
+	WinnerID       string         `json:"winnerId,omitempty"`
+	Wins           map[string]int `json:"wins,omitempty"`
 }
 
 // CorrenteNominateData names who the publisher wants next.

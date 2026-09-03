@@ -219,6 +219,8 @@ export class Session {
   onAttentionState: ((d: { watching: number; total: number }) => void) | null = null;
   /** A sticky note landed on the bezel — everyone draws it. */
   onPitacoShow: ((d: { id: string; text: string; side: string; slot: number; authorName: string; ttlMs: number }) => void) | null = null;
+  /** A side-bet changed phase — the whole room is the witness bench. */
+  onApostaState: ((d: { id: string; phase: string; text: string; challengerId: string; challengerName: string; targetId: string; targetName: string; winnerId?: string; wins?: Record<string, number> }) => void) | null = null;
   onCorrenteStarted: ((d: { target: string; targetName: string; by: string; endsAtMs: number }) => void) | null = null;
   onCorrenteTally: ((d: { vai: number; calma: number }) => void) | null = null;
   onCorrenteCanceled: ((d: { reason: string }) => void) | null = null;
@@ -386,6 +388,9 @@ export class Session {
   }
   reportAttention(visible: boolean): void { this.sendControl("attention_report" as any, { visible }); }
   postPitaco(text: string, side: "left" | "right"): void { this.sendControl("pitaco_post" as any, { text, side }); }
+  challengeAposta(target: string, text: string): void { this.sendControl("aposta_challenge" as any, { target, text }); }
+  answerAposta(id: string, accept: boolean): void { this.sendControl((accept ? "aposta_accept" : "aposta_decline") as any, { id }); }
+  judgeAposta(id: string, winner: "challenger" | "target"): void { this.sendControl("aposta_judge" as any, { id, winner }); }
   nominateCorrente(target: string): void { this.sendControl("corrente_nominate" as any, { target }); }
   voteCorrente(choice: "vai" | "calma"): void { this.sendControl("corrente_vote" as any, { choice }); }
   removeVaralPin(id: string): void { this.sendControl("varal_remove" as any, { id }); }
@@ -586,6 +591,10 @@ export class Session {
       }
       case "pitaco_show": {
         this.onPitacoShow?.(ctrl.data as { id: string; text: string; side: string; slot: number; authorName: string; ttlMs: number });
+        break;
+      }
+      case "aposta_state": {
+        this.onApostaState?.(ctrl.data as never);
         break;
       }
       case "corrente_started": {

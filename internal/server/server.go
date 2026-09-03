@@ -736,6 +736,26 @@ func (s *Server) handleControl(room *relay.Room, client *relay.Client, data []by
 		if err := json.Unmarshal(ctrl.Data, &d); err == nil {
 			room.PitacoPost(client, d.Text, d.Side)
 		}
+	case protocol.CtrlApostaChallenge:
+		var d protocol.ApostaChallengeData
+		if err := json.Unmarshal(ctrl.Data, &d); err == nil {
+			room.ApostaChallenge(client, d.Target, d.Text)
+		}
+	case protocol.CtrlApostaAccept:
+		var d protocol.ApostaAnswerData
+		if err := json.Unmarshal(ctrl.Data, &d); err == nil {
+			room.ApostaAnswer(client, d.ID, true)
+		}
+	case protocol.CtrlApostaDecline:
+		var d protocol.ApostaAnswerData
+		if err := json.Unmarshal(ctrl.Data, &d); err == nil {
+			room.ApostaAnswer(client, d.ID, false)
+		}
+	case protocol.CtrlApostaJudge:
+		var d protocol.ApostaAnswerData
+		if err := json.Unmarshal(ctrl.Data, &d); err == nil {
+			room.ApostaJudge(client, d.ID, d.Winner)
+		}
 	case protocol.CtrlCorrenteNominate:
 		var d protocol.CorrenteNominateData
 		if err := json.Unmarshal(ctrl.Data, &d); err == nil {
