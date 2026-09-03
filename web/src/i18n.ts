@@ -293,6 +293,14 @@ const en = {
   
   // --- instant clips -------------------------------------------------
   "assist.button": "Deixa comigo â point at the screen",
+  "corrente.pick": "Passar a Telaâ¦",
+  "corrente.line": "â¡ {name} takes over in {s}s â speak now or cheer",
+  "corrente.vai": "Vai!",
+  "corrente.calma": "Calma!",
+  "corrente.canceled": "The room said calma â handoff canceled.",
+  "err.corrente.notPublisher": "â Only the person sharing can pass the screen.",
+  "err.corrente.badTarget": "â Pick someone who's in the room.",
+  "err.corrente.active": "â A handoff is already counting down.",
   "varal.empty": "Nothing on the line yet â pin the first moment",
   "varal.placeholder": "quote of the nightâ¦",
   "varal.pinFrame": "Pin this exact frame",
@@ -573,6 +581,14 @@ const ptBR: Record<MessageKey, Message> = {
   
   // --- clipe instantâneo --------------------------------------------
   "assist.button": "Deixa comigo â aponta na tela",
+  "corrente.pick": "Passar a Telaâ¦",
+  "corrente.line": "â¡ {name} assume em {s}s â fala agora ou torce",
+  "corrente.vai": "Vai!",
+  "corrente.calma": "Calma!",
+  "corrente.canceled": "A sala pediu calma â passagem cancelada.",
+  "err.corrente.notPublisher": "â SÃ³ quem tÃ¡ transmitindo pode passar a tela.",
+  "err.corrente.badTarget": "â Escolhe alguÃ©m que tÃ¡ na sala.",
+  "err.corrente.active": "â JÃ¡ tem uma passagem contando.",
   "varal.empty": "Varal vazio â pendura o primeiro momento",
   "varal.placeholder": "frase da noiteâ¦",
   "varal.pinFrame": "Pendurar esse frame",

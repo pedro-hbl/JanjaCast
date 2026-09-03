@@ -194,6 +194,14 @@ const (
 	// unicasts a short-lived hint to the current publisher only.
 	CtrlAssistPoint ControlType = "assist_point" // client -> server {x,y}
 	CtrlAssistShow  ControlType = "assist_show"  // server -> publisher {x,y,userId,username,ttlMs}
+
+	// Corrente da tela: the publisher nominates a specific person to take
+	// over; the room sees a countdown banner and can veto with "calma".
+	CtrlCorrenteNominate ControlType = "corrente_nominate" // publisher -> server {target}
+	CtrlCorrenteVote     ControlType = "corrente_vote"     // any viewer -> server {choice}
+	CtrlCorrenteStarted  ControlType = "corrente_started"  // server -> all {target, targetName, by, endsAtMs}
+	CtrlCorrenteTally    ControlType = "corrente_tally"    // server -> all {vai, calma}
+	CtrlCorrenteCanceled ControlType = "corrente_canceled" // server -> all {reason}
 	// Varal (session memory board)
 	CtrlVaralPin    ControlType = "varal_pin"
 	CtrlVaralRemove ControlType = "varal_remove"
@@ -218,6 +226,35 @@ type Control struct {
 type ClipReadyData struct {
 	URL       string `json:"url"`
 	ExpiresMs int64  `json:"expiresMs"`
+}
+
+// CorrenteNominateData names who the publisher wants next.
+type CorrenteNominateData struct {
+	Target string `json:"target"`
+}
+
+// CorrenteVoteData is one viewer's push: "vai" cheers, "calma" vetoes.
+type CorrenteVoteData struct {
+	Choice string `json:"choice"`
+}
+
+// CorrenteStartedData opens the room-wide countdown banner.
+type CorrenteStartedData struct {
+	Target     string `json:"target"`
+	TargetName string `json:"targetName"`
+	By         string `json:"by"`
+	EndsAtMs   int64  `json:"endsAtMs"`
+}
+
+// CorrenteTallyData is the live vote count on the banner.
+type CorrenteTallyData struct {
+	Vai   int `json:"vai"`
+	Calma int `json:"calma"`
+}
+
+// CorrenteCanceledData closes the banner with why.
+type CorrenteCanceledData struct {
+	Reason string `json:"reason"` // "veto" | "left" | "superseded"
 }
 
 // ReplayReadyData answers a replay_request: fetch /clip/{token} for the raw

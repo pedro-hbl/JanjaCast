@@ -197,6 +197,9 @@ const App: Component = () => {
   // The varal: the session's clothesline of polaroids and quote magnets.
   const [varalPins, setVaralPins] = createSignal<import("./protocol").VaralPinData[]>([]);
   const [varalQuote, setVaralQuote] = createSignal("");
+  // Corrente da tela: the nomination banner state — server-driven.
+  const [corrente, setCorrente] = createSignal<{ target: string; targetName: string; by: string; endsAtMs: number } | null>(null);
+  const [correnteTally, setCorrenteTally] = createSignal<{ vai: number; calma: number }>({ vai: 0, calma: 0 });
   const [replayEvents, setReplayEvents] = createSignal<Array<{ type: string; user?: string; density?: number; at: number }>>([]);
   const [clipUrl, setClipUrl] = createSignal<string | null>(null);
   const [clipExpires, setClipExpires] = createSignal<number | null>(null);
@@ -646,6 +649,9 @@ const App: Component = () => {
         setTimeout(() => setArrows((xs) => xs.filter((a) => a.id !== id)), d.ttlMs || 4000);
       };
       s.onVaralState = (d) => setVaralPins(d.pins ?? []);
+      s.onCorrenteStarted = (d) => { setCorrente(d); setCorrenteTally({ vai: 0, calma: 0 }); };
+      s.onCorrenteTally = (d) => setCorrenteTally(d);
+      s.onCorrenteCanceled = () => { setCorrente(null); flashToast("corrente.canceled"); };
       s.onReplayReady = (d) => {
         setReplayTok(d.token);
         void fetch(apiPath(`/clip/${d.token}/events.json`))
@@ -658,6 +664,7 @@ const App: Component = () => {
       // out loud. It rides the viewer's own volume slider, and the token
       // makes a duplicated control message a no-op rather than a double beep.
       s.onStageTurn = (turn) => {
+        setCorrente(null); // the banner's countdown delivered (or was outrun)
         playTurnCue(volume() / 100);
         if (turn.method === "wheel") {
           // A real draw just happened, so the spin is showing something
@@ -1313,6 +1320,22 @@ const App: Component = () => {
 
         </div>
 
+        {/* Corrente da tela: the nomination countdown — border chrome, the
+            room's light consensus in two buttons. */}
+        <Show when={corrente()}>
+          <div class="corrente-banner" role="status">
+            <span class="corrente-line">
+              {t("corrente.line", { name: corrente()!.targetName, s: Math.max(0, Math.ceil((corrente()!.endsAtMs - (session()?.serverNow() ?? Date.now())) / 1000) + tick() * 0) })}
+            </span>
+            <button class="crayon-btn crayon-btn--go" onClick={() => session()?.voteCorrente("vai")}>
+              {t("corrente.vai")} {correnteTally().vai || ""}
+            </button>
+            <button class="crayon-btn crayon-btn--chalk" onClick={() => session()?.voteCorrente("calma")}>
+              {t("corrente.calma")} {correnteTally().calma || ""}
+            </button>
+          </div>
+        </Show>
+
         {/* The varal: a clothesline under the TV where the session's best
             moments hang — polaroids of exact frames and quote magnets.
             Chrome below the stage, never over it; dies with the room. */}
@@ -1647,6 +1670,22 @@ const App: Component = () => {
           >
             {t("telinha.open")}
           </button>
+          <Show when={session()?.ownsStage() && roster().filter((p) => !p.isSelf).length > 0}>
+            <select
+              class="corrente-pick"
+              title={t("corrente.pick")}
+              onChange={(e) => {
+                const id = e.currentTarget.value;
+                if (id) session()?.nominateCorrente(id);
+                e.currentTarget.value = "";
+              }}
+            >
+              <option value="">{t("corrente.pick")}</option>
+              <For each={roster().filter((p) => !p.isSelf)}>
+                {(p) => <option value={p.id}>{p.name}</option>}
+              </For>
+            </select>
+          </Show>
         </Show>
 
         <div class="field">

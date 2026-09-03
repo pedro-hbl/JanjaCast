@@ -214,6 +214,10 @@ export class Session {
   /** Publisher side: a viewer pointed at the screen — draw the arrow. */
   onAssistShow: ((d: { x: number; y: number; userId: string; username: string; ttlMs: number }) => void) | null = null;
   /** The varal: the whole board every time it changes (and in welcome). */
+  /** Corrente: nomination banner lifecycle. */
+  onCorrenteStarted: ((d: { target: string; targetName: string; by: string; endsAtMs: number }) => void) | null = null;
+  onCorrenteTally: ((d: { vai: number; calma: number }) => void) | null = null;
+  onCorrenteCanceled: ((d: { reason: string }) => void) | null = null;
   onVaralState: ((d: { pins: import('./protocol').VaralPinData[] }) => void) | null = null;
 
   constructor(
@@ -376,6 +380,8 @@ export class Session {
   sendVaralPin(pin: { kind: "quote"; quote: { text: string } } | { kind: "frame"; frame: { dataUrl: string; publisher: string } }): void {
     this.sendControl("varal_pin" as any, pin);
   }
+  nominateCorrente(target: string): void { this.sendControl("corrente_nominate" as any, { target }); }
+  voteCorrente(choice: "vai" | "calma"): void { this.sendControl("corrente_vote" as any, { choice }); }
   removeVaralPin(id: string): void { this.sendControl("varal_remove" as any, { id }); }
 
   /** Local-only undo: hide this client's most recent stroke. There is no
@@ -566,6 +572,18 @@ export class Session {
       case "assist_show": {
         const d = ctrl.data as { x: number; y: number; userId: string; username: string; ttlMs: number };
         this.onAssistShow?.(d);
+        break;
+      }
+      case "corrente_started": {
+        this.onCorrenteStarted?.(ctrl.data as { target: string; targetName: string; by: string; endsAtMs: number });
+        break;
+      }
+      case "corrente_tally": {
+        this.onCorrenteTally?.(ctrl.data as { vai: number; calma: number });
+        break;
+      }
+      case "corrente_canceled": {
+        this.onCorrenteCanceled?.(ctrl.data as { reason: string });
         break;
       }
       case "varal_state": {
