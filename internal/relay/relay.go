@@ -339,6 +339,7 @@ func (h *Hub) Leave(r *Room, c *Client) {
 	// id, so a stale reference can never evict a live successor.
 	if len(r.clients) == 0 && h.rooms[r.id] == r {
 		delete(h.rooms, r.id)
+		r.timers.stopTimers()
 	}
 	r.log.Info("left", "user", c.Username)
 }
@@ -477,6 +478,10 @@ type Room struct {
 	correnteTarget string
 	correnteGen    uint64
 	correnteVotes  map[string]string // base user id -> "vai" | "calma"
+
+	// timers is the room's one scheduler for every deferred deadline; see
+	// timers.go. Reaping the room stops it, releasing the *Room at once.
+	timers roomTimers
 
 	// --- attention (guarded by mu) ---------------------------------------
 	attentionHidden   map[string]bool // base user id -> reported hidden
@@ -1246,7 +1251,7 @@ func (r *Room) grantTurnLocked(e protocol.QueueEntry, method string) {
 	}
 	r.broadcastStageQueueLocked()
 
-	time.AfterFunc(wait, func() {
+	r.timers.schedule(wait, func() {
 		r.mu.Lock()
 		defer r.mu.Unlock()
 		if r.turnGen != gen || r.turn == nil {
@@ -2151,7 +2156,7 @@ func (r *Room) scheduleStingerStopLocked() {
 		return
 	}
 	gen := r.stingerGen
-	time.AfterFunc(r.stingerStopWait, func() {
+	r.timers.schedule(r.stingerStopWait, func() {
 		r.mu.Lock()
 		defer r.mu.Unlock()
 		if r.stingerGen != gen || r.publisher != nil || !r.stingerLive {
@@ -2214,7 +2219,7 @@ func (r *Room) CorrenteNominate(c *Client, target string) {
 	for cl := range r.clients {
 		cl.enqueueControl(protocol.CtrlCorrenteStarted, d)
 	}
-	time.AfterFunc(correnteTTL, func() {
+	r.timers.schedule(correnteTTL, func() {
 		r.mu.Lock()
 		defer r.mu.Unlock()
 		if r.correnteGen != gen || r.correnteTarget == "" {
@@ -2329,7 +2334,7 @@ func (r *Room) armRodizioAutoPassLocked() {
 			wait = 0
 		}
 	}
-	time.AfterFunc(wait, func() {
+	r.timers.schedule(wait, func() {
 		r.mu.Lock()
 		defer r.mu.Unlock()
 		if r.rodizioAutoGen != gen || r.publisher == nil || r.mode != protocol.ModeRodizio {
@@ -2446,7 +2451,7 @@ func (r *Room) ApostaChallenge(c *Client, target, text string) {
 	gen := a.gen
 	r.apostas[a.id] = a
 	r.broadcastApostaLocked(a, "")
-	time.AfterFunc(apostaOfferTTL, func() {
+	r.timers.schedule(apostaOfferTTL, func() {
 		r.mu.Lock()
 		defer r.mu.Unlock()
 		if cur, ok := r.apostas[a.id]; ok && cur.gen == gen && cur.phase == "offered" {
