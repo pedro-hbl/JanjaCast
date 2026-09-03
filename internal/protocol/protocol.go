@@ -307,6 +307,8 @@ type Participant struct {
 type ErrorData struct {
   Message string `json:"message,omitempty"`
   Code    string `json:"code,omitempty"`
+  Op      string `json:"op,omitempty"`
+  ID      string `json:"id,omitempty"`
 }
 
 // Error codes carried by ErrorData.Code. Each has a matching `err.<code>`
@@ -555,7 +557,39 @@ type ReactionData struct {
 // Density is the total reactions observed in-window; WindowMs states the
 // server's window size so a client can scale its UI consistently.
 type ReactionBurstData struct {
-	Counts   map[string]int `json:"counts"`
-	Density  int            `json:"density"`
-	WindowMs int            `json:"windowMs"`
+  Counts   map[string]int `json:"counts"`
+  Density  int            `json:"density"`
+  WindowMs int            `json:"windowMs"`
+}
+
+// --- jukebox (viewer-submitted simple asset queue; relay-side only) ---------
+
+// Control types (temporary probe surface). Client -> server unless noted.
+const (
+    CtrlJukeboxRequest   ControlType = "jukebox_request"   // data: {id, asset}
+    CtrlJukeboxApprove   ControlType = "jukebox_approve"   // host only
+    CtrlJukeboxGetQueue  ControlType = "jukebox_get_queue" // any -> unicast state
+    CtrlJukeboxQueue     ControlType = "jukebox_queue_state" // server -> clients
+    CtrlJukeboxPlay      ControlType = "jukebox_play"      // server -> clients
+)
+
+// Wire shapes used by the probe.
+type JukeboxRequestData struct {
+    ID    string `json:"id"`
+    Asset string `json:"asset"`
+}
+type JukeboxApproveData struct {
+    ID string `json:"id"`
+}
+type JukeboxItem struct {
+    ID        string `json:"id"`
+    Asset     string `json:"asset"`
+    Requester string `json:"requester"`
+}
+type JukeboxQueueState struct {
+    Queue []JukeboxItem `json:"queue"`
+}
+type JukeboxPlay struct {
+    ID    string `json:"id"`
+    Asset string `json:"asset"`
 }

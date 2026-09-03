@@ -118,7 +118,7 @@ func (h *Hub) Join(roomID, userID, username string) (*Room, *Client, iter.Seq[Ou
 		if ttl <= 0 {
 			ttl = turnTTL
 		}
-		r = &Room{
+        r = &Room{
 			id:              roomID,
 			clients:         make(map[*Client]struct{}),
 			log:             h.log.With("room", roomID),
@@ -129,8 +129,9 @@ func (h *Hub) Join(roomID, userID, username string) (*Room, *Client, iter.Seq[Ou
 			placarScores:    make(map[string]int),
 			placarLastVote:  make(map[*Client]time.Time),
 			clips:           make(map[string]clipItem),
-			lastClipAsk:     make(map[*Client]time.Time),
-		}
+            lastClipAsk:     make(map[*Client]time.Time),
+            jukeboxLast:     make(map[string]time.Time),
+        }
 		h.rooms[roomID] = r
 	}
 
@@ -426,7 +427,7 @@ type Room struct {
 	CaptionsEnabled bool
 	CaptionLast     map[string]int64 // userId -> last submit ms
 
-	// --- instant clips: rolling buffer (video+audio), keyframe-bounded ------
+  // --- instant clips: rolling buffer (video+audio), keyframe-bounded ------
 	// clipBuf stores recent media chunks for instant clips. It is trimmed on
 	// keyframe boundaries and bounded by both wall-time (~30s) and bytes.
 	clipBuf     [][]byte
@@ -435,11 +436,16 @@ type Room struct {
 	// clip store: token -> bytes with expiry and content type. Guarded by mu.
 	clips map[string]clipItem
 	// per-client cooldown for clip requests.
-	lastClipAsk map[*Client]time.Time
+  lastClipAsk map[*Client]time.Time
 
-	// --- captions (guarded by mu) ---------------------------------------
-	captionsEnabled bool
-	captionLast     map[string]int64 // userId -> last submit ms
+  // --- captions (guarded by mu) ---------------------------------------
+  captionsEnabled bool
+  captionLast     map[string]int64 // userId -> last submit ms
+
+  // --- jukebox (probe-limited): simple per-room queue of asset URLs ---
+  jukeboxQueue []protocol.JukeboxItem
+  // last request time per user base id
+  jukeboxLast map[string]time.Time
 }
 
 // rAwardsCallback is installed by the server layer to receive assembled
@@ -1297,6 +1303,62 @@ func (r *Room) BroadcastControl(t protocol.ControlType, data any) {
 	for c := range r.clients {
 		c.enqueueControl(t, data)
 	}
+}
+
+// --- jukebox (probe-limited) -----------------------------------------------
+
+// JukeboxRequest enqueues an asset URL from a viewer with per-user cooldown.
+func (r *Room) JukeboxRequest(c *Client, d protocol.JukeboxRequestData) {
+    if strings.TrimSpace(d.ID) == "" || strings.TrimSpace(d.Asset) == "" {
+        return
+    }
+    r.mu.Lock()
+    defer r.mu.Unlock()
+    if _, ok := r.clients[c]; !ok {
+        return
+    }
+    if r.jukeboxLast == nil { r.jukeboxLast = make(map[string]time.Time) }
+    base := baseID(c.UserID)
+    now := time.Now()
+    if last, ok := r.jukeboxLast[base]; ok && now.Sub(last) < 10*time.Second {
+        // per-user cooldown
+        c.enqueueControl(protocol.CtrlError, protocol.ErrorData{Code: "jukebox_cooldown"})
+        return
+    }
+    r.jukeboxLast[base] = now
+    // append to queue
+    r.jukeboxQueue = append(r.jukeboxQueue, protocol.JukeboxItem{ID: d.ID, Asset: d.Asset, Requester: c.Username})
+    // broadcast queue state to all
+    st := protocol.JukeboxQueueState{Queue: append([]protocol.JukeboxItem(nil), r.jukeboxQueue...)}
+    for cl := range r.clients { cl.enqueueControl(protocol.CtrlJukeboxQueue, st) }
+}
+
+// JukeboxSendQueue unicasts current state to requester.
+func (r *Room) JukeboxSendQueue(c *Client) {
+    r.mu.Lock(); defer r.mu.Unlock()
+    if _, ok := r.clients[c]; !ok { return }
+    st := protocol.JukeboxQueueState{Queue: append([]protocol.JukeboxItem(nil), r.jukeboxQueue...)}
+    c.enqueueControl(protocol.CtrlJukeboxQueue, st)
+}
+
+// JukeboxApprove pops an item and broadcasts jukebox_play; host only.
+func (r *Room) JukeboxApprove(c *Client, id string) bool {
+    r.mu.Lock(); defer r.mu.Unlock()
+    if _, ok := r.clients[c]; !ok { return false }
+    if r.publisher == nil || baseID(r.publisher.UserID) != baseID(c.UserID) { return false }
+    // find item
+    idx := -1
+    for i, it := range r.jukeboxQueue { if it.ID == id { idx = i; break } }
+    if idx < 0 { return true } // nothing to do, treat as ok
+    it := r.jukeboxQueue[idx]
+    r.jukeboxQueue = slices.Delete(r.jukeboxQueue, idx, idx+1)
+    // broadcast play
+    play := protocol.JukeboxPlay{ID: it.ID, Asset: it.Asset}
+    for cl := range r.clients { cl.enqueueControl(protocol.CtrlJukeboxPlay, play) }
+    // then updated queue
+    st := protocol.JukeboxQueueState{Queue: append([]protocol.JukeboxItem(nil), r.jukeboxQueue...)}
+    for cl := range r.clients { cl.enqueueControl(protocol.CtrlJukeboxQueue, st) }
+    return true
 }
 
 // --- placar (scoreboard) API -----------------------------------------------

@@ -715,13 +715,28 @@ func (s *Server) handleControl(room *relay.Room, client *relay.Client, data []by
 				client.SendControl(protocol.CtrlError, protocol.ErrorData{Code: err2.Error()})
 			}
 		}
-	case protocol.CtrlPlacarClose:
-		if err := room.ClosePlacar(client); err != nil {
-			client.SendControl(protocol.CtrlError, protocol.ErrorData{Code: err.Error()})
-		}
-	case protocol.CtrlClip:
-		room.RequestClip(client)
-	}
+  case protocol.CtrlPlacarClose:
+      if err := room.ClosePlacar(client); err != nil {
+          client.SendControl(protocol.CtrlError, protocol.ErrorData{Code: err.Error()})
+      }
+  case protocol.CtrlClip:
+      room.RequestClip(client)
+  // --- jukebox (probe) -------------------------------------------------
+  case protocol.CtrlJukeboxRequest:
+    var d protocol.JukeboxRequestData
+    if err := json.Unmarshal(ctrl.Data, &d); err == nil {
+      room.JukeboxRequest(client, d)
+    }
+  case protocol.CtrlJukeboxApprove:
+    var d protocol.JukeboxApproveData
+    if err := json.Unmarshal(ctrl.Data, &d); err == nil {
+      if ok := room.JukeboxApprove(client, d.ID); !ok {
+        client.SendControl(protocol.CtrlError, protocol.ErrorData{Code: "not_host"})
+      }
+    }
+  case protocol.CtrlJukeboxGetQueue:
+    room.JukeboxSendQueue(client)
+  }
 }
 
 // handleClip serves a stored clip by token with throttling. Clips live in the

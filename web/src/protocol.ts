@@ -47,6 +47,12 @@ export type ControlType =
   | "placar_vote"
   | "placar_close"
   | "placar_state"
+  // jukebox (probe-limited)
+  | "jukebox_request"
+  | "jukebox_approve"
+  | "jukebox_get_queue"
+  | "jukebox_queue_state"
+  | "jukebox_play"
   | "error";
 
 export type OutboundControlType =
