@@ -131,21 +131,23 @@ func (h *Hub) Join(roomID, userID, username string) (*Room, *Client, iter.Seq[Ou
 		if ttl <= 0 {
 			ttl = turnTTL
 		}
-		r = &Room{
-			id:              roomID,
-			clients:         make(map[*Client]struct{}),
-			log:             h.log.With("room", roomID),
-			stinger:         h.Stinger,
-			stingerStopWait: h.StingerStopDelay,
-			turnWait:        ttl,
-			placarScores:    make(map[string]int),
-			placarLastVote:  make(map[*Client]time.Time),
-			clips:           make(map[string]clipItem),
-			lastClipAsk:     make(map[*Client]time.Time),
-			jukeboxLast:     make(map[string]time.Time),
-		}
-		h.rooms[roomID] = r
-	}
+        r = &Room{
+            id:              roomID,
+            clients:         make(map[*Client]struct{}),
+            log:             h.log.With("room", roomID),
+            stinger:         h.Stinger,
+            stingerStopWait: h.StingerStopDelay,
+            turnWait:        ttl,
+            placarScores:    make(map[string]int),
+            placarLastVote:  make(map[*Client]time.Time),
+            clips:           make(map[string]clipItem),
+            lastClipAsk:     make(map[*Client]time.Time),
+            jukeboxLast:     make(map[string]time.Time),
+        }
+        // S1a: allocate slot 0 only; rest stay nil.
+        r.slots[0] = &Slot{idx: 0}
+        h.rooms[roomID] = r
+    }
 
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -358,14 +360,19 @@ type Room struct {
 
 	mu        sync.Mutex
 	clients   map[*Client]struct{}
-	publisher *Client
-	config    *protocol.ConfigData // last codec config announced by publisher
+    // Seam 1a: introduce Slot table; maxSlots=1 routed through slot 0.
+    // Legacy fields remain for mechanical accessor migration during S1a.
+    publisher *Client
+    config    *protocol.ConfigData // last codec config announced by publisher
+    // slots holds up to 6 slots; S1a only allocates index 0 and routes all
+    // legacy single-publisher behavior through it. Guarded by mu.
+    slots [6]*Slot
 
-	// gop caches the current group of pictures — the last video keyframe and
+    // gop caches the current group of pictures — the last video keyframe and
 	// every video chunk since — so late joiners render instantly instead of
 	// waiting for the next keyframe. Guarded by mu.
-	gop      [][]byte
-	gopBytes int
+    gop      [][]byte
+    gopBytes int
 
 	// blanked is the privacy panic state: while true the room forwards no
 	// media at all and the GOP cache stays empty, so neither a live viewer
@@ -496,6 +503,23 @@ type Room struct {
 	apostaWins map[string]int
 	apostaLast map[string]time.Time // challenger base id -> last challenge
 	apostaSeq  uint64
+}
+
+// Slot is the future per-publisher lane. S1a introduces the struct and a
+// single instance at index 0; behavior stays identical by routing all legacy
+// paths through slot 0 only. No Slot.mu yet — Room.mu guards everything.
+type Slot struct {
+    idx int
+    pub *Client
+    // GOP cache (late-join), identical semantics moved in S1 later slices.
+    gop      [][]byte
+    gopBytes int
+    // Rolling clip buffer (video+audio), identical semantics moved in S1 later slices.
+    clipBuf     [][]byte
+    clipBytes   int
+    clipStartTs int64
+    // Keyframe debounce timestamp lives here in S1 later slices.
+    lastKFReq time.Time
 }
 
 // rAwardsCallback is installed by the server layer to receive assembled
