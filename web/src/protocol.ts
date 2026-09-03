@@ -274,6 +274,12 @@ export interface ConfigData {
   channels?: number;
 }
 
+export interface SlotInfo {
+  idx: number;
+  occupantId?: string;
+  occupantName?: string;
+}
+
 export interface StageStateData {
   publisherId?: string;
   publisherName?: string;
@@ -282,6 +288,8 @@ export interface StageStateData {
    *  `welcome`), so a client joining mid-blank renders the card before any
    *  media could arrive — there is none, the relay evicted its GOP cache. */
   blanked?: boolean;
+  /** Multi-slot stage view (Seam 1b): one chair today, six by Seam 4. */
+  slots?: SlotInfo[];
   /** Overall room phase: "lobby" when no publisher, "live" when someone is.
    *  Rides `welcome` so a late joiner never guesses. */
   phase?: "lobby" | "live";
@@ -294,6 +302,8 @@ export interface AwardsReadyData { sessionId: string }
 /** Welcome payload: stage state plus the server-assigned id of this client. */
 export interface WelcomeData extends StageStateData {
   selfId?: string;
+  headerVersion?: number;
+  maxSlots?: number;
 }
 
 export interface Participant {

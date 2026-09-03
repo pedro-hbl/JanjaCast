@@ -210,6 +210,8 @@ func (h *Hub) Join(roomID, userID, username string) (*Room, *Client, iter.Seq[Ou
 	c.enqueueControl(protocol.CtrlWelcome, protocol.WelcomeData{
 		StageStateData: r.stageStateLocked(),
 		SelfID:         c.UserID,
+		HeaderVersion:  1, // 13-byte header until Seam 2
+		MaxSlots:       1, // the cap lifts at Seam 4
 	})
 	// Right behind the welcome, so a late joiner renders the mode, the
 	// rodízio clock and the line immediately — including a turn already in
@@ -1858,6 +1860,16 @@ func (r *Room) stageStateLocked() protocol.StageStateData {
 		s.Phase = "live"
 	} else {
 		s.Phase = "lobby"
+	}
+	// The multi-slot view, additive beside the legacy fields (Seam 1b):
+	// today it is one chair whose occupant mirrors publisherId/Name.
+	for i, sl := range r.slots {
+		if sl == nil || sl.pub == nil {
+			continue
+		}
+		s.Slots = append(s.Slots, protocol.SlotInfo{
+			Idx: i, OccupantID: sl.pub.UserID, OccupantName: sl.pub.Username,
+		})
 	}
 	return s
 }

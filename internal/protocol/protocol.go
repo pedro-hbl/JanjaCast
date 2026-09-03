@@ -368,6 +368,9 @@ type StageStateData struct {
 	// handshake so a late joiner learns it inside CtrlWelcome, before any
 	// media could arrive (there is none — blanking evicts the GOP cache).
 	Blanked bool `json:"blanked,omitempty"`
+	// Slots is the multi-slot view of the stage — additive beside the
+	// legacy singleton fields, which stay byte-identical until Seam 4.
+	Slots []SlotInfo `json:"slots,omitempty"`
 	// Phase is the overall room phase: "lobby" when nobody is publishing,
 	// "live" when there is an active publisher. It rides CtrlWelcome so a
 	// late joiner never guesses.
@@ -384,9 +387,24 @@ type BlankData struct {
 // WelcomeData is the payload of CtrlWelcome: the stage state plus the
 // server-assigned identity of the joining client (authoritative after auth —
 // a companion tab learns its real id here).
+// SlotInfo is one chair on the multi-slot stage (see
+// docs/multistream-architecture.md). Seam 1 emits exactly one entry whose
+// occupant mirrors the legacy publisher fields.
+type SlotInfo struct {
+	Idx          int    `json:"idx"`
+	OccupantID   string `json:"occupantId,omitempty"`
+	OccupantName string `json:"occupantName,omitempty"`
+}
+
 type WelcomeData struct {
 	StageStateData
 	SelfID string `json:"selfId"`
+	// HeaderVersion asserts the binary media header layout this server
+	// speaks; a client seeing a version it doesn't know is stale HTML and
+	// must hard-refresh. Seam 1 = 1 (13-byte header).
+	HeaderVersion int `json:"headerVersion"`
+	// MaxSlots is how many simultaneous publishers this room allows.
+	MaxSlots int `json:"maxSlots"`
 }
 
 // AwardsReadyData is the payload of CtrlAwardsReady: a short id (UUID or
