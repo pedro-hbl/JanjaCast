@@ -301,10 +301,13 @@ export class Session {
       return;
     }
     this.setStatus("reconnecting");
-    const delay = Math.min(
-      500 * 2 ** this.reconnectAttempt + Math.random() * 250,
-      MAX_BACKOFF_MS,
-    );
+    // FULL jitter (AWS style): delay = rand(0, min(cap, base*2^n)). When the
+    // tunnel blinks, every client in the room loses the socket in the SAME
+    // instant — additive jitter of 250ms still marched the whole room back
+    // in near-lockstep and hammered the relay as one thundering herd. Full
+    // jitter spreads the rejoin across the entire window.
+    const ceiling = Math.min(500 * 2 ** this.reconnectAttempt, MAX_BACKOFF_MS);
+    const delay = Math.random() * ceiling;
     this.reconnectAttempt++;
     setTimeout(() => {
       if (!this.closedByUser) this.connect();
