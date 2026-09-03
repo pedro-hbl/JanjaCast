@@ -1679,6 +1679,9 @@ const App: Component = () => {
               only bit of it anybody has to read. The heading is NOT
               underlined: "in the room" above it already spends this
               region's one scribble (design.md § 3.5). */}
+          {/* One stage = one line. In a multi room the model is "grab a
+              vacancy", so the queue-and-turn furniture bows out entirely. */}
+          <Show when={!multi()}>
           <div class="queue-panel">
             <h4 class="queue-title">
               <HandUpDoodle class="queue-title-icon" />
@@ -1715,6 +1718,7 @@ const App: Component = () => {
               </p>
             </Show>
           </div>
+          </Show>
         </aside>
 
         {/* Anchored inside the positioned main row (design.md § 5.8): the
@@ -1798,7 +1802,7 @@ const App: Component = () => {
         <Show
           when={session()?.ownsStage()}
           fallback={
-            <Show when={live() && !session()?.hasTurn()}>
+            <Show when={live() && !multi() && !session()?.hasTurn()}>
               <button
                 type="button"
                 class="crayon-btn crayon-btn--chalk"
@@ -1880,7 +1884,7 @@ const App: Component = () => {
               </For>
             </div>
           </div>
-          <Show when={session()?.ownsStage() && roster().filter((p) => !p.isSelf).length > 0}>
+          <Show when={!multi() && session()?.ownsStage() && roster().filter((p) => !p.isSelf).length > 0}>
             <select
               class="corrente-pick"
               title={t("corrente.pick")}
@@ -1948,6 +1952,7 @@ const App: Component = () => {
             nobody touching anything. State lives in `aria-pressed`, and the
             server's broadcast is what everyone reads back, so all viewers
             converge on one mode. */}
+        <Show when={!multi()}>
         <div class="field">
           <span class="field-label" id="mode-label" title={t("queue.modeTitle")}>
             {t("queue.modeLabel")}
@@ -1971,6 +1976,7 @@ const App: Component = () => {
             </button>
           </div>
         </div>
+        </Show>
 
         {/* The party hat: the slot filling up, drawn not spelled. Rodízio
             only, while somebody holds the stage. */}
