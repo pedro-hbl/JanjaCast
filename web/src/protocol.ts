@@ -5,7 +5,9 @@
 export const KIND_VIDEO = 1;
 export const KIND_AUDIO = 2;
 export const FLAG_KEYFRAME = 1 << 0;
-export const HEADER_SIZE = 13;
+export const HEADER_SIZE = 14;
+/** Binary header era; welcome asserts it (stale HTML must hard-refresh). */
+export const HEADER_VERSION = 2;
 
 export type ControlType =
   | "join"
@@ -62,6 +64,9 @@ export type ControlType =
   | "chama_end"
   | "chama_state"
   | "attention_report"
+  | "subscribe"
+  | "slots_max"
+  | "unsubscribe"
   | "aposta_challenge"
   | "aposta_accept"
   | "aposta_decline"
@@ -100,6 +105,9 @@ export type OutboundControlType =
   | "cinema_resume"
   | "cinema_stroke"
   | "attention_report"
+  | "subscribe"
+  | "slots_max"
+  | "unsubscribe"
   | "aposta_challenge"
   | "aposta_accept"
   | "aposta_decline"
@@ -274,6 +282,16 @@ export interface ConfigData {
   channels?: number;
 }
 
+export interface SlotInfo {
+  idx: number;
+  occupantId?: string;
+  occupantName?: string;
+  /** This chair's codec announcement — the viewer builds its tile decoder from it. */
+  config?: ConfigData | null;
+  /** This chair's privacy blank state. */
+  blanked?: boolean;
+}
+
 export interface StageStateData {
   publisherId?: string;
   publisherName?: string;
@@ -282,6 +300,10 @@ export interface StageStateData {
    *  `welcome`), so a client joining mid-blank renders the card before any
    *  media could arrive — there is none, the relay evicted its GOP cache. */
   blanked?: boolean;
+  /** Multi-slot stage view (Seam 1b): one chair today, six by Seam 4. */
+  slots?: SlotInfo[];
+  /** How many chairs this room currently allows. */
+  maxSlots?: number;
   /** Overall room phase: "lobby" when no publisher, "live" when someone is.
    *  Rides `welcome` so a late joiner never guesses. */
   phase?: "lobby" | "live";
@@ -294,6 +316,8 @@ export interface AwardsReadyData { sessionId: string }
 /** Welcome payload: stage state plus the server-assigned id of this client. */
 export interface WelcomeData extends StageStateData {
   selfId?: string;
+  headerVersion?: number;
+  maxSlots?: number;
 }
 
 export interface Participant {
@@ -308,6 +332,8 @@ export interface RoomStateData {
 export interface MediaChunk {
   kind: number;
   keyframe: boolean;
+  /** Publisher chair 0..5 (always 0 until Seam 4 lifts the cap). */
+  slot: number;
   /** SVC temporal layer id; 0 = base layer. */
   temporalId: number;
   sequence: number;
@@ -322,14 +348,16 @@ export function packMedia(
   sequence: number,
   timestamp: number,
   payload: Uint8Array,
+  slot = 0,
 ): ArrayBuffer {
   const buf = new ArrayBuffer(HEADER_SIZE + payload.byteLength);
   const view = new DataView(buf);
   view.setUint8(0, kind);
   view.setUint8(1, keyframe ? FLAG_KEYFRAME : 0);
-  view.setUint8(2, temporalId & 0xff);
-  view.setUint16(3, sequence & 0xffff, false);
-  view.setBigUint64(5, BigInt(Math.round(timestamp)), false);
+  view.setUint8(2, slot & 0xff);
+  view.setUint8(3, temporalId & 0xff);
+  view.setUint16(4, sequence & 0xffff, false);
+  view.setBigUint64(6, BigInt(Math.round(timestamp)), false);
   new Uint8Array(buf, HEADER_SIZE).set(payload);
   return buf;
 }
@@ -340,9 +368,10 @@ export function unpackMedia(buf: ArrayBuffer): MediaChunk | null {
   return {
     kind: view.getUint8(0),
     keyframe: (view.getUint8(1) & FLAG_KEYFRAME) !== 0,
-    temporalId: view.getUint8(2),
-    sequence: view.getUint16(3, false),
-    timestamp: Number(view.getBigUint64(5, false)),
+    slot: view.getUint8(2),
+    temporalId: view.getUint8(3),
+    sequence: view.getUint16(4, false),
+    timestamp: Number(view.getBigUint64(6, false)),
     payload: new Uint8Array(buf, HEADER_SIZE),
   };
 }

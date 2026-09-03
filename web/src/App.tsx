@@ -217,6 +217,56 @@ const App: Component = () => {
   const [clipExpires, setClipExpires] = createSignal<number | null>(null);
 
   // --- placar (scoreboard) --------------------------------------------------
+  // --- multistream (Seam 5) ------------------------------------------------
+  // The chairs come straight off stage_state; the grid is zero-decision:
+  // its shape follows how many people are streaming. Solo audio follows a
+  // click; the soloed tile also owns zoom/pan and the HUD stats.
+  const roomSlots = () => stage().slots ?? [];
+  const maxSlots = () => stage().maxSlots ?? 1;
+  const multi = () => maxSlots() > 1;
+  const [soloSlot, setSoloSlot] = createSignal(0);
+  const tileEls: Record<number, HTMLCanvasElement> = {};
+  const tileCfgSig: Record<number, string> = {};
+  const bindTile = (slot: number) => (el: HTMLCanvasElement) => {
+    tileEls[slot] = el;
+    queueMicrotask(() => player?.addTile(slot, el));
+  };
+  createEffect(() => {
+    if (!multi() || !player) return;
+    const present = new Set<number>();
+    for (const sl of roomSlots()) {
+      present.add(sl.idx);
+      const sig = JSON.stringify(sl.config ?? null);
+      if (sl.config && tileCfgSig[sl.idx] !== sig && tileEls[sl.idx]) {
+        tileCfgSig[sl.idx] = sig;
+        player.configureSlot(sl.idx, sl.config);
+        if (sl.idx === soloSlot()) player.setAudioSlot(sl.idx, sl.config);
+      }
+      player.setTileBlank(sl.idx, !!sl.blanked);
+    }
+    for (const k of Object.keys(tileCfgSig)) {
+      const idx = Number(k);
+      if (!present.has(idx)) {
+        delete tileCfgSig[idx];
+        player.clearTile(idx);
+      }
+    }
+    // Solo must point at an occupied chair.
+    if (!present.has(soloSlot()) && present.size > 0) {
+      const first = Math.min(...present);
+      setSoloSlot(first);
+      const cfg = roomSlots().find((x) => x.idx === first)?.config;
+      player.setAudioSlot(first, cfg ?? null);
+      player.setFocusSlot(first);
+    }
+  });
+  const soloTile = (idx: number) => {
+    setSoloSlot(idx);
+    const cfg = roomSlots().find((x) => x.idx === idx)?.config;
+    player?.setAudioSlot(idx, cfg ?? null);
+    player?.setFocusSlot(idx);
+  };
+
   const [placarActive, setPlacarActive] = createSignal(false);
   const [placarPrompt, setPlacarPrompt] = createSignal("");
   const [placarScores, setPlacarScores] = createSignal<Record<string, number>>({});
@@ -1135,12 +1185,36 @@ const App: Component = () => {
               {stats().latencyMs != null ? ` · ${stats().latencyMs} ms` : ""}
             </div>
           </Show>
+          {/* Split-screen: one tile per occupied chair, grid shaped by the
+              count (1/2/3/4/6). Click a tile to solo its audio and take
+              zoom/pan + HUD focus. Chrome only ever touches tile borders. */}
+          <Show when={multi() && live()}>
+            <div class={`tile-grid tile-grid--${Math.min(roomSlots().length, 6)}`}>
+              <For each={roomSlots()}>
+                {(sl) => (
+                  <div
+                    class={soloSlot() === sl.idx ? "tile tile--solo" : "tile"}
+                    onClick={() => soloTile(sl.idx)}
+                  >
+                    <canvas class="tile-canvas" ref={bindTile(sl.idx)} />
+                    <span class="tile-name">
+                      {sl.occupantName}
+                      <Show when={soloSlot() === sl.idx}> 🔊</Show>
+                    </span>
+                    <Show when={sl.blanked}>
+                      <div class="tile-blank"><CoveredTv class="tile-blank-art" /></div>
+                    </Show>
+                  </div>
+                )}
+              </For>
+            </div>
+          </Show>
           <canvas
             ref={canvasRef}
             class="stage-canvas"
             style={{
               display:
-                live() && !capture() && !session()?.ownsStage()
+                live() && !multi() && !capture() && !session()?.ownsStage()
                   ? "block"
                   : "none",
             }}
@@ -1789,6 +1863,23 @@ const App: Component = () => {
           >
             {t("telinha.open")}
           </button>
+          {/* Multistream opt-in: how many chairs this room offers. */}
+          <div class="field">
+            <span class="field-label">{t("multi.label")}</span>
+            <div class="seg" role="group">
+              <For each={[1, 2, 4, 6]}>
+                {(n) => (
+                  <button
+                    class="seg-btn"
+                    aria-pressed={maxSlots() === n}
+                    onClick={() => session()?.setSlotsMax(n)}
+                  >
+                    {n}
+                  </button>
+                )}
+              </For>
+            </div>
+          </div>
           <Show when={session()?.ownsStage() && roster().filter((p) => !p.isSelf).length > 0}>
             <select
               class="corrente-pick"

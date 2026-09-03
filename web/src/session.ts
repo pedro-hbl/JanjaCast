@@ -286,6 +286,11 @@ export class Session {
   toggleCaptions(enabled: boolean): void { this.sendControl("caption_toggle" as any, { enabled }); }
   requestJukebox(id: string, asset: string): void { this.sendControl("jukebox_request" as any, { id, asset }); }
   approveJukebox(id: string): void { this.sendControl("jukebox_approve" as any, { id }); }
+  /** Multistream: name the chairs this viewer wants media from. */
+  /** Open the room's extra chairs (multistream). */
+  setSlotsMax(max: number): void { this.sendControl("slots_max" as any, { max }); }
+  subscribeSlots(slots: number[]): void { this.sendControl("subscribe" as any, { slots }); }
+  unsubscribeSlots(slots: number[]): void { this.sendControl("unsubscribe" as any, { slots }); }
   reportAttention(visible: boolean): void { this.sendControl("attention_report" as any, { visible }); }
   challengeAposta(target: string, text: string): void { this.sendControl("aposta_challenge" as any, { target, text }); }
   answerAposta(id: string, accept: boolean): void { this.sendControl((accept ? "aposta_accept" : "aposta_decline") as any, { id }); }

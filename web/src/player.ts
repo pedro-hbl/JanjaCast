@@ -1,13 +1,13 @@
-// Viewer playback front (wave R): the VIDEO half — decode and paint — runs
-// in playerWorker.ts against an OffscreenCanvas, so the picture never
-// competes with Solid or suffers tab throttling. This class keeps what must
-// stay on the main thread: the AudioContext (audio decode + scheduling),
-// pointer/wheel input for zoom & pan, and the stats the HUD reads.
+// Viewer playback front — multi-tile (Seam 5). ONE module-level worker owns
+// every tile's decoder+OffscreenCanvas; this class keeps the main-thread
+// half: the AudioContext (decoding ONE chair's audio — solo-on-click),
+// pointer/wheel zoom & pan for the focused tile, stats for the HUD, and the
+// per-canvas transfer bookkeeping (transferControlToOffscreen is once-per-
+// element, so offscreens are cached on the element and tiles re-bind).
 //
-// A/V sync crosses the thread boundary as a wall-clock anchor ("audio chunk
-// T starts playing at Date.now() X"); the worker bounds video delay to
-// 300ms exactly as before — alignment only, never accumulation, so alt-tab
-// keeps introducing zero delay by construction.
+// The legacy single-stage API (configure/push/stats/...) still works and
+// maps to tile 0 on the primary canvas — the App's single-publisher path is
+// byte-identical. Multi rooms drive addTile/configureSlot/setAudioSlot.
 
 import {
   KIND_AUDIO,
@@ -20,86 +20,74 @@ import {
 export interface PlayerStats {
   fps: number;
   kbps: number;
-  /** Glass-to-glass latency estimate in ms; null until a sync mark arrives. */
   latencyMs: number | null;
 }
 
-/** Viewer zoom range. 1 = whole frame (fit), 8 = 8x magnification. */
 const MIN_ZOOM = 1;
 const MAX_ZOOM = 8;
 
 const clamp = (v: number, lo: number, hi: number) =>
   v < lo ? lo : v > hi ? hi : v;
 
-/** transferControlToOffscreen is once-per-canvas; a rebuilt Player on the
- *  same element must reuse the first transfer (and its worker). */
-const offscreenCache = new WeakMap<
-  HTMLCanvasElement,
-  { worker: Worker; offscreen: OffscreenCanvas }
->();
+/** transfer is once-per-canvas; remember each element's offscreen. */
+const transferred = new WeakSet<HTMLCanvasElement>();
+
+let sharedWorker: Worker | null = null;
+function worker(): Worker {
+  if (!sharedWorker) {
+    sharedWorker = new Worker(new URL("./playerWorker.ts", import.meta.url), {
+      type: "module",
+    });
+  }
+  return sharedWorker;
+}
 
 export class Player {
-  private worker: Worker;
+  private w: Worker;
   private audioDecoder: AudioDecoder | null = null;
   private audioCtx: AudioContext | null = null;
   private gain: GainNode | null = null;
-  // Default below unity: the Activity's output is OUTSIDE Discord's echo
-  // canceller (it plays via the OS, not Discord's audio engine), so viewer
-  // speakers feed it back into the call via their mics. Lower gain lowers
-  // that loop's strength; the user slider overrides.
   private volume = 0.7;
   private audioPlayhead = 0;
+  /** Which chair's audio plays (solo-on-click). */
+  private audioSlot = 0;
+  private audioCfg: ConfigData | null = null;
 
   private byteCount = 0;
-  private videoStats: { fps: number; latencyMs: number | null } = {
-    fps: 0,
-    latencyMs: null,
-  };
-  /** Mirror of the OffscreenCanvas size — the placeholder element's
-   *  attributes stop tracking after transferControlToOffscreen. */
-  private frameW = 300;
-  private frameH = 150;
+  private perSlotFps: Record<number, number> = {};
+  private latencyMs: number | null = null;
   private currentStats: PlayerStats = { fps: 0, kbps: 0, latencyMs: null };
   private statsTimer: ReturnType<typeof setInterval>;
   private clockTimer: ReturnType<typeof setInterval>;
 
-  // --- viewer zoom / pan (purely local: no protocol or bandwidth cost) ---
+  /** Per-tile mirrors: frame sizes and the focused tile's zoom state. */
+  private frameDims: Record<number, { w: number; h: number }> = {};
   private zoomLevel = 1;
-  /** Centre of the visible source window, normalized 0..1 of the frame. */
   private panX = 0.5;
   private panY = 0.5;
   private dragFrom: { x: number; y: number } | null = null;
-  /** Fired (throttled) when video is stalled waiting for a keyframe. */
-  onNeedKeyframe: (() => void) | null = null;
+  /** The tile pointer input drives (zoom/pan). Legacy = 0. */
+  private focusSlot = 0;
+  private tileCanvas: Record<number, HTMLCanvasElement> = {};
 
-  /** Fired when the viewer's zoom factor changes (for the "N.Nx" pill). */
+  onNeedKeyframe: ((slot: number) => void) | null = null;
   onZoomChange: ((zoom: number) => void) | null = null;
 
   constructor(
     private canvas: HTMLCanvasElement,
-    /** Server wall clock in Unix ms (from Session.serverNow). */
     private serverNow: () => number = () => Date.now(),
   ) {
-    let cached = offscreenCache.get(canvas);
-    if (!cached) {
-      const offscreen = canvas.transferControlToOffscreen();
-      const worker = new Worker(new URL("./playerWorker.ts", import.meta.url), {
-        type: "module",
-      });
-      worker.postMessage({ type: "init", canvas: offscreen }, [offscreen]);
-      cached = { worker, offscreen };
-      offscreenCache.set(canvas, cached);
-    }
-    this.worker = cached.worker;
-    this.worker.onmessage = (ev) => {
+    this.w = worker();
+    this.addTile(0, canvas);
+    this.w.onmessage = (ev) => {
       const m = ev.data;
       if (m.type === "stats") {
-        this.videoStats = { fps: m.fps, latencyMs: m.latencyMs };
+        this.perSlotFps = m.perSlot ?? {};
+        this.latencyMs = m.latencyMs;
       } else if (m.type === "dims") {
-        this.frameW = m.w;
-        this.frameH = m.h;
+        this.frameDims[m.slot] = { w: m.w, h: m.h };
       } else if (m.type === "needKeyframe") {
-        this.onNeedKeyframe?.();
+        this.onNeedKeyframe?.(m.slot ?? 0);
       }
     };
 
@@ -110,17 +98,16 @@ export class Player {
     canvas.addEventListener("pointercancel", this.onPointerUp);
 
     this.statsTimer = setInterval(() => {
+      const fps = this.perSlotFps[this.focusSlot] ?? 0;
       this.currentStats = {
-        fps: this.videoStats.fps,
+        fps,
         kbps: Math.round((this.byteCount * 8) / 1000),
-        latencyMs: this.videoStats.latencyMs,
+        latencyMs: this.latencyMs,
       };
       this.byteCount = 0;
     }, 1000);
-    // The worker computes glass-to-glass latency against the server clock;
-    // hand it the offset periodically (it drifts as ping samples refine it).
     const sendClock = () =>
-      this.worker.postMessage({
+      this.w.postMessage({
         type: "clock",
         serverOffsetMs: this.serverNow() - Date.now(),
       });
@@ -128,73 +115,93 @@ export class Player {
     this.clockTimer = setInterval(sendClock, 5000);
   }
 
+  // ---------------- multi-tile API (Seam 5) ----------------
+
+  /** Bind a chair to a canvas element. Idempotent per element. */
+  addTile(slot: number, canvas: HTMLCanvasElement): void {
+    this.tileCanvas[slot] = canvas;
+    if (transferred.has(canvas)) return;
+    transferred.add(canvas);
+    const off = canvas.transferControlToOffscreen();
+    this.w.postMessage({ type: "addTile", slot, canvas: off }, [off]);
+  }
+
+  removeTile(slot: number): void {
+    delete this.tileCanvas[slot];
+    delete this.frameDims[slot];
+    this.w.postMessage({ type: "removeTile", slot });
+  }
+
+  /** (Re)build one chair's video decoder; audio follows only for the solo. */
+  configureSlot(slot: number, cfg: ConfigData): void {
+    this.w.postMessage({
+      type: "config",
+      slot,
+      cfg: { videoCodec: cfg.videoCodec, width: cfg.width, height: cfg.height },
+    });
+    if (slot === this.audioSlot) this.buildAudio(cfg);
+  }
+
+  /** Solo-on-click: this chair's audio plays; the anchor follows it. */
+  setAudioSlot(slot: number, cfg: ConfigData | null): void {
+    if (slot === this.audioSlot && this.audioDecoder) return;
+    this.audioSlot = slot;
+    if (cfg) this.buildAudio(cfg);
+  }
+
+  setFocusSlot(slot: number): void {
+    this.focusSlot = slot;
+  }
+
+  fpsFor(slot: number): number {
+    return this.perSlotFps[slot] ?? 0;
+  }
+
+  setTileBlank(slot: number, on: boolean): void {
+    this.w.postMessage({ type: "setBlanked", slot, on });
+    if (on) this.w.postMessage({ type: "blank", slot });
+  }
+
+  clearTile(slot: number): void {
+    this.frameDims[slot] = { w: 300, h: 150 };
+    this.w.postMessage({ type: "blank", slot });
+  }
+
+  // ---------------- legacy single-stage API ----------------
+
   stats(): PlayerStats {
     return this.currentStats;
   }
 
-  /** Publisher clock-sync mark (forwarded by the relay). */
   setSync(sync: SyncData): void {
-    this.worker.postMessage({ type: "sync", sync });
+    this.w.postMessage({ type: "sync", sync });
   }
 
-  /** Playback volume, 0..1. Survives decoder rebuilds. */
   setVolume(v: number): void {
     this.volume = Math.min(Math.max(v, 0), 1);
     if (this.gain) this.gain.gain.value = this.volume;
-    // A volume gesture is also the perfect moment to unstick autoplay.
     this.audioCtx?.resume().catch(() => {});
   }
 
-  /** (Re)build decoders for a new publisher config. */
   configure(cfg: ConfigData): void {
-    this.teardownAudio();
     this.resetView();
-    this.worker.postMessage({
-      type: "config",
-      cfg: { videoCodec: cfg.videoCodec, width: cfg.width, height: cfg.height },
-    });
-
-    if (cfg.audioCodec && cfg.sampleRate && cfg.channels) {
-      this.audioCtx = new AudioContext({ sampleRate: cfg.sampleRate });
-      this.gain = this.audioCtx.createGain();
-      this.gain.gain.value = this.volume;
-      this.gain.connect(this.audioCtx.destination);
-      this.audioPlayhead = 0;
-      // Autoplay policy: a context created without a user gesture starts
-      // suspended and produces silence. Resume on the next interaction.
-      if (this.audioCtx.state === "suspended") {
-        const resume = () => {
-          this.audioCtx?.resume().catch(() => {});
-          document.removeEventListener("pointerdown", resume);
-          document.removeEventListener("keydown", resume);
-        };
-        this.audioCtx.resume().catch(() => {});
-        document.addEventListener("pointerdown", resume);
-        document.addEventListener("keydown", resume);
-      }
-      this.audioDecoder = new AudioDecoder({
-        output: (data) => this.playAudio(data),
-        error: (e) => console.error("audio decoder:", e),
-      });
-      this.audioDecoder.configure({
-        codec: cfg.audioCodec,
-        sampleRate: cfg.sampleRate,
-        numberOfChannels: cfg.channels,
-      });
-    }
+    this.configureSlot(0, cfg);
   }
 
-  /** Feed one binary WebSocket message. Video transfers to the worker
-   *  (zero-copy move of the ArrayBuffer); audio decodes here. */
+  /** Feed one binary WS message; the header's slot byte routes the video,
+   *  and only the solo chair's audio is decoded at all. */
   push(buf: ArrayBuffer): void {
     this.byteCount += buf.byteLength;
-    // Peek the kind byte without unpacking twice.
-    const kind = new Uint8Array(buf, 0, 1)[0];
-    if (kind === KIND_VIDEO) {
-      this.worker.postMessage({ type: "chunk", buf }, [buf]);
+    const head = new Uint8Array(buf, 0, 3);
+    if (head[0] === KIND_VIDEO) {
+      this.w.postMessage({ type: "chunk", buf }, [buf]);
       return;
     }
-    if (kind === KIND_AUDIO && this.audioDecoder?.state === "configured") {
+    if (
+      head[0] === KIND_AUDIO &&
+      head[2] === this.audioSlot &&
+      this.audioDecoder?.state === "configured"
+    ) {
       const chunk = unpackMedia(buf);
       if (!chunk) return;
       this.audioDecoder.decode(
@@ -216,54 +223,41 @@ export class Player {
     this.canvas.removeEventListener("pointerup", this.onPointerUp);
     this.canvas.removeEventListener("pointercancel", this.onPointerUp);
     this.teardownAudio();
-    // The worker (and the transferred canvas control) outlive one Player on
-    // purpose: transferControlToOffscreen is once-per-canvas, and the next
-    // Player for this canvas reuses both via offscreenCache.
-    this.worker.postMessage({ type: "config", cfg: { videoCodec: "", width: 0, height: 0 } });
+    // Tiles idle out via a config teardown; the worker (and each canvas's
+    // transferred control) survive for the next Player on this page.
+    this.w.postMessage({ type: "config", slot: 0, cfg: { videoCodec: "", width: 0, height: 0 } });
   }
 
-  /** The size of the last painted frame (300x150 = never painted). */
-  frameSize(): { w: number; h: number } {
-    return { w: this.frameW, h: this.frameH };
-  }
-
-  /** Wipe the picture between publishers — no ghost frame ever lingers
-   *  under the next stream's first keyframe. */
-  clearFrame(): void {
-    this.frameW = 300;
-    this.frameH = 150;
-    this.worker.postMessage({ type: "blank" });
-  }
-
-  /** Current viewer magnification (1 = fit). */
   zoom(): number {
     return this.zoomLevel;
   }
 
-  // ------------------------------------------------------------------
-  // zoom / pan input (main thread; the worker just receives the window)
-  // ------------------------------------------------------------------
+  frameSize(): { w: number; h: number } {
+    return this.frameDims[0] ?? { w: 300, h: 150 };
+  }
+
+  clearFrame(): void {
+    this.clearTile(0);
+  }
+
+  // ---------------- zoom / pan (focused tile) ----------------
 
   private pushView(): void {
-    this.worker.postMessage({
+    this.w.postMessage({
       type: "view",
+      slot: this.focusSlot,
       zoom: this.zoomLevel,
       panX: this.panX,
       panY: this.panY,
     });
   }
 
-  /** Where the canvas's pixels actually land on screen, in client coords.
-   *  With object-fit: contain the element box is normally larger than the
-   *  painted content (letterboxing), so pointer maths must use this box.
-   *  frameW/frameH mirror the worker's resizes (the element's attributes
-   *  freeze after transferControlToOffscreen). */
   private contentBox(): { x: number; y: number; w: number; h: number } | null {
-    const r = this.canvas.getBoundingClientRect();
-    const cw = this.frameW;
-    const ch = this.frameH;
-    if (r.width <= 0 || r.height <= 0 || cw <= 0 || ch <= 0) return null;
-    const ar = cw / ch;
+    const el = this.tileCanvas[this.focusSlot] ?? this.canvas;
+    const dims = this.frameDims[this.focusSlot] ?? { w: 300, h: 150 };
+    const r = el.getBoundingClientRect();
+    if (r.width <= 0 || r.height <= 0 || dims.w <= 0 || dims.h <= 0) return null;
+    const ar = dims.w / dims.h;
     let w = r.width;
     let h = r.height;
     if (r.width / r.height > ar) w = r.height * ar;
@@ -292,7 +286,6 @@ export class Player {
     this.pushView();
   }
 
-  /** Set zoom, optionally keeping the point under (u, v) pinned in place. */
   private setZoom(next: number, u?: number, v?: number): void {
     const z = clamp(next, MIN_ZOOM, MAX_ZOOM);
     if (z === this.zoomLevel) return;
@@ -311,30 +304,26 @@ export class Player {
     }
     this.canvas.style.cursor = z > MIN_ZOOM ? (this.dragFrom ? "grabbing" : "grab") : "";
     this.onZoomChange?.(z);
-    // No repaint request on purpose: the next decoded frame (16-33ms away)
-    // picks the new window up, same as it always has.
     this.pushView();
   }
 
   private onWheel = (e: WheelEvent): void => {
     const box = this.contentBox();
     if (!box) return;
-    e.preventDefault(); // don't scroll the Activity behind the stage
+    e.preventDefault();
     const perUnit = e.deltaMode === 0 ? 0.0015 : e.deltaMode === 1 ? 0.05 : 0.3;
     const u = clamp((e.clientX - box.x) / box.w, 0, 1);
     const v = clamp((e.clientY - box.y) / box.h, 0, 1);
     this.setZoom(this.zoomLevel * Math.exp(-e.deltaY * perUnit), u, v);
   };
 
-  // Drag-to-pan. No preventDefault anywhere in the pointer handlers — the
-  // stage's double-click-to-fullscreen relies on compatibility mouse events.
   private onPointerDown = (e: PointerEvent): void => {
     if (this.zoomLevel <= MIN_ZOOM || e.button !== 0) return;
     this.dragFrom = { x: e.clientX, y: e.clientY };
     try {
       this.canvas.setPointerCapture(e.pointerId);
     } catch {
-      /* drag still works, it just stops at the element boundary */
+      /* drag stops at the element boundary */
     }
     this.canvas.style.cursor = "grabbing";
   };
@@ -372,6 +361,38 @@ export class Player {
     this.canvas.style.cursor = this.zoomLevel > MIN_ZOOM ? "grab" : "";
   };
 
+  // ---------------- audio (solo chair only) ----------------
+
+  private buildAudio(cfg: ConfigData): void {
+    this.teardownAudio();
+    this.audioCfg = cfg;
+    if (!cfg.audioCodec || !cfg.sampleRate || !cfg.channels) return;
+    this.audioCtx = new AudioContext({ sampleRate: cfg.sampleRate });
+    this.gain = this.audioCtx.createGain();
+    this.gain.gain.value = this.volume;
+    this.gain.connect(this.audioCtx.destination);
+    this.audioPlayhead = 0;
+    if (this.audioCtx.state === "suspended") {
+      const resume = () => {
+        this.audioCtx?.resume().catch(() => {});
+        document.removeEventListener("pointerdown", resume);
+        document.removeEventListener("keydown", resume);
+      };
+      this.audioCtx.resume().catch(() => {});
+      document.addEventListener("pointerdown", resume);
+      document.addEventListener("keydown", resume);
+    }
+    this.audioDecoder = new AudioDecoder({
+      output: (data) => this.playAudio(data),
+      error: (e) => console.error("audio decoder:", e),
+    });
+    this.audioDecoder.configure({
+      codec: cfg.audioCodec,
+      sampleRate: cfg.sampleRate,
+      numberOfChannels: cfg.channels,
+    });
+  }
+
   private teardownAudio(): void {
     if (this.audioDecoder && this.audioDecoder.state !== "closed") {
       this.audioDecoder.close();
@@ -382,9 +403,6 @@ export class Player {
     this.gain = null;
   }
 
-  /** Schedule decoded audio back-to-back on the AudioContext clock, keeping
-   *  at most ~150ms of buffered lead to bound latency. Each scheduling also
-   *  refreshes the worker's A/V anchor in wall-clock terms. */
   private playAudio(data: AudioData): void {
     const ctx = this.audioCtx;
     if (!ctx) {
@@ -406,14 +424,15 @@ export class Player {
 
     const now = ctx.currentTime;
     if (this.audioPlayhead < now || this.audioPlayhead > now + 0.15) {
-      this.audioPlayhead = now + 0.02; // resync after underrun or drift
+      this.audioPlayhead = now + 0.02;
     }
     const src = ctx.createBufferSource();
     src.buffer = buffer;
     src.connect(this.gain ?? ctx.destination);
     src.start(this.audioPlayhead);
-    this.worker.postMessage({
+    this.w.postMessage({
       type: "audioAnchor",
+      slot: this.audioSlot,
       chunkTsUs,
       playAtMs: Date.now() + (this.audioPlayhead - now) * 1000,
     });

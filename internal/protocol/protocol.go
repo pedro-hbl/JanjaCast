@@ -37,12 +37,20 @@ const (
 )
 
 // HeaderSize is the fixed size of the binary media header in bytes.
-const HeaderSize = 13
+// v2 (multistream Seam 2): kind u8, flags u8, slot u8, temporalId u8,
+// seq u16be (per-slot), timestampUs u64be. Clean cut from the 13-byte v1 —
+// client and server deploy atomically and welcome asserts headerVersion.
+const HeaderSize = 14
+
+// HeaderVersion is asserted in every welcome; a client that sees a version
+// it does not speak is stale HTML and must hard-refresh.
+const HeaderVersion = 2
 
 // MediaHeader is the parsed fixed header of a binary media message.
 type MediaHeader struct {
 	Kind       uint8
 	Flags      uint8
+	Slot       uint8 // publisher chair 0..5 (Seam 2: always 0)
 	TemporalID uint8 // SVC temporal layer; 0 = base layer (always kept)
 	Sequence   uint16
 	Timestamp  uint64 // microseconds
@@ -64,9 +72,10 @@ func ParseMediaHeader(msg []byte) (MediaHeader, error) {
 	return MediaHeader{
 		Kind:       msg[0],
 		Flags:      msg[1],
-		TemporalID: msg[2],
-		Sequence:   binary.BigEndian.Uint16(msg[3:5]),
-		Timestamp:  binary.BigEndian.Uint64(msg[5:13]),
+		Slot:       msg[2],
+		TemporalID: msg[3],
+		Sequence:   binary.BigEndian.Uint16(msg[4:6]),
+		Timestamp:  binary.BigEndian.Uint64(msg[6:14]),
 	}, nil
 }
 
@@ -208,6 +217,17 @@ const (
 	CtrlAttentionReport ControlType = "attention_report" // client -> server {visible}
 	CtrlAttentionState  ControlType = "attention_state"  // server -> publisher {watching, total}
 
+	// Slot subscriptions (multistream Seam 3): a viewer names the chairs it
+	// wants media from. Absent any call, the default is ALL chairs — with
+	// maxSlots=1 that is exactly today's behavior.
+	CtrlSubscribe   ControlType = "subscribe"   // client -> server {slots:[u8]}
+	CtrlUnsubscribe ControlType = "unsubscribe" // client -> server {slots:[u8]}
+
+	// CtrlSlotsMax opens the room's extra chairs (multistream Seam 4). Any
+	// member may set 1..6; rooms that never send it keep exactly the legacy
+	// single-stage semantics, takeover and all.
+	CtrlSlotsMax ControlType = "slots_max" // client -> server {max}
+
 	// Aposta paralela: on-the-spot 1v1 side-bets. The challenger writes the
 	// bet's text live; the target answers; the current publisher judges.
 	CtrlApostaChallenge ControlType = "aposta_challenge" // client -> server {target, text}
@@ -235,6 +255,17 @@ type Control struct {
 type ClipReadyData struct {
 	URL       string `json:"url"`
 	ExpiresMs int64  `json:"expiresMs"`
+}
+
+// SlotsMaxData raises the room's chair count.
+type SlotsMaxData struct {
+	Max int `json:"max"`
+}
+
+// SubscribeData names slot indices to (un)subscribe. Set semantics,
+// idempotent: subscribing twice is subscribing once.
+type SubscribeData struct {
+	Slots []int `json:"slots"`
 }
 
 // AttentionReportData is one client visibility ping.
@@ -368,6 +399,12 @@ type StageStateData struct {
 	// handshake so a late joiner learns it inside CtrlWelcome, before any
 	// media could arrive (there is none — blanking evicts the GOP cache).
 	Blanked bool `json:"blanked,omitempty"`
+	// Slots is the multi-slot view of the stage — additive beside the
+	// legacy singleton fields, which stay byte-identical until Seam 4.
+	Slots []SlotInfo `json:"slots,omitempty"`
+	// MaxSlots is how many chairs this room currently allows (1 unless the
+	// room opted into multistream via slots_max).
+	MaxSlots int `json:"maxSlots,omitempty"`
 	// Phase is the overall room phase: "lobby" when nobody is publishing,
 	// "live" when there is an active publisher. It rides CtrlWelcome so a
 	// late joiner never guesses.
@@ -384,9 +421,29 @@ type BlankData struct {
 // WelcomeData is the payload of CtrlWelcome: the stage state plus the
 // server-assigned identity of the joining client (authoritative after auth —
 // a companion tab learns its real id here).
+// SlotInfo is one chair on the multi-slot stage (see
+// docs/multistream-architecture.md). Seam 1 emits exactly one entry whose
+// occupant mirrors the legacy publisher fields.
+type SlotInfo struct {
+	Idx          int    `json:"idx"`
+	OccupantID   string `json:"occupantId,omitempty"`
+	OccupantName string `json:"occupantName,omitempty"`
+	// Config is this chair's codec announcement — a viewer needs it to
+	// build the decoder for this tile.
+	Config *ConfigData `json:"config,omitempty"`
+	// Blanked is this chair's privacy state.
+	Blanked bool `json:"blanked,omitempty"`
+}
+
 type WelcomeData struct {
 	StageStateData
 	SelfID string `json:"selfId"`
+	// HeaderVersion asserts the binary media header layout this server
+	// speaks; a client seeing a version it doesn't know is stale HTML and
+	// must hard-refresh. Seam 1 = 1 (13-byte header).
+	HeaderVersion int `json:"headerVersion"`
+	// MaxSlots is how many simultaneous publishers this room allows.
+	MaxSlots int `json:"maxSlots"`
 }
 
 // AwardsReadyData is the payload of CtrlAwardsReady: a short id (UUID or

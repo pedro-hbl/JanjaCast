@@ -57,7 +57,7 @@ func lastBlankState(t *testing.T, msgs []OutMsg) (on bool, seen bool) {
 func gopLen(r *Room) int {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return len(r.gop)
+	return len(r.slots[0].gop)
 }
 
 // The relay's half of the panic button, all four guarantees in one place:

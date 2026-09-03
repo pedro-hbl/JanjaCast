@@ -158,23 +158,23 @@ func TestClipRollingBufferKeyframeTrim(t *testing.T) {
 	}
 	room.mu.Lock()
 	defer room.mu.Unlock()
-	if len(room.clipBuf) == 0 {
+	if len(room.slots[0].clipBuf) == 0 {
 		t.Fatal("clip buffer empty")
 	}
-	h, err := protocol.ParseMediaHeader(room.clipBuf[0])
+	h, err := protocol.ParseMediaHeader(room.slots[0].clipBuf[0])
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
 	if h.Kind != protocol.KindVideo || !h.Keyframe() {
 		t.Fatalf("clip start not a video keyframe")
 	}
-	last, _ := protocol.ParseMediaHeader(room.clipBuf[len(room.clipBuf)-1])
+	last, _ := protocol.ParseMediaHeader(room.slots[0].clipBuf[len(room.slots[0].clipBuf)-1])
 	span := time.Duration(int64(last.Timestamp-h.Timestamp)) * time.Microsecond
 	if span > 32*time.Second {
 		t.Fatalf("clip span too large: %v", span)
 	}
-	if room.clipBytes <= 0 || room.clipBytes > (32<<20) {
-		t.Fatalf("clip bytes out of bounds: %d", room.clipBytes)
+	if room.slots[0].clipBytes <= 0 || room.slots[0].clipBytes > (32<<20) {
+		t.Fatalf("clip bytes out of bounds: %d", room.slots[0].clipBytes)
 	}
 }
 
@@ -289,7 +289,7 @@ func TestConcurrentJoinLeave(t *testing.T) {
 
 func mediaMsgTL(keyframe bool, tid uint8) []byte {
 	msg := mediaMsg(keyframe)
-	msg[2] = tid
+	msg[3] = tid // header v2: slot at [2], temporalId at [3]
 	return msg
 }
 
@@ -323,7 +323,7 @@ func TestTemporalSheddingBeforeFreeze(t *testing.T) {
 	frozen := func() bool {
 		room.mu.Lock()
 		defer room.mu.Unlock()
-		return bob.needKeyframe
+		return bob.needKF[0]
 	}
 
 	// Overflow with a T2 chunk: shed to maxTL 1, no freeze.
@@ -453,7 +453,7 @@ func TestSessionTakeoverNewestWins(t *testing.T) {
 	// freed (the old publisher is gone; the new session re-takes it).
 	room.mu.Lock()
 	count := len(room.clients)
-	pub := room.publisher
+	pub := room.slots[0].pub
 	room.mu.Unlock()
 	if count != 1 {
 		t.Fatalf("roster has %d clients after takeover, want 1", count)
