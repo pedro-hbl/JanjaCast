@@ -1,14 +1,14 @@
 package relay
 
 import (
-    "encoding/json"
-    "fmt"
-    "log/slog"
-    "sync"
-    "testing"
-    "time"
+	"encoding/json"
+	"fmt"
+	"log/slog"
+	"sync"
+	"testing"
+	"time"
 
-    "github.com/pedro-hbl/janjacast/internal/protocol"
+	"github.com/pedro-hbl/janjacast/internal/protocol"
 )
 
 func discard() *slog.Logger {
@@ -37,38 +37,46 @@ func mediaMsg(keyframe bool) []byte {
 // --- cinema ---------------------------------------------------------------
 
 func TestCinemaPauseResumeAndBacklog(t *testing.T) {
-    hub := NewHub(discard())
-    room, pub, _ := hub.Join("r1", "u1", "alice")
-    _, bob, bobOut := hub.Join("r1", "u2", "bob")
-    room.TakeStage(pub)
+	hub := NewHub(discard())
+	room, pub, _ := hub.Join("r1", "u1", "alice")
+	_, bob, bobOut := hub.Join("r1", "u2", "bob")
+	room.TakeStage(pub)
 
-    // Pause: media should be gated; add a few strokes.
-    if ok, _ := room.CinemaPause(pub); !ok { t.Fatal("pause refused") }
-    // Space out to clear 10/s limiter.
-    for i := 0; i < 5; i++ {
-        time.Sleep(110 * time.Millisecond)
-        if ok, _ := room.AddCinemaStroke(bob, &protocol.CinemaStrokeData{Color: "redorange", Points: []protocol.Point{{X:0.1,Y:0.1},{X:0.2,Y:0.2}}}); !ok {
-            t.Fatal("valid stroke refused")
-        }
-    }
+	// Pause: media should be gated; add a few strokes.
+	if ok, _ := room.CinemaPause(pub); !ok {
+		t.Fatal("pause refused")
+	}
+	// Space out to clear 10/s limiter.
+	for i := 0; i < 5; i++ {
+		time.Sleep(110 * time.Millisecond)
+		if ok, _ := room.AddCinemaStroke(bob, &protocol.CinemaStrokeData{Color: "redorange", Points: []protocol.Point{{X: 0.1, Y: 0.1}, {X: 0.2, Y: 0.2}}}); !ok {
+			t.Fatal("valid stroke refused")
+		}
+	}
 
-    // Late joiner receives cinema_state with strokes in the welcome sequence.
-    _, late, lateOut := hub.Join("r1", "u3", "late")
-    hub.Leave(room, late)
-    sawState := false
-    for _, m := range collect(lateOut) {
-        if m.Binary() { continue }
-        var ctrl protocol.Control
-        if err := json.Unmarshal(m.Payload(), &ctrl); err == nil && ctrl.Type == protocol.CtrlCinemaState {
-            sawState = true
-        }
-    }
-    if !sawState { t.Fatal("late joiner did not receive cinema_state") }
+	// Late joiner receives cinema_state with strokes in the welcome sequence.
+	_, late, lateOut := hub.Join("r1", "u3", "late")
+	hub.Leave(room, late)
+	sawState := false
+	for _, m := range collect(lateOut) {
+		if m.Binary() {
+			continue
+		}
+		var ctrl protocol.Control
+		if err := json.Unmarshal(m.Payload(), &ctrl); err == nil && ctrl.Type == protocol.CtrlCinemaState {
+			sawState = true
+		}
+	}
+	if !sawState {
+		t.Fatal("late joiner did not receive cinema_state")
+	}
 
-    // Resume clears strokes and requests keyframe (not asserted here); media path live again.
-    if ok, _ := room.CinemaResume(pub); !ok { t.Fatal("resume refused") }
-    hub.Leave(room, bob)
-    _ = bobOut
+	// Resume clears strokes and requests keyframe (not asserted here); media path live again.
+	if ok, _ := room.CinemaResume(pub); !ok {
+		t.Fatal("resume refused")
+	}
+	hub.Leave(room, bob)
+	_ = bobOut
 }
 
 func stageOf(r *Room) protocol.StageStateData {
@@ -114,36 +122,60 @@ func TestNonPublisherMediaIgnored(t *testing.T) {
 
 // Rolling clip buffer: ensure start is a video keyframe and span/bytes bounded
 func TestClipRollingBufferKeyframeTrim(t *testing.T) {
-    hub := NewHub(discard())
-    room, alice, _ := hub.Join("r1", "a", "alice")
-    room.TakeStage(alice)
-    start := time.Now()
-    for s := 0; s < 40; s++ {
-        // video each second, keyframe every 3s
-        v := make([]byte, protocol.HeaderSize+100)
-        v[0] = protocol.KindVideo
-        if s%3 == 0 { v[1] = protocol.FlagKeyframe }
-        ts := start.Add(time.Duration(s) * time.Second).UnixMicro()
-        v[5] = byte(ts >> 56); v[6] = byte(ts >> 48); v[7] = byte(ts >> 40); v[8] = byte(ts >> 32)
-        v[9] = byte(ts >> 24); v[10] = byte(ts >> 16); v[11] = byte(ts >> 8); v[12] = byte(ts)
-        room.ForwardMedia(alice, v)
-        // audio alongside
-        a := make([]byte, protocol.HeaderSize+40)
-        a[0] = protocol.KindAudio
-        a[5] = byte(ts >> 56); a[6] = byte(ts >> 48); a[7] = byte(ts >> 40); a[8] = byte(ts >> 32)
-        a[9] = byte(ts >> 24); a[10] = byte(ts >> 16); a[11] = byte(ts >> 8); a[12] = byte(ts)
-        room.ForwardMedia(alice, a)
-    }
-    room.mu.Lock()
-    defer room.mu.Unlock()
-    if len(room.clipBuf) == 0 { t.Fatal("clip buffer empty") }
-    h, err := protocol.ParseMediaHeader(room.clipBuf[0])
-    if err != nil { t.Fatalf("parse: %v", err) }
-    if h.Kind != protocol.KindVideo || !h.Keyframe() { t.Fatalf("clip start not a video keyframe") }
-    last, _ := protocol.ParseMediaHeader(room.clipBuf[len(room.clipBuf)-1])
-    span := time.Duration(int64(last.Timestamp-h.Timestamp)) * time.Microsecond
-    if span > 32*time.Second { t.Fatalf("clip span too large: %v", span) }
-    if room.clipBytes <= 0 || room.clipBytes > (32<<20) { t.Fatalf("clip bytes out of bounds: %d", room.clipBytes) }
+	hub := NewHub(discard())
+	room, alice, _ := hub.Join("r1", "a", "alice")
+	room.TakeStage(alice)
+	start := time.Now()
+	for s := 0; s < 40; s++ {
+		// video each second, keyframe every 3s
+		v := make([]byte, protocol.HeaderSize+100)
+		v[0] = protocol.KindVideo
+		if s%3 == 0 {
+			v[1] = protocol.FlagKeyframe
+		}
+		ts := start.Add(time.Duration(s) * time.Second).UnixMicro()
+		v[5] = byte(ts >> 56)
+		v[6] = byte(ts >> 48)
+		v[7] = byte(ts >> 40)
+		v[8] = byte(ts >> 32)
+		v[9] = byte(ts >> 24)
+		v[10] = byte(ts >> 16)
+		v[11] = byte(ts >> 8)
+		v[12] = byte(ts)
+		room.ForwardMedia(alice, v)
+		// audio alongside
+		a := make([]byte, protocol.HeaderSize+40)
+		a[0] = protocol.KindAudio
+		a[5] = byte(ts >> 56)
+		a[6] = byte(ts >> 48)
+		a[7] = byte(ts >> 40)
+		a[8] = byte(ts >> 32)
+		a[9] = byte(ts >> 24)
+		a[10] = byte(ts >> 16)
+		a[11] = byte(ts >> 8)
+		a[12] = byte(ts)
+		room.ForwardMedia(alice, a)
+	}
+	room.mu.Lock()
+	defer room.mu.Unlock()
+	if len(room.clipBuf) == 0 {
+		t.Fatal("clip buffer empty")
+	}
+	h, err := protocol.ParseMediaHeader(room.clipBuf[0])
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if h.Kind != protocol.KindVideo || !h.Keyframe() {
+		t.Fatalf("clip start not a video keyframe")
+	}
+	last, _ := protocol.ParseMediaHeader(room.clipBuf[len(room.clipBuf)-1])
+	span := time.Duration(int64(last.Timestamp-h.Timestamp)) * time.Microsecond
+	if span > 32*time.Second {
+		t.Fatalf("clip span too large: %v", span)
+	}
+	if room.clipBytes <= 0 || room.clipBytes > (32<<20) {
+		t.Fatalf("clip bytes out of bounds: %d", room.clipBytes)
+	}
 }
 
 func TestPublisherLeavingFreesStage(t *testing.T) {
@@ -326,49 +358,65 @@ func TestTemporalSheddingBeforeFreeze(t *testing.T) {
 }
 
 func TestSessionStatsAccrual(t *testing.T) {
-    hub := NewHub(discard())
-    room, a, _ := hub.Join("stats", "u1", "Ana")
-    hub.Join("stats", "u2", "Beto")
-    time.Sleep(5 * time.Millisecond)
-    hub.Leave(room, a)
-    time.Sleep(5 * time.Millisecond)
-    _, a2, _ := hub.Join("stats", "u1", "Ana")
-    if !room.PlayStinger(a2, &protocol.StingerData{Kind: "manual"}) {
-        t.Fatal("stinger did not broadcast")
-    }
-    room.mu.Lock()
-    ps1 := room.sessionStats["u1"]
-    ps2 := room.sessionStats["u2"]
-    room.mu.Unlock()
-    if ps1 == nil || ps2 == nil { t.Fatalf("missing stats entries: %+v %+v", ps1, ps2) }
-    if ps1.Disconnects != 1 { t.Fatalf("disconnects=%d, want 1", ps1.Disconnects) }
-    if ps1.TotalWatch <= 0 { t.Fatalf("TotalWatch not accrued: %+v", ps1) }
-    if ps1.StingerPlays < 1 { t.Fatalf("StingerPlays=%d, want >=1", ps1.StingerPlays) }
+	hub := NewHub(discard())
+	room, a, _ := hub.Join("stats", "u1", "Ana")
+	hub.Join("stats", "u2", "Beto")
+	time.Sleep(5 * time.Millisecond)
+	hub.Leave(room, a)
+	time.Sleep(5 * time.Millisecond)
+	_, a2, _ := hub.Join("stats", "u1", "Ana")
+	if !room.PlayStinger(a2, &protocol.StingerData{Kind: "manual"}) {
+		t.Fatal("stinger did not broadcast")
+	}
+	room.mu.Lock()
+	ps1 := room.sessionStats["u1"]
+	ps2 := room.sessionStats["u2"]
+	room.mu.Unlock()
+	if ps1 == nil || ps2 == nil {
+		t.Fatalf("missing stats entries: %+v %+v", ps1, ps2)
+	}
+	if ps1.Disconnects != 1 {
+		t.Fatalf("disconnects=%d, want 1", ps1.Disconnects)
+	}
+	if ps1.TotalWatch <= 0 {
+		t.Fatalf("TotalWatch not accrued: %+v", ps1)
+	}
+	if ps1.StingerPlays < 1 {
+		t.Fatalf("StingerPlays=%d, want >=1", ps1.StingerPlays)
+	}
 }
 
 func TestAssembleAwards(t *testing.T) {
-    hub := NewHub(discard())
-    room, a, _ := hub.Join("aw", "u1", "Ana")
-    _, b, _ := hub.Join("aw", "u2", "Beto")
-    _, c, _ := hub.Join("aw", "u3", "Carla")
-    hub.Join("aw", "u4", "Dani")
-    room.TakeStage(a)
-    // Simulate time with joins/leaves
-    time.Sleep(5 * time.Millisecond)
-    hub.Leave(room, b)
-    time.Sleep(5 * time.Millisecond)
-    hub.Join("aw", "u2", "Beto")
-    // Increment stinger plays for Carla
-    _ = room.PlayStinger(c, &protocol.StingerData{Kind: "manual"})
+	hub := NewHub(discard())
+	room, a, _ := hub.Join("aw", "u1", "Ana")
+	_, b, _ := hub.Join("aw", "u2", "Beto")
+	_, c, _ := hub.Join("aw", "u3", "Carla")
+	hub.Join("aw", "u4", "Dani")
+	room.TakeStage(a)
+	// Simulate time with joins/leaves
+	time.Sleep(5 * time.Millisecond)
+	hub.Leave(room, b)
+	time.Sleep(5 * time.Millisecond)
+	hub.Join("aw", "u2", "Beto")
+	// Increment stinger plays for Carla
+	_ = room.PlayStinger(c, &protocol.StingerData{Kind: "manual"})
 
-    room.mu.Lock()
-    got := room.assembleAwardsLocked()
-    room.mu.Unlock()
-    if got == nil || len(got) == 0 { t.Fatalf("no awards assembled") }
-    // At minimum Host must be present.
-    foundHost := false
-    for _, a := range got { if a.Category == "host" { foundHost = true } }
-    if !foundHost { t.Fatalf("host not present in awards: %+v", got) }
+	room.mu.Lock()
+	got := room.assembleAwardsLocked()
+	room.mu.Unlock()
+	if got == nil || len(got) == 0 {
+		t.Fatalf("no awards assembled")
+	}
+	// At minimum Host must be present.
+	foundHost := false
+	for _, a := range got {
+		if a.Category == "host" {
+			foundHost = true
+		}
+	}
+	if !foundHost {
+		t.Fatalf("host not present in awards: %+v", got)
+	}
 }
 
 // TestSessionTakeoverNewestWins: the same identity joining again replaces
@@ -782,97 +830,4 @@ func TestStingerDisabled(t *testing.T) {
 	if got := stingersOf(t, collect(bobOut)); len(got) != 0 {
 		t.Fatalf("disabled stingers still fired: %v", got)
 	}
-}
-
-// -------------------------- reactions ---------------------------------------
-
-// testLogger returns a discard logger for helpers that expect one.
-func testLogger(t *testing.T) *slog.Logger { t.Helper(); return discard() }
-
-// drainControls starts a goroutine that forwards control envelopes from c.out
-// into a buffered channel we can poll in tests.
-func drainControls(t *testing.T, c *Client) chan protocol.Control {
-    t.Helper()
-    ch := make(chan protocol.Control, 64)
-    go func() {
-        for m := range c.out {
-            if m.binary { continue }
-            var ctrl protocol.Control
-            _ = json.Unmarshal(m.payload, &ctrl)
-            ch <- ctrl
-        }
-        close(ch)
-    }()
-    return ch
-}
-
-func hasBurst(ch chan protocol.Control) bool {
-    for {
-        select {
-        case ctrl := <-ch:
-            if ctrl.Type == protocol.CtrlReactionBurst { return true }
-        default:
-            return false
-        }
-    }
-}
-
-func assertOneBurstHas(t *testing.T, ch chan protocol.Control, want map[string]int) {
-    t.Helper()
-    deadline := time.Now().Add(500 * time.Millisecond)
-    for time.Now().Before(deadline) {
-        select {
-        case ctrl := <-ch:
-            if ctrl.Type != protocol.CtrlReactionBurst { continue }
-            var d protocol.ReactionBurstData
-            _ = json.Unmarshal(ctrl.Data, &d)
-            for k, v := range want {
-                if d.Counts[k] != v { t.Fatalf("count %s = %d, want %d (all: %+v)", k, d.Counts[k], v, d.Counts) }
-            }
-            if d.Density != 6 || d.WindowMs != 1500 { t.Fatalf("density/window = %d/%d, want 6/1500", d.Density, d.WindowMs) }
-            return
-        default:
-            time.Sleep(5 * time.Millisecond)
-        }
-    }
-    t.Fatalf("no reaction burst received")
-}
-
-func TestReactionAggregation(t *testing.T) {
-    log := testLogger(t)
-    h := NewHub(log)
-    r, a, _ := h.Join("room", "a", "Ana")
-    _, b, _ := h.Join("room", "b", "Beto")
-    _, c, _ := h.Join("room", "c", "Caio")
-
-    gotB := drainControls(t, b)
-    gotC := drainControls(t, c)
-
-    r.mu.Lock()
-    base := time.Now().Add(-400 * time.Millisecond)
-    r.lastReactionBurst = base
-    // Pre-seed events directly with controlled timestamps within 300ms window.
-    r.reactionEvents = nil
-    for i, e := range []string{"fire","fire","laugh","heart","fire"} {
-        r.reactionEvents = append(r.reactionEvents, struct{t time.Time; e string}{t: base.Add(time.Duration(i*60) * time.Millisecond), e: e})
-    }
-    r.mu.Unlock()
-    // Trigger pacing tick with a valid reaction (also counts if outside cooldown for its client).
-    time.Sleep(5 * time.Millisecond)
-    _ = a
-    var from *Client = c
-    r.ForwardControl(from, protocol.CtrlReaction, protocol.ReactionData{Emoji: "fire"})
-    time.Sleep(20 * time.Millisecond)
-
-    // Seeded 5 events plus the pacing tap currently in-window → density 6.
-    wantCounts := map[string]int{"fire":4, "laugh":1, "heart":1}
-    assertOneBurstHas(t, gotB, wantCounts)
-    assertOneBurstHas(t, gotC, wantCounts)
-
-    // A quick follow-up within 200ms is dropped; no immediate new burst.
-    r.ForwardControl(c, protocol.CtrlReaction, protocol.ReactionData{Emoji: "skull"})
-    time.Sleep(10 * time.Millisecond)
-    if hasBurst(gotB) || hasBurst(gotC) {
-        t.Fatalf("unexpected extra burst under cooldown")
-    }
 }

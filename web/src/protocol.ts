@@ -44,8 +44,6 @@ export type ControlType =
   | "awards_ready"
   | "cinema_state"
   | "cinema_stroke_add"
-  | "reaction"
-  | "reaction_burst"
   | "placar_create"
   | "placar_vote"
   | "placar_close"
@@ -168,18 +166,6 @@ export interface StageCancelData {
   reason: StageCancelReason;
 }
 
-// --- reactions ---------------------------------------------------------------
-export const ReactionEmojis = [
-  "fire",
-  "laugh",
-  "heart",
-  "skull",
-  "clap",
-  "shock",
-] as const;
-export type ReactionEmoji = (typeof ReactionEmojis)[number];
-export interface ReactionData { emoji: ReactionEmoji }
-export interface ReactionBurstData { counts: Record<string, number>; density: number; windowMs: number }
 
 /** Server-chosen stinger: the same image + sound pair (same-origin URLs under
  *  /stingers/) for every participant. "start"/"stop" are the automatic stream

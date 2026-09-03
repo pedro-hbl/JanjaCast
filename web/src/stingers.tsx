@@ -221,15 +221,6 @@ export const StingerPanel: Component<StingerPanelProps> = (props) => {
       </button>
       <button
         type="button"
-        class="stinger-chip"
-        aria-pressed={Boolean((f.a as any).stormTrigger)}
-        title={"Auto on storm"}
-        onClick={() => void patch(f.a, { stormTrigger: !Boolean((f.a as any).stormTrigger) })}
-      >
-        ⚡
-      </button>
-      <button
-        type="button"
         class="stinger-chip stinger-chip--on"
         aria-pressed={f.a.enabled}
         title={t("st.chipOnTitle")}

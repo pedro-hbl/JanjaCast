@@ -125,7 +125,6 @@ func (h *Hub) Join(roomID, userID, username string) (*Room, *Client, iter.Seq[Ou
 			stinger:         h.Stinger,
 			stingerStopWait: h.StingerStopDelay,
 			turnWait:        ttl,
-			lastReactionBy:  make(map[*Client]time.Time),
 			placarScores:    make(map[string]int),
 			placarLastVote:  make(map[*Client]time.Time),
 			clips:           make(map[string]clipItem),
@@ -411,19 +410,6 @@ type Room struct {
 	cinemaPaused  bool
 	cinemaStrokes []protocol.StrokeData // FIFO cap 100
 
-	// --- reactions (guarded by mu) --------------------------------------
-	// reaction events over a sliding window; sampled into bursts.
-	reactionEvents []struct {
-		t time.Time
-		e string
-	}
-	lastReactionBurst time.Time
-	// per-client cooldown for CtrlReaction taps
-	lastReactionBy map[*Client]time.Time
-
-	// storm cooldown
-	nextStorm time.Time
-
 	// --- placar (scoreboard), guarded by mu --------------------------
 	placarActive   bool
 	placarPrompt   string
@@ -555,6 +541,10 @@ func (r *Room) BolaoVote(c *Client, id, vote string) {
 	default:
 		return
 	}
+	if len(r.probeEvents) >= 200 {
+		r.probeEvents = r.probeEvents[1:]
+	}
+	r.probeEvents = append(r.probeEvents, map[string]any{"type": "activity", "at": time.Now().UnixMilli()})
 	r.broadcastBolaoLocked(s)
 }
 
@@ -1415,67 +1405,6 @@ func (r *Room) ForwardControl(from *Client, t protocol.ControlType, data any) {
 				c.enqueueControl(t, data)
 			}
 		}
-	case protocol.CtrlReaction:
-		// Client tap → append event if valid and not cooling down.
-		if _, ok := r.clients[from]; !ok {
-			return
-		}
-		var d protocol.ReactionData
-		if m, ok := data.(protocol.ReactionData); ok {
-			d = m
-		} else if mp, ok := data.(*protocol.ReactionData); ok && mp != nil {
-			d = *mp
-		} else {
-			return
-		}
-		if !protocol.ValidReactionEmoji(d.Emoji) {
-			return
-		}
-		now := time.Now()
-		if last, ok := r.lastReactionBy[from]; ok && now.Sub(last) < 200*time.Millisecond {
-			return
-		}
-		r.lastReactionBy[from] = now
-		r.reactionEvents = append(r.reactionEvents, struct {
-			t time.Time
-			e string
-		}{t: now, e: d.Emoji})
-		// On a 250ms pace, fan an aggregate only when non-zero; sum includes
-		// all events currently in-window, not just since last pace tick.
-		if now.Sub(r.lastReactionBurst) >= 250*time.Millisecond {
-			r.lastReactionBurst = now
-			// Evict old events (window 1500ms) and sum counts.
-			cutoff := now.Add(-1500 * time.Millisecond)
-			i := 0
-			for _, ev := range r.reactionEvents {
-				if !ev.t.Before(cutoff) {
-					r.reactionEvents[i] = ev
-					i++
-				}
-			}
-			if i > 0 {
-				// Count over the in-window view (prefix [0:i]).
-				counts := make(map[string]int, 6)
-				for _, ev := range r.reactionEvents[:i] {
-					counts[ev.e]++
-				}
-				burst := protocol.ReactionBurstData{Counts: counts, Density: i, WindowMs: 1500}
-				for c := range r.clients {
-					c.enqueueControl(protocol.CtrlReactionBurst, burst)
-				}
-				if len(r.probeEvents) >= 200 {
-					r.probeEvents = r.probeEvents[1:]
-				}
-				r.probeEvents = append(r.probeEvents, map[string]any{
-					"type": "reaction_burst", "density": i, "at": time.Now().UnixMilli(),
-				})
-				// Auto-storm trigger: density threshold and 20s cooldown.
-				if i >= 15 {
-					r.maybeStormLocked()
-				}
-			}
-			r.reactionEvents = r.reactionEvents[:i]
-		}
 	default:
 		// Unknown forwarded control: ignore.
 	}
@@ -1654,22 +1583,6 @@ func (r *Room) ClosePlacar(c *Client) error {
 	r.placarScores = make(map[string]int)
 	r.broadcastPlacarStateLocked()
 	return nil
-}
-
-// maybeStormLocked broadcasts a random manual stinger when the storm cooldown
-// has elapsed. Caller must hold r.mu.
-func (r *Room) maybeStormLocked() {
-	if r.stinger == nil {
-		return
-	}
-	now := time.Now()
-	if !r.nextStorm.IsZero() && now.Before(r.nextStorm) {
-		return
-	}
-	if d := r.stinger("manual"); d != nil {
-		r.nextStorm = now.Add(20 * time.Second)
-		r.broadcastStingerLocked(d)
-	}
 }
 
 // ForwardMedia fans a binary media message from the publisher out to every

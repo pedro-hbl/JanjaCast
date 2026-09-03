@@ -54,7 +54,6 @@ import {
   Wordmark,
 } from "./doodles";
 import { StingerPanel } from "./stingers";
-import { ReactionBar } from "./reactions";
 import "./theme.css";
 
 /**
@@ -1243,10 +1242,6 @@ const App: Component = () => {
             </div>
           </Show>
 
-          {/* Edge UI: reactions + hype. Inside .stage so the bar pins to the
-              stage corner and sprites rise in its gutters — but only chrome,
-              never over the center safe-zone. */}
-          <ReactionBar session={session} />
         </div>
 
         <aside class="sidebar">
@@ -1304,7 +1299,7 @@ const App: Component = () => {
               </div>
               <div class="replay-heat" aria-label={t("replay.heatLabel")}>
                 {(() => {
-                  const bursts = replayEvents().filter((e) => e.type === "reaction_burst");
+                  const bursts = replayEvents().filter((e) => e.type === "activity");
                   if (!bursts.length) return <span class="replay-join--none">{t("replay.quiet")}</span>;
                   const t0 = bursts[0]!.at;
                   const buckets = new Array<number>(12).fill(0);

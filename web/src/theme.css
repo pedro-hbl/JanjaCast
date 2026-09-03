@@ -341,22 +341,7 @@
   min-height: 0;
 }
 
-/* ---------------- reactions ---------------- */
-.reaction-ui { position: absolute; right: 10px; bottom: 10px; display: flex; flex-direction: column; align-items: flex-end; gap: 6px; pointer-events: none; z-index: 6; max-width: min(46vw, 330px); }
-.reaction-bar { display: flex; gap: 4px; background: color-mix(in oklab, var(--outline) 10%, transparent); padding: 4px 6px; border-radius: var(--wobble-sm); pointer-events: auto; }
-.reaction-btn { width: 34px; height: 34px; display: inline-flex; align-items: center; justify-content: center; padding: 0; border: none; background: transparent; border-radius: var(--wobble-sm); cursor: pointer; transition: transform 120ms ease; }
-.reaction-btn:hover { transform: scale(1.18) rotate(-4deg); background: var(--hover-wash); }
-.reaction-btn:active { transform: scale(0.94); }
-.rx { font-size: 20px; line-height: 1; display: block; transform: rotate(-3deg); }
-.reaction-float { position: absolute; inset: 0; pointer-events: none; overflow: hidden; z-index: 5; }
-.rx-float { position: absolute; font-size: 22px; opacity: 0; animation: rx-rise 1.2s ease-out forwards; will-change: transform, opacity; }
-@keyframes rx-rise { from { transform: translateY(0) translateX(0) rotate(-4deg); opacity: .9; } to { transform: translateY(-140px) translateX(6px) rotate(4deg); opacity: 0; } }
 
-.hype { display: flex; align-items: center; gap: 8px; padding: 4px 10px; background: var(--surface-2); border: 3px solid var(--outline); border-radius: var(--wobble-sm); box-shadow: var(--shadow-ink); font-family: var(--font-hand); pointer-events: none; }
-.hype--pub { transform: scale(1.05) rotate(-1deg); }
-.hype-gauge { --val: 0; width: 80px; height: 8px; background: var(--hover-wash); position: relative; border-radius: 6px; overflow: hidden; }
-.hype-gauge::after { content: ""; position: absolute; inset: 0; width: calc(min(var(--val), 20) * 5%); background: var(--crayon-blue); opacity: .9; }
-.hype-label { font-size: var(--step-0); }
 
 /* ---------------- placar ---------------- */
 .placar-panel { margin-top: 10px; background: var(--surface); border: 3px solid var(--outline); border-radius: var(--wobble-sm); box-shadow: var(--shadow-ink); padding: 8px; }

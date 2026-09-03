@@ -191,12 +191,7 @@ const (
 	CtrlCaptionClear     ControlType = "caption_clear"
 )
 
-// --- reactions -------------------------------------------------------------
-// Client -> server: a single reaction tap from a member.
-// Relay -> clients: an aggregated burst sampled over a short window.
 const (
-	CtrlReaction      ControlType = "reaction"
-	CtrlReactionBurst ControlType = "reaction_burst"
 	// CtrlRoomPhase announces a lobby<->live transition to every client.
 	CtrlRoomPhase ControlType = "room_phase"
 	// Server -> every room client: an end-of-session awards page is ready.
@@ -497,7 +492,6 @@ type RateHintData struct {
 	Viewers  int `json:"viewers"`
 }
 
-// --- reactions -----------------------------------------------------------------
 // (definitions appear earlier in this file)
 
 // StingerData is the payload of CtrlStinger: which transition happened and
@@ -585,17 +579,17 @@ type StageModeData struct {
 // have TTLMs to claim the stage, and Method says how they were picked (a
 // wheel pick is the one the client animates).
 type StageTurnData struct {
-    UserID   string `json:"userId"`
-    Username string `json:"username"`
-    TTLMs    int    `json:"ttlMs"`
-    Method   string `json:"method"`
+	UserID   string `json:"userId"`
+	Username string `json:"username"`
+	TTLMs    int    `json:"ttlMs"`
+	Method   string `json:"method"`
 }
 
 // StageWarmupData is the payload of CtrlStageWarmup: a private nudge to the
 // next candidate so they can pre-roll capture and hydrate UI.
 type StageWarmupData struct {
-    UserID   string `json:"userId"`
-    Username string `json:"username"`
+	UserID   string `json:"userId"`
+	Username string `json:"username"`
 }
 
 // StageCancelData is the payload of CtrlStageCancel.
@@ -611,36 +605,6 @@ func MarshalControl(t ControlType, data any) ([]byte, error) {
 		return nil, err
 	}
 	return json.Marshal(Control{Type: t, Data: raw})
-}
-
-// --- reactions -----------------------------------------------------------------
-
-// ReactionEmojis is the curated fixed set of allowed reaction identifiers.
-var ReactionEmojis = []string{"fire", "laugh", "heart", "skull", "clap", "shock"}
-
-// ValidReactionEmoji reports whether s is one of ReactionEmojis.
-func ValidReactionEmoji(s string) bool {
-	for _, e := range ReactionEmojis {
-		if s == e {
-			return true
-		}
-	}
-	return false
-}
-
-// ReactionData is the payload of CtrlReaction (client -> relay).
-type ReactionData struct {
-	Emoji string `json:"emoji"`
-}
-
-// ReactionBurstData is the payload of CtrlReactionBurst (relay -> clients).
-// Counts carries per-emoji totals within the server's sliding window.
-// Density is the total reactions observed in-window; WindowMs states the
-// server's window size so a client can scale its UI consistently.
-type ReactionBurstData struct {
-	Counts   map[string]int `json:"counts"`
-	Density  int            `json:"density"`
-	WindowMs int            `json:"windowMs"`
 }
 
 // --- jukebox (viewer-submitted simple asset queue; relay-side only) ---------

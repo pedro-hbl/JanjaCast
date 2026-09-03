@@ -109,8 +109,8 @@ func ValidName(name string) bool {
 
 // settingsFile is the on-disk shape of the flag store.
 type settingsFile struct {
-    Version int              `json:"version"`
-    Assets  map[string]Flags `json:"assets"`
+	Version int              `json:"version"`
+	Assets  map[string]Flags `json:"assets"`
 }
 
 // DiskStore is the shipped backend: a plain directory plus one JSON settings

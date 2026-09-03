@@ -31,7 +31,7 @@ exports.run = async function (h) {
   // Emit via control channel; server should persist as room-events sidecar
   pub.sendCtrl('probe_room_event', { type: 'join', user: 'alice', at: t0 + 300 });
   pub.sendCtrl('probe_room_event', { type: 'join', user: 'bob', at: t0 + 900 });
-  pub.sendCtrl('probe_room_event', { type: 'reaction_burst', emoji: 'fire', count: 7, at: t0 + 1500 });
+  pub.sendCtrl('probe_room_event', { type: 'activity', at: t0 + 1500 });
   pub.sendCtrl('probe_room_event', { type: 'placar', value: { a: 1, b: 0 }, at: t0 + 1800 });
 
   // Ask server for a 90s replay token (variant on existing clip endpoint)
@@ -72,7 +72,7 @@ exports.run = async function (h) {
   // Expect at least the emitted types, with timestamps within clip window
   const types = events.map(e => e.type);
   assert(types.includes('join'), 'join present');
-  assert(types.includes('reaction_burst'), 'reaction burst present');
+  assert(types.includes('activity'), 'activity present');
   assert(types.includes('placar'), 'placar present');
   return true;
 };

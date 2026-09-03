@@ -638,13 +638,6 @@ func (s *Server) handleControl(room *relay.Room, client *relay.Client, data []by
 		}
 	case protocol.CtrlSync:
 		room.ForwardControl(client, protocol.CtrlSync, ctrl.Data)
-	case protocol.CtrlReaction:
-		// The relay validates the emoji and applies the per-client cooldown;
-		// this just gets the tap off the wire and into the room.
-		var d protocol.ReactionData
-		if err := json.Unmarshal(ctrl.Data, &d); err == nil {
-			room.ForwardControl(client, protocol.CtrlReaction, &d)
-		}
 	case protocol.CtrlKeyframeRequest:
 		room.RequestKeyframeFrom(client)
 	case protocol.CtrlBlank:
