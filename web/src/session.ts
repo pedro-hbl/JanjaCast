@@ -217,6 +217,8 @@ export class Session {
   /** Corrente: nomination banner lifecycle. */
   /** Publisher side: how many of the room are actually looking. */
   onAttentionState: ((d: { watching: number; total: number }) => void) | null = null;
+  /** A sticky note landed on the bezel — everyone draws it. */
+  onPitacoShow: ((d: { id: string; text: string; side: string; slot: number; authorName: string; ttlMs: number }) => void) | null = null;
   onCorrenteStarted: ((d: { target: string; targetName: string; by: string; endsAtMs: number }) => void) | null = null;
   onCorrenteTally: ((d: { vai: number; calma: number }) => void) | null = null;
   onCorrenteCanceled: ((d: { reason: string }) => void) | null = null;
@@ -383,6 +385,7 @@ export class Session {
     this.sendControl("varal_pin" as any, pin);
   }
   reportAttention(visible: boolean): void { this.sendControl("attention_report" as any, { visible }); }
+  postPitaco(text: string, side: "left" | "right"): void { this.sendControl("pitaco_post" as any, { text, side }); }
   nominateCorrente(target: string): void { this.sendControl("corrente_nominate" as any, { target }); }
   voteCorrente(choice: "vai" | "calma"): void { this.sendControl("corrente_vote" as any, { choice }); }
   removeVaralPin(id: string): void { this.sendControl("varal_remove" as any, { id }); }
@@ -579,6 +582,10 @@ export class Session {
       }
       case "attention_state": {
         this.onAttentionState?.(ctrl.data as { watching: number; total: number });
+        break;
+      }
+      case "pitaco_show": {
+        this.onPitacoShow?.(ctrl.data as { id: string; text: string; side: string; slot: number; authorName: string; ttlMs: number });
         break;
       }
       case "corrente_started": {

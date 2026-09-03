@@ -202,6 +202,9 @@ const App: Component = () => {
   const [correnteTally, setCorrenteTally] = createSignal<{ vai: number; calma: number }>({ vai: 0, calma: 0 });
   // "Cadê todo mundo?": the room's attention, publisher-only knowledge.
   const [attention, setAttention] = createSignal<{ watching: number; total: number } | null>(null);
+  // Pitacos: bezel sticky notes, purely transient — each removes itself.
+  const [pitacos, setPitacos] = createSignal<Array<{ id: string; text: string; side: string; slot: number; authorName: string }>>([]);
+  const [pitacoDraft, setPitacoDraft] = createSignal("");
   const [replayEvents, setReplayEvents] = createSignal<Array<{ type: string; user?: string; density?: number; at: number }>>([]);
   const [clipUrl, setClipUrl] = createSignal<string | null>(null);
   const [clipExpires, setClipExpires] = createSignal<number | null>(null);
@@ -662,6 +665,10 @@ const App: Component = () => {
         document.removeEventListener("visibilitychange", reportVis);
         clearInterval(attnTimer);
       });
+      s.onPitacoShow = (d) => {
+        setPitacos((xs) => [...xs.filter((p) => p.id !== d.id), d]);
+        setTimeout(() => setPitacos((xs) => xs.filter((p) => p.id !== d.id)), d.ttlMs || 10_000);
+      };
       s.onCorrenteStarted = (d) => { setCorrente(d); setCorrenteTally({ vai: 0, calma: 0 }); };
       s.onCorrenteTally = (d) => setCorrenteTally(d);
       s.onCorrenteCanceled = () => { setCorrente(null); flashToast("corrente.canceled"); };
@@ -1177,6 +1184,21 @@ const App: Component = () => {
               </For>
             </div>
           </Show>
+          {/* Pitacos: sticky notes on the bezel gutters, never the canvas.
+              Four slots a side, each note torn down by its own TTL. */}
+          <div class="pitaco-layer" aria-hidden="true">
+            <For each={pitacos()}>
+              {(p) => (
+                <div
+                  class={p.side === "left" ? "pitaco pitaco--left" : "pitaco pitaco--right"}
+                  style={{ top: `${12 + p.slot * 22}%` }}
+                >
+                  <span class="pitaco-text">{p.text}</span>
+                  <span class="pitaco-author">{p.authorName}</span>
+                </div>
+              )}
+            </For>
+          </div>
           {/* Stinger overlay: inside .stage so fullscreen/theater show it;
               above the canvas, below the stage controls; never interactive. */}
           <div class="stinger-layer" ref={stingerLayerRef} />
@@ -1392,6 +1414,20 @@ const App: Component = () => {
               onKeyDown={(e) => { if (e.key === "Enter") pinQuote(); }}
             />
             <button class="crayon-btn crayon-btn--chalk" onClick={pinQuote}>📌</button>
+            <input
+              class="varal-input"
+              maxlength="60"
+              placeholder={t("pitaco.placeholder")}
+              value={pitacoDraft()}
+              onKeyDown={(e) => {
+                if (e.key !== "Enter") return;
+                const txt = pitacoDraft().trim();
+                if (!txt) return;
+                session()?.postPitaco(txt, Math.random() < 0.5 ? "left" : "right");
+                setPitacoDraft("");
+              }}
+              onInput={(e) => setPitacoDraft(e.currentTarget.value)}
+            />
           </div>
         </div>
 

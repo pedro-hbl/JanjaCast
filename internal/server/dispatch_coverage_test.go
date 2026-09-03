@@ -41,6 +41,7 @@ var serverToClientOnly = map[string]bool{
 	"CtrlCorrenteTally":    true,
 	"CtrlCorrenteCanceled": true,
 	"CtrlAttentionState":   true, // server->clients board broadcast + welcome backlog
+	"CtrlPitacoShow":       true, // server->clients board broadcast + welcome backlog
 	"CtrlBolaoState":       true,
 	"CtrlChamaState":       true,
 	"CtrlCinemaState":      true,

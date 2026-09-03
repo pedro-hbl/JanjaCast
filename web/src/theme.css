@@ -2283,3 +2283,12 @@ label.fps-label {
 .hat { position: relative; display: inline-flex; align-items: flex-end; justify-content: center; width: 30px; height: 34px; margin: 4px auto 0; overflow: hidden; border: 3px solid var(--outline); border-radius: var(--wobble-sm); background: var(--surface-2); }
 .hat-fill { position: absolute; left: 0; right: 0; bottom: 0; background: var(--grass); opacity: .5; transition: height 1s linear; }
 .hat-cone { position: relative; z-index: 1; font-size: 16px; line-height: 30px; }
+/* ---- mural de pitacos (bezel sticky notes) ---- */
+.pitaco-layer { position: absolute; inset: 0; pointer-events: none; z-index: 6; }
+.pitaco { position: absolute; max-width: 17%; padding: 4px 8px; background: var(--yellow, #f5d76e); border: 2px solid var(--outline); border-radius: 2px; box-shadow: var(--shadow-ink); font-family: var(--font-hand); animation: pitaco-in 200ms ease-out, pitaco-out 500ms ease-in 9.4s forwards; }
+.pitaco--left { left: 6px; transform: rotate(-3deg); }
+.pitaco--right { right: 6px; transform: rotate(3deg); }
+.pitaco-text { display: block; font-size: var(--step--1); word-break: break-word; }
+.pitaco-author { display: block; font-size: 10px; opacity: .7; text-align: right; }
+@keyframes pitaco-in { from { opacity: 0; transform: scale(.6) rotate(-8deg); } to { opacity: 1; } }
+@keyframes pitaco-out { to { opacity: 0; } }
