@@ -65,6 +65,7 @@ export type ControlType =
   | "chama_state"
   | "attention_report"
   | "subscribe"
+  | "slots_max"
   | "unsubscribe"
   | "aposta_challenge"
   | "aposta_accept"
@@ -105,6 +106,7 @@ export type OutboundControlType =
   | "cinema_stroke"
   | "attention_report"
   | "subscribe"
+  | "slots_max"
   | "unsubscribe"
   | "aposta_challenge"
   | "aposta_accept"
@@ -284,6 +286,10 @@ export interface SlotInfo {
   idx: number;
   occupantId?: string;
   occupantName?: string;
+  /** This chair's codec announcement — the viewer builds its tile decoder from it. */
+  config?: ConfigData | null;
+  /** This chair's privacy blank state. */
+  blanked?: boolean;
 }
 
 export interface StageStateData {
@@ -296,6 +302,8 @@ export interface StageStateData {
   blanked?: boolean;
   /** Multi-slot stage view (Seam 1b): one chair today, six by Seam 4. */
   slots?: SlotInfo[];
+  /** How many chairs this room currently allows. */
+  maxSlots?: number;
   /** Overall room phase: "lobby" when no publisher, "live" when someone is.
    *  Rides `welcome` so a late joiner never guesses. */
   phase?: "lobby" | "live";

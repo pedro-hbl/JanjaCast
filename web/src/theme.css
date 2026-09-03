@@ -2294,3 +2294,18 @@ label.fps-label {
 .jukebox-row { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
 .jukebox-name { max-width: 90px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--step--1); }
 .jukebox-by { flex: 1; font-size: 10px; opacity: .65; }
+
+/* ---- split-screen tile grid (multistream Seam 5) ---- */
+.tile-grid { position: absolute; inset: 0; display: grid; gap: 4px; padding: 4px; z-index: 1; }
+.tile-grid--1 { grid-template-columns: 1fr; }
+.tile-grid--2 { grid-template-columns: 1fr 1fr; }
+.tile-grid--3 { grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; }
+.tile-grid--3 .tile:first-child { grid-column: 1 / -1; }
+.tile-grid--4 { grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; }
+.tile-grid--5, .tile-grid--6 { grid-template-columns: repeat(3, 1fr); grid-template-rows: 1fr 1fr; }
+.tile { position: relative; overflow: hidden; border: 3px solid var(--outline); border-radius: var(--wobble-sm); background: #000; cursor: pointer; contain: layout paint; }
+.tile--solo { border-color: var(--grass); }
+.tile-canvas { width: 100%; height: 100%; object-fit: contain; display: block; }
+.tile-name { position: absolute; left: 6px; bottom: 4px; padding: 0 6px; font-family: var(--font-hand); font-size: var(--step--1); background: color-mix(in oklab, var(--surface-2) 80%, transparent); border-radius: var(--wobble-sm); pointer-events: none; }
+.tile-blank { position: absolute; inset: 0; display: grid; place-items: center; background: var(--surface-2); }
+.tile-blank-art { width: 40%; max-width: 160px; }
