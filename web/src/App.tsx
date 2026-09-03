@@ -194,9 +194,6 @@ const App: Component = () => {
   const [aiming, setAiming] = createSignal(false);
   const [arrows, setArrows] = createSignal<Array<{ id: number; x: number; y: number; name: string }>>([]);
   let arrowSeq = 0;
-  // The varal: the session's clothesline of polaroids and quote magnets.
-  const [varalPins, setVaralPins] = createSignal<import("./protocol").VaralPinData[]>([]);
-  const [varalQuote, setVaralQuote] = createSignal("");
   // Corrente da tela: the nomination banner state — server-driven.
   const [corrente, setCorrente] = createSignal<{ target: string; targetName: string; by: string; endsAtMs: number } | null>(null);
   const [correnteTally, setCorrenteTally] = createSignal<{ vai: number; calma: number }>({ vai: 0, calma: 0 });
@@ -207,9 +204,6 @@ const App: Component = () => {
   const [betText, setBetText] = createSignal("");
   // "Cadê todo mundo?": the room's attention, publisher-only knowledge.
   const [attention, setAttention] = createSignal<{ watching: number; total: number } | null>(null);
-  // Pitacos: bezel sticky notes, purely transient — each removes itself.
-  const [pitacos, setPitacos] = createSignal<Array<{ id: string; text: string; side: string; slot: number; authorName: string }>>([]);
-  const [pitacoDraft, setPitacoDraft] = createSignal("");
   const [replayEvents, setReplayEvents] = createSignal<Array<{ type: string; user?: string; density?: number; at: number }>>([]);
   const [clipUrl, setClipUrl] = createSignal<string | null>(null);
   const [clipExpires, setClipExpires] = createSignal<number | null>(null);
@@ -230,26 +224,6 @@ const App: Component = () => {
     onCleanup(() => (window as any).removeEventListener("awards_ready", h));
   });
 
-  // --- the varal ----------------------------------------------------------
-  const pinQuote = () => {
-    const text = varalQuote().trim();
-    if (!text) return;
-    session()?.sendVaralPin({ kind: "quote", quote: { text: text.slice(0, 80) } });
-    setVaralQuote("");
-  };
-  /** Polaroid of the exact frame on screen right now. JPEG, walked down in
-   *  quality until it fits the 64KB wire cap. */
-  const pinFrame = () => {
-    if (!canvasRef || !canvasRef.width) return;
-    let q = 0.7;
-    let url = canvasRef.toDataURL("image/jpeg", q);
-    while (url.length > 60_000 && q > 0.15) {
-      q -= 0.15;
-      url = canvasRef.toDataURL("image/jpeg", q);
-    }
-    if (url.length > 64_000) return;
-    session()?.sendVaralPin({ kind: "frame", frame: { dataUrl: url, publisher: stage().publisherName ?? "" } });
-  };
 
   // --- cinema scribbles (local-only helpers) ------------------------------
   const ownStrokes = () => (session()?.cinemaStrokes() ?? []).filter(s => s.userId === session()?.selfId());
@@ -658,7 +632,6 @@ const App: Component = () => {
         setArrows((xs) => [...xs, { id, x: d.x, y: d.y, name: d.username }]);
         setTimeout(() => setArrows((xs) => xs.filter((a) => a.id !== id)), d.ttlMs || 4000);
       };
-      s.onVaralState = (d) => setVaralPins(d.pins ?? []);
       s.onAttentionState = (d) => setAttention(d);
       // Report visibility now, on every change, and as a 30s heartbeat —
       // the wire is one boolean, the relay does the thinking.
@@ -670,10 +643,6 @@ const App: Component = () => {
         document.removeEventListener("visibilitychange", reportVis);
         clearInterval(attnTimer);
       });
-      s.onPitacoShow = (d) => {
-        setPitacos((xs) => [...xs.filter((p) => p.id !== d.id), d]);
-        setTimeout(() => setPitacos((xs) => xs.filter((p) => p.id !== d.id)), d.ttlMs || 10_000);
-      };
       s.onApostaState = (d) => {
         if (d.wins) setApostaWins(d.wins);
         setAposta(d);
@@ -1196,21 +1165,6 @@ const App: Component = () => {
               </For>
             </div>
           </Show>
-          {/* Pitacos: sticky notes on the bezel gutters, never the canvas.
-              Four slots a side, each note torn down by its own TTL. */}
-          <div class="pitaco-layer" aria-hidden="true">
-            <For each={pitacos()}>
-              {(p) => (
-                <div
-                  class={p.side === "left" ? "pitaco pitaco--left" : "pitaco pitaco--right"}
-                  style={{ top: `${12 + p.slot * 22}%` }}
-                >
-                  <span class="pitaco-text">{p.text}</span>
-                  <span class="pitaco-author">{p.authorName}</span>
-                </div>
-              )}
-            </For>
-          </div>
           {/* Stinger overlay: inside .stage so fullscreen/theater show it;
               above the canvas, below the stage controls; never interactive. */}
           <div class="stinger-layer" ref={stingerLayerRef} />
@@ -1388,61 +1342,6 @@ const App: Component = () => {
           </div>
         </Show>
 
-        {/* The varal: a clothesline under the TV where the session's best
-            moments hang — polaroids of exact frames and quote magnets.
-            Chrome below the stage, never over it; dies with the room. */}
-        <div class="varal">
-          <div class="varal-line" aria-hidden="true" />
-          <div class="varal-pins">
-            <For each={varalPins()}>
-              {(p) => (
-                <div class={p.kind === "frame" ? "varal-pin varal-pin--frame" : "varal-pin varal-pin--quote"}>
-                  <Show when={p.kind === "frame" && p.frame}>
-                    <img class="varal-photo" src={p.frame!.dataUrl} alt="" />
-                  </Show>
-                  <Show when={p.kind === "quote" && p.quote}>
-                    <span class="varal-text">{p.quote!.text}</span>
-                  </Show>
-                  <Show when={p.authorId === session()?.selfId() || session()?.ownsStage()}>
-                    <button class="varal-x" title={t("varal.remove")} onClick={() => session()?.removeVaralPin(p.id)}>×</button>
-                  </Show>
-                </div>
-              )}
-            </For>
-            <Show when={!varalPins().length}>
-              <span class="varal-empty">{t("varal.empty")}</span>
-            </Show>
-          </div>
-          <div class="varal-actions">
-            <Show when={live()}>
-              <button class="crayon-btn crayon-btn--chalk" title={t("varal.pinFrame")} onClick={pinFrame}>📸</button>
-            </Show>
-            <input
-              class="varal-input"
-              maxlength="80"
-              placeholder={t("varal.placeholder")}
-              value={varalQuote()}
-              onInput={(e) => setVaralQuote(e.currentTarget.value)}
-              onKeyDown={(e) => { if (e.key === "Enter") pinQuote(); }}
-            />
-            <button class="crayon-btn crayon-btn--chalk" onClick={pinQuote}>📌</button>
-            <input
-              class="varal-input"
-              maxlength="60"
-              placeholder={t("pitaco.placeholder")}
-              value={pitacoDraft()}
-              onKeyDown={(e) => {
-                if (e.key !== "Enter") return;
-                const txt = pitacoDraft().trim();
-                if (!txt) return;
-                session()?.postPitaco(txt, Math.random() < 0.5 ? "left" : "right");
-                setPitacoDraft("");
-              }}
-              onInput={(e) => setPitacoDraft(e.currentTarget.value)}
-            />
-          </div>
-        </div>
-
         <aside class="sidebar">
           {/* count and label are separate spans so the number can carry the
               weight and only the fixed words take the underline — the wave
@@ -1540,7 +1439,7 @@ const App: Component = () => {
             <div class="aposta-compose">
               <span class="aposta-vs">{t("aposta.against", { name: betting()!.name })}</span>
               <input
-                class="varal-input"
+                class="aposta-input"
                 maxlength="80"
                 placeholder={t("aposta.placeholder")}
                 value={betText()}

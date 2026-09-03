@@ -2259,19 +2259,6 @@ label.fps-label {
 .assist-name { font-family: var(--font-hand); font-size: var(--step--1); background: var(--surface-2); border: 2px solid var(--outline); border-radius: var(--wobble-sm); padding: 0 6px; }
 @keyframes assist-in { from { transform: translate(-6px,-50%) scale(0.4) rotate(-14deg); opacity: 0; } to { transform: translate(-6px,-50%) scale(1) rotate(0); opacity: 1; } }
 @keyframes assist-out { to { opacity: 0; } }
-/* ---- the varal (session clothesline under the stage) ---- */
-.varal { grid-column: 1 / -1; position: relative; padding: 14px 10px 8px; }
-.varal-line { position: absolute; top: 8px; left: 2%; right: 2%; border-top: 3px dashed var(--outline); opacity: .6; }
-.varal-pins { display: flex; gap: 10px; overflow-x: auto; padding: 6px 2px 4px; min-height: 34px; align-items: flex-start; }
-.varal-pin { position: relative; flex: 0 0 auto; background: var(--surface-2); border: 3px solid var(--outline); border-radius: var(--wobble-sm); box-shadow: var(--shadow-ink); transform: rotate(-2deg); }
-.varal-pin:nth-child(even) { transform: rotate(2deg); }
-.varal-pin--frame { padding: 4px 4px 10px; }
-.varal-photo { display: block; width: 96px; height: 54px; object-fit: cover; border-radius: 2px; }
-.varal-pin--quote { padding: 4px 10px; font-family: var(--font-hand); font-size: var(--step--1); max-width: 200px; }
-.varal-x { position: absolute; top: -8px; right: -8px; width: 20px; height: 20px; line-height: 1; padding: 0; border-radius: 50%; border: 2px solid var(--outline); background: var(--surface-2); cursor: pointer; }
-.varal-empty { opacity: .65; font-family: var(--font-hand); font-size: var(--step--1); }
-.varal-actions { display: flex; gap: 6px; margin-top: 4px; align-items: center; }
-.varal-input { flex: 1; min-width: 80px; max-width: 260px; border: 3px solid var(--outline); border-radius: var(--wobble-sm); padding: 3px 8px; font-family: var(--font-hand); background: var(--surface-2); }
 
 /* ---- corrente da tela (nomination banner + picker) ---- */
 .corrente-banner { grid-column: 1 / -1; display: flex; align-items: center; gap: 10px; padding: 6px 12px; background: var(--surface-2); border: 3px solid var(--outline); border-radius: var(--wobble-sm); box-shadow: var(--shadow-ink); font-family: var(--font-hand); }
@@ -2283,12 +2270,6 @@ label.fps-label {
 .hat { position: relative; display: inline-flex; align-items: flex-end; justify-content: center; width: 30px; height: 34px; margin: 4px auto 0; overflow: hidden; border: 3px solid var(--outline); border-radius: var(--wobble-sm); background: var(--surface-2); }
 .hat-fill { position: absolute; left: 0; right: 0; bottom: 0; background: var(--grass); opacity: .5; transition: height 1s linear; }
 .hat-cone { position: relative; z-index: 1; font-size: 16px; line-height: 30px; }
-/* ---- mural de pitacos (bezel sticky notes) ---- */
-.pitaco-layer { position: absolute; inset: 0; pointer-events: none; z-index: 6; }
-.pitaco { position: absolute; max-width: 17%; padding: 4px 8px; background: var(--yellow, #f5d76e); border: 2px solid var(--outline); border-radius: 2px; box-shadow: var(--shadow-ink); font-family: var(--font-hand); animation: pitaco-in 200ms ease-out, pitaco-out 500ms ease-in 9.4s forwards; }
-.pitaco--left { left: 6px; transform: rotate(-3deg); }
-.pitaco--right { right: 6px; transform: rotate(3deg); }
-.pitaco-text { display: block; font-size: var(--step--1); word-break: break-word; }
-.pitaco-author { display: block; font-size: 10px; opacity: .7; text-align: right; }
-@keyframes pitaco-in { from { opacity: 0; transform: scale(.6) rotate(-8deg); } to { opacity: 1; } }
-@keyframes pitaco-out { to { opacity: 0; } }
+
+/* the aposta composer's little input (was varal-input before that shipped out) */
+.aposta-input { flex: 1; min-width: 80px; max-width: 260px; border: 3px solid var(--outline); border-radius: var(--wobble-sm); padding: 3px 8px; font-family: var(--font-hand); background: var(--surface-2); }

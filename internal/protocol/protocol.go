@@ -207,9 +207,6 @@ const (
 	// and tells the PUBLISHER alone whether the room is actually looking.
 	CtrlAttentionReport ControlType = "attention_report" // client -> server {visible}
 	CtrlAttentionState  ControlType = "attention_state"  // server -> publisher {watching, total}
-	// Mural de pitacos: ephemeral sticky notes on the bezel around the video.
-	CtrlPitacoPost ControlType = "pitaco_post" // client -> server {text, side}
-	CtrlPitacoShow ControlType = "pitaco_show" // server -> all {id, text, side, slot, authorName, ttlMs}
 
 	// Aposta paralela: on-the-spot 1v1 side-bets. The challenger writes the
 	// bet's text live; the target answers; the current publisher judges.
@@ -218,10 +215,6 @@ const (
 	CtrlApostaDecline   ControlType = "aposta_decline"   // target -> server {id}
 	CtrlApostaJudge     ControlType = "aposta_judge"     // publisher -> server {id, winner}
 	CtrlApostaState     ControlType = "aposta_state"     // server -> all
-	// Varal (session memory board)
-	CtrlVaralPin    ControlType = "varal_pin"
-	CtrlVaralRemove ControlType = "varal_remove"
-	CtrlVaralState  ControlType = "varal_state"
 )
 
 const (
@@ -253,22 +246,6 @@ type AttentionReportData struct {
 type AttentionStateData struct {
 	Watching int `json:"watching"`
 	Total    int `json:"total"`
-}
-
-// PitacoPostData is one shouted note from the couch.
-type PitacoPostData struct {
-	Text string `json:"text"`
-	Side string `json:"side"` // "left" | "right"
-}
-
-// PitacoShowData pins the note to a bezel slot for everyone, briefly.
-type PitacoShowData struct {
-	ID         string `json:"id"`
-	Text       string `json:"text"`
-	Side       string `json:"side"`
-	Slot       int    `json:"slot"`
-	AuthorName string `json:"authorName"`
-	TTLMs      int    `json:"ttlMs"`
 }
 
 // ApostaChallengeData opens a bet with text written on the spot.
@@ -601,29 +578,6 @@ type ChamaStateData struct {
 	Text   string `json:"text"`
 	Active bool   `json:"active"`
 	Acks   int    `json:"acks,omitempty"`
-}
-
-// Varal wire shapes.
-type VaralPinData struct {
-	ID       string      `json:"id"`
-	Kind     string      `json:"kind"` // "frame" | "quote"
-	AuthorID string      `json:"authorId"`
-	Ts       int64       `json:"ts"`
-	Frame    *VaralFrame `json:"frame,omitempty"`
-	Quote    *VaralQuote `json:"quote,omitempty"`
-}
-type VaralFrame struct {
-	DataURL   string `json:"dataUrl"` // <=64KB
-	Publisher string `json:"publisher"`
-}
-type VaralQuote struct {
-	Text string `json:"text"` // sanitized, <=80
-}
-type VaralRemoveData struct {
-	ID string `json:"id"`
-}
-type VaralStateData struct {
-	Pins []VaralPinData `json:"pins"`
 }
 
 // TokenRefreshData is the payload of CtrlTokenRefresh: a fresh share token

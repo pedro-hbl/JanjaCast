@@ -213,18 +213,14 @@ export class Session {
   onReplayReady: ((d: { token: string; expiresMs: number }) => void) | null = null;
   /** Publisher side: a viewer pointed at the screen — draw the arrow. */
   onAssistShow: ((d: { x: number; y: number; userId: string; username: string; ttlMs: number }) => void) | null = null;
-  /** The varal: the whole board every time it changes (and in welcome). */
   /** Corrente: nomination banner lifecycle. */
   /** Publisher side: how many of the room are actually looking. */
   onAttentionState: ((d: { watching: number; total: number }) => void) | null = null;
-  /** A sticky note landed on the bezel — everyone draws it. */
-  onPitacoShow: ((d: { id: string; text: string; side: string; slot: number; authorName: string; ttlMs: number }) => void) | null = null;
   /** A side-bet changed phase — the whole room is the witness bench. */
   onApostaState: ((d: { id: string; phase: string; text: string; challengerId: string; challengerName: string; targetId: string; targetName: string; winnerId?: string; wins?: Record<string, number> }) => void) | null = null;
   onCorrenteStarted: ((d: { target: string; targetName: string; by: string; endsAtMs: number }) => void) | null = null;
   onCorrenteTally: ((d: { vai: number; calma: number }) => void) | null = null;
   onCorrenteCanceled: ((d: { reason: string }) => void) | null = null;
-  onVaralState: ((d: { pins: import('./protocol').VaralPinData[] }) => void) | null = null;
 
   constructor(
     private identity: Identity,
@@ -382,18 +378,12 @@ export class Session {
 
   /** Viewer side: point at a spot on the picture (normalized 0..1). */
   sendAssistPoint(x: number, y: number): void { this.sendControl("assist_point" as any, { x, y }); }
-  /** Pin a quote magnet or a frame polaroid to the varal. */
-  sendVaralPin(pin: { kind: "quote"; quote: { text: string } } | { kind: "frame"; frame: { dataUrl: string; publisher: string } }): void {
-    this.sendControl("varal_pin" as any, pin);
-  }
   reportAttention(visible: boolean): void { this.sendControl("attention_report" as any, { visible }); }
-  postPitaco(text: string, side: "left" | "right"): void { this.sendControl("pitaco_post" as any, { text, side }); }
   challengeAposta(target: string, text: string): void { this.sendControl("aposta_challenge" as any, { target, text }); }
   answerAposta(id: string, accept: boolean): void { this.sendControl((accept ? "aposta_accept" : "aposta_decline") as any, { id }); }
   judgeAposta(id: string, winner: "challenger" | "target"): void { this.sendControl("aposta_judge" as any, { id, winner }); }
   nominateCorrente(target: string): void { this.sendControl("corrente_nominate" as any, { target }); }
   voteCorrente(choice: "vai" | "calma"): void { this.sendControl("corrente_vote" as any, { choice }); }
-  removeVaralPin(id: string): void { this.sendControl("varal_remove" as any, { id }); }
 
   /** Local-only undo: hide this client's most recent stroke. There is no
    *  cinema_undo on the wire, so a later full `cinema_state` (pause/resume)
@@ -589,10 +579,6 @@ export class Session {
         this.onAttentionState?.(ctrl.data as { watching: number; total: number });
         break;
       }
-      case "pitaco_show": {
-        this.onPitacoShow?.(ctrl.data as { id: string; text: string; side: string; slot: number; authorName: string; ttlMs: number });
-        break;
-      }
       case "aposta_state": {
         this.onApostaState?.(ctrl.data as never);
         break;
@@ -607,10 +593,6 @@ export class Session {
       }
       case "corrente_canceled": {
         this.onCorrenteCanceled?.(ctrl.data as { reason: string });
-        break;
-      }
-      case "varal_state": {
-        this.onVaralState?.(ctrl.data as { pins: import('./protocol').VaralPinData[] });
         break;
       }
       case "replay_ready": {

@@ -731,11 +731,6 @@ func (s *Server) handleControl(room *relay.Room, client *relay.Client, data []by
 		if err := json.Unmarshal(ctrl.Data, &d); err == nil {
 			room.AttentionReport(client, d.Visible)
 		}
-	case protocol.CtrlPitacoPost:
-		var d protocol.PitacoPostData
-		if err := json.Unmarshal(ctrl.Data, &d); err == nil {
-			room.PitacoPost(client, d.Text, d.Side)
-		}
 	case protocol.CtrlApostaChallenge:
 		var d protocol.ApostaChallengeData
 		if err := json.Unmarshal(ctrl.Data, &d); err == nil {
@@ -765,16 +760,6 @@ func (s *Server) handleControl(room *relay.Room, client *relay.Client, data []by
 		var d protocol.CorrenteVoteData
 		if err := json.Unmarshal(ctrl.Data, &d); err == nil {
 			room.CorrenteVote(client, d.Choice)
-		}
-	case protocol.CtrlVaralPin:
-		var d protocol.VaralPinData
-		if err := json.Unmarshal(ctrl.Data, &d); err == nil {
-			room.VaralPin(client, d)
-		}
-	case protocol.CtrlVaralRemove:
-		var d protocol.VaralRemoveData
-		if err := json.Unmarshal(ctrl.Data, &d); err == nil {
-			room.VaralRemove(client, d.ID)
 		}
 	case protocol.CtrlPlacarVote:
 		var d protocol.PlacarVoteData

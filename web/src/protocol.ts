@@ -58,8 +58,6 @@ export type ControlType =
   | "chama_ack"
   | "chama_end"
   | "chama_state"
-  | "varal_pin"
-  | "varal_remove"
   | "attention_report"
   | "aposta_challenge"
   | "aposta_accept"
@@ -67,17 +65,13 @@ export type ControlType =
   | "aposta_judge"
   | "corrente_nominate"
   | "corrente_vote"
-  | "varal_state"
   | "attention_state"
-  | "pitaco_post"
   | "aposta_challenge"
   | "aposta_accept"
   | "aposta_decline"
   | "aposta_judge"
   | "corrente_nominate"
   | "corrente_vote"
-  | "varal_state"
-  | "pitaco_show"
   | "aposta_state"
   | "corrente_started"
   | "corrente_tally"
@@ -108,10 +102,7 @@ export type OutboundControlType =
   | "cinema_pause"
   | "cinema_resume"
   | "cinema_stroke"
-  | "varal_pin"
-  | "varal_remove"
   | "attention_report"
-  | "pitaco_post"
   | "aposta_challenge"
   | "aposta_accept"
   | "aposta_decline"
@@ -244,19 +235,6 @@ export interface ChamaAckData { id: string }
 export interface ChamaEndData { id: string }
 export interface ChamaStateData { id: string; text: string; active: boolean; acks?: number }
 
-// Varal (session memory board)
-export interface VaralFrame { dataUrl: string; publisher: string }
-export interface VaralQuote { text: string }
-export interface VaralPinData {
-  id: string;
-  kind: "frame" | "quote";
-  authorId: string;
-  ts: number;
-  frame?: VaralFrame;
-  quote?: VaralQuote;
-}
-export interface VaralRemoveData { id: string }
-export interface VaralStateData { pins: VaralPinData[] }
 
 /** GET /api/stingers. */
 export interface StingerListData {
