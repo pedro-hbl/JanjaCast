@@ -737,15 +737,16 @@ const App: Component = () => {
     if (pid !== paintedFor) {
       paintedFor = pid;
       // Also wipes the previous stream's last frame, so it can't linger as
-      // a ghost underneath the next sharer's first keyframe.
-      canvasRef.width = BLANK_W;
-      canvasRef.height = 150;
+      // a ghost underneath the next sharer's first keyframe. The canvas is
+      // worker-controlled now (transferControlToOffscreen), so the wipe and
+      // the size question both go through the player.
+      player?.clearFrame();
       setPainted(false);
       return;
     }
     if (
       !painted() &&
-      (canvasRef.width !== BLANK_W || (player?.stats().fps ?? 0) > 0)
+      ((player?.frameSize().w ?? BLANK_W) !== BLANK_W || (player?.stats().fps ?? 0) > 0)
     ) {
       setPainted(true);
     }
@@ -958,8 +959,7 @@ const App: Component = () => {
   // ordinary "waiting for the picture" loader covering the one-chunk gap.
   createEffect(() => {
     if (!blanked()) return;
-    canvasRef.width = BLANK_W;
-    canvasRef.height = 150;
+    player?.clearFrame();
     setPainted(false);
   });
 
