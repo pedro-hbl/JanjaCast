@@ -203,8 +203,10 @@ func (h *Hub) Join(roomID, userID, username string) (*Room, *Client, iter.Seq[Ou
 	// CtrlStageTurn (that one carries the cue, and a joiner must not hear
 	// a cue for a call that went out before they arrived).
 	c.enqueueControl(protocol.CtrlStageQueue, r.stageQueueLocked())
-	// Cinema welcome right after queue state.
-	c.enqueueControl(protocol.CtrlCinemaState, protocol.CinemaStateData{Paused: r.cinemaPaused, Strokes: slices.Clone(r.cinemaStrokes)})
+  // Cinema welcome right after queue state.
+  c.enqueueControl(protocol.CtrlCinemaState, protocol.CinemaStateData{Paused: r.cinemaPaused, Strokes: slices.Clone(r.cinemaStrokes)})
+  // Jukebox initial empty state for probe.
+  c.enqueueControl(protocol.CtrlJukeboxQueue, protocol.JukeboxQueueState{Queue: append([]protocol.JukeboxItem(nil), r.jukeboxQueue...)})
 
 	// Replay the cached GOP so the newcomer has a picture immediately. If
 	// the replay overflows the queue, the client stays in needKeyframe so a
@@ -1353,6 +1355,7 @@ func (r *Room) JukeboxApprove(c *Client, id string) bool {
     it := r.jukeboxQueue[idx]
     r.jukeboxQueue = slices.Delete(r.jukeboxQueue, idx, idx+1)
     // broadcast play
+    // Broadcast play to all, including the host approver.
     play := protocol.JukeboxPlay{ID: it.ID, Asset: it.Asset}
     for cl := range r.clients { cl.enqueueControl(protocol.CtrlJukeboxPlay, play) }
     // then updated queue
