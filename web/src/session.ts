@@ -88,6 +88,9 @@ export class Session {
   /** Somebody was called to the stage — "é tua!". The whole room gets this,
    *  so it is a cue plus a prompt, not a private notification. */
   onStageTurn: ((turn: StageTurnData) => void) | null = null;
+  /** Unicast heads-up: YOUR turn is being prepared — warm the companion
+   *  flow before the public stage_turn lands. */
+  onStageWarmup: ((d: { userId: string; username: string }) => void) | null = null;
   /** The pending turn ended, with the reason it did. */
   onStageCancel: ((cancel: StageCancelData) => void) | null = null;
   /** The server refused something we asked for, with a code to translate. */
@@ -459,6 +462,9 @@ export class Session {
           ...(ctrl.data as StageQueueData),
           queue: (ctrl.data as StageQueueData)?.queue ?? [],
         });
+        break;
+      case "stage_warmup":
+        this.onStageWarmup?.(ctrl.data as { userId: string; username: string });
         break;
       case "stage_turn":
         this.onStageTurn?.(ctrl.data as StageTurnData);
