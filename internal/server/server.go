@@ -202,7 +202,12 @@ func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 	// The instance id lets a companion tab probe http://localhost:<port>
 	// and confirm it is the very same server it reached via the tunnel.
 	w.Header().Set("Access-Control-Allow-Origin", "*") // health is not sensitive
-	_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "instance": s.instanceID})
+	// rooms + timers are the census a long session is judged by: background
+	// work must track the party, not outlive it.
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"ok": true, "instance": s.instanceID,
+		"rooms": s.hub.Rooms(), "timers": s.hub.TimerCensus(),
+	})
 }
 
 func newInstanceID() string {
