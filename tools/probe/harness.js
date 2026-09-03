@@ -66,7 +66,8 @@ class Harness {
     this.bin = path.join(os.tmpdir(), `janjacast-probe-${process.pid}${process.platform === "win32" ? ".exe" : ""}`);
     this.note("go_build", { out: this.bin });
     await new Promise((resolve, reject) => {
-      const p = spawn("go", ["build", "-o", this.bin, "./cmd/janjacast"], { stdio: "inherit" });
+      const repoRoot = path.resolve(__dirname, "..", "..");
+      const p = spawn("go", ["build", "-o", this.bin, "./cmd/janjacast"], { stdio: "inherit", cwd: repoRoot });
       p.on("exit", (code) => (code === 0 ? resolve() : reject(new Error("go build failed: " + code))));
     });
   }

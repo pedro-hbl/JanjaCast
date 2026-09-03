@@ -33,6 +33,7 @@ var serverToClientOnly = map[string]bool{
 	"CtrlBlankState":      true,
 	"CtrlStageQueue":      true,
 	"CtrlStageTurn":       true,
+	"CtrlStageWarmup":     true, // unicast relay->next-in-line only
 	"CtrlStageCancel":     true,
 	"CtrlReactionBurst":   true,
   "CtrlPlacarState":     true,

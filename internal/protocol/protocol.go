@@ -166,6 +166,9 @@ const (
 	// in ONE message. One state broadcast rather than three keeps every
 	// client's answer to "who is next" consistent by construction.
 	CtrlStageQueue ControlType = "stage_queue"
+	// CtrlStageWarmup is a unicast pre-call to the next-in-line so their
+	// capture can pre-roll; emitted shortly before CtrlStageTurn.
+	CtrlStageWarmup ControlType = "stage_warmup"
 	// CtrlStageTurn is the "é tua!" moment: one person has a short window
 	// to claim the stage, and the whole room hears about it.
 	CtrlStageTurn ControlType = "stage_turn"
@@ -565,10 +568,17 @@ type StageModeData struct {
 // have TTLMs to claim the stage, and Method says how they were picked (a
 // wheel pick is the one the client animates).
 type StageTurnData struct {
-	UserID   string `json:"userId"`
-	Username string `json:"username"`
-	TTLMs    int    `json:"ttlMs"`
-	Method   string `json:"method"`
+    UserID   string `json:"userId"`
+    Username string `json:"username"`
+    TTLMs    int    `json:"ttlMs"`
+    Method   string `json:"method"`
+}
+
+// StageWarmupData is the payload of CtrlStageWarmup: a private nudge to the
+// next candidate so they can pre-roll capture and hydrate UI.
+type StageWarmupData struct {
+    UserID   string `json:"userId"`
+    Username string `json:"username"`
 }
 
 // StageCancelData is the payload of CtrlStageCancel.

@@ -147,6 +147,13 @@ const en = {
     "Free: hand the stage on whenever. Rodízio: 20 minutes each, and the app asks who is next.",
 
   // The call itself — the moment the whole room hears the cue.
+  "telinha.badge": "telinha â a few seconds behind",
+  "telinha.waiting": "Tuning the little screenâ¦",
+  "telinha.noToken": "This link is missing its ticket â open the telinha from the Activity.",
+  "telinha.mute": "Mute",
+  "telinha.unmute": "Sound on",
+  "telinha.open": "Telinha",
+  "turn.warmup": "🔥 Warming up — you're next!",
   "turn.yours": "It's yours!",
   // Careful not to promise the stage is empty: a turn survives somebody else
   // grabbing the stage mid-call, and taking it from them is exactly what the
@@ -422,6 +429,13 @@ const ptBR: Record<MessageKey, Message> = {
   "queue.modeTitle":
     "Livre: passa o palco quando quiser. Rodízio: 20 minutos pra cada um, e o app pergunta quem é o próximo.",
 
+  "telinha.badge": "telinha â uns segundos atrÃ¡s",
+  "telinha.waiting": "Sintonizando a telinhaâ¦",
+  "telinha.noToken": "Esse link veio sem ingresso â abre a telinha pela Activity.",
+  "telinha.mute": "Mutar",
+  "telinha.unmute": "Com som",
+  "telinha.open": "Telinha",
+  "turn.warmup": "🔥 Aquecendo — tu é o próximo!",
   "turn.yours": "É tua!",
   "turn.yoursBody": "Bora — assume o palco antes dos {s}s acabarem.",
   "turn.take": "Assumir o palco",

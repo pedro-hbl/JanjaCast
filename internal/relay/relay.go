@@ -1058,6 +1058,10 @@ func (r *Room) PassStage(c *Client) (bool, string) {
 	if !ok {
 		return false, protocol.ErrNoNextUser
 	}
+	// Pre-warm the next-in-line right away; unicast only to them.
+	if nc := r.clientByIDLocked(next.UserID); nc != nil {
+		nc.enqueueControl(protocol.CtrlStageWarmup, protocol.StageWarmupData{UserID: next.UserID, Username: next.Username})
+	}
 	r.lastPass = now
 	r.grantTurnLocked(next, method)
 	r.leaveStageLocked()
@@ -1139,12 +1143,20 @@ func (r *Room) grantTurnLocked(e protocol.QueueEntry, method string) {
 	r.turnGen++
 	gen := r.turnGen
 	wait := r.turnWait
+	// Pre-warm BEFORE arming the turn so probe can observe it promptly.
+	if c := r.clientByIDLocked(e.UserID); c != nil {
+		c.enqueueControl(protocol.CtrlStageWarmup, protocol.StageWarmupData{
+			UserID:   e.UserID,
+			Username: e.Username,
+		})
+	}
 	r.turn = &stageTurn{
 		UserID:   e.UserID,
 		Username: e.Username,
 		Method:   method,
 		Ends:     time.Now().Add(wait),
 	}
+	// Immediately announce the public turn to keep existing semantics/tests.
 	d := protocol.StageTurnData{
 		UserID:   e.UserID,
 		Username: e.Username,
@@ -2099,6 +2111,7 @@ func (r *Room) clearGOPLocked() {
 // baseID strips the companion-tab suffix, yielding the person's identity.
 func baseID(id string) string {
 	base, _ := strings.CutSuffix(id, ":tab")
+	base, _ = strings.CutSuffix(base, ":telinha")
 	return base
 }
 
