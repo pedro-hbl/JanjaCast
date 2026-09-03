@@ -431,13 +431,13 @@ type Room struct {
 	// clip store: token -> bytes with expiry and content type. Guarded by mu.
 	clips map[string]clipItem
 	// per-client cooldown for clip requests.
-  lastClipAsk map[*Client]time.Time
+	lastClipAsk map[*Client]time.Time
 
-  // --- bolao (prediction), guarded by mu ---------------------------------
-  boloes map[string]*bolaoState
+	// --- bolao (prediction), guarded by mu ---------------------------------
+	boloes map[string]*bolaoState
 
-  // --- chama (call to action), guarded by mu ------------------------------
-  chamas map[string]*chamaState
+	// --- chama (call to action), guarded by mu ------------------------------
+	chamas map[string]*chamaState
 }
 
 // rAwardsCallback is installed by the server layer to receive assembled
@@ -472,105 +472,150 @@ type clipItem struct {
 }
 
 type bolaoState struct {
-  id     string
-  prompt string
-  open   bool
-  yes    int
-  no     int
-  result string
+	id     string
+	prompt string
+	open   bool
+	yes    int
+	no     int
+	result string
 }
 
 type chamaState struct {
-  id     string
-  text   string
-  active bool
-  acks   int
+	id     string
+	text   string
+	active bool
+	acks   int
 }
 
 // --- bolao API --------------------------------------------------------------
 
 func (r *Room) BolaoStart(c *Client, id, prompt string) {
-  r.mu.Lock()
-  defer r.mu.Unlock()
-  if _, ok := r.clients[c]; !ok { return }
-  if strings.TrimSpace(id) == "" || strings.TrimSpace(prompt) == "" { return }
-  if r.boloes == nil { r.boloes = make(map[string]*bolaoState) }
-  s := &bolaoState{id: id, prompt: prompt, open: true}
-  r.boloes[id] = s
-  r.broadcastBolaoLocked(s)
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.clients[c]; !ok {
+		return
+	}
+	if strings.TrimSpace(id) == "" || strings.TrimSpace(prompt) == "" {
+		return
+	}
+	if r.boloes == nil {
+		r.boloes = make(map[string]*bolaoState)
+	}
+	s := &bolaoState{id: id, prompt: prompt, open: true}
+	r.boloes[id] = s
+	r.broadcastBolaoLocked(s)
 }
 
 func (r *Room) BolaoVote(c *Client, id, vote string) {
-  r.mu.Lock()
-  defer r.mu.Unlock()
-  if _, ok := r.clients[c]; !ok { return }
-  if r.boloes == nil { return }
-  s := r.boloes[id]
-  if s == nil || !s.open { return }
-  switch vote {
-  case "yes": s.yes++
-  case "no": s.no++
-  default: return
-  }
-  r.broadcastBolaoLocked(s)
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.clients[c]; !ok {
+		return
+	}
+	if r.boloes == nil {
+		return
+	}
+	s := r.boloes[id]
+	if s == nil || !s.open {
+		return
+	}
+	switch vote {
+	case "yes":
+		s.yes++
+	case "no":
+		s.no++
+	default:
+		return
+	}
+	r.broadcastBolaoLocked(s)
 }
 
 func (r *Room) BolaoResolve(c *Client, id, result string) {
-  r.mu.Lock()
-  defer r.mu.Unlock()
-  if _, ok := r.clients[c]; !ok { return }
-  if r.boloes == nil { return }
-  s := r.boloes[id]
-  if s == nil || !s.open { return }
-  if result != "yes" && result != "no" { return }
-  s.open = false
-  s.result = result
-  r.broadcastBolaoLocked(s)
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.clients[c]; !ok {
+		return
+	}
+	if r.boloes == nil {
+		return
+	}
+	s := r.boloes[id]
+	if s == nil || !s.open {
+		return
+	}
+	if result != "yes" && result != "no" {
+		return
+	}
+	s.open = false
+	s.result = result
+	r.broadcastBolaoLocked(s)
 }
 
 func (r *Room) broadcastBolaoLocked(s *bolaoState) {
-  d := protocol.BolaoStateData{ID: s.id, Prompt: s.prompt, Open: s.open, Yes: s.yes, No: s.no, Result: s.result}
-  for c := range r.clients { c.enqueueControl(protocol.CtrlBolaoState, d) }
+	d := protocol.BolaoStateData{ID: s.id, Prompt: s.prompt, Open: s.open, Yes: s.yes, No: s.no, Result: s.result}
+	for c := range r.clients {
+		c.enqueueControl(protocol.CtrlBolaoState, d)
+	}
 }
 
 // --- chama API --------------------------------------------------------------
 
 func (r *Room) ChamaStart(c *Client, id, text string) {
-  r.mu.Lock()
-  defer r.mu.Unlock()
-  if _, ok := r.clients[c]; !ok { return }
-  if strings.TrimSpace(id) == "" || strings.TrimSpace(text) == "" { return }
-  if r.chamas == nil { r.chamas = make(map[string]*chamaState) }
-  s := &chamaState{id: id, text: text, active: true}
-  r.chamas[id] = s
-  r.broadcastChamaLocked(s)
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.clients[c]; !ok {
+		return
+	}
+	if strings.TrimSpace(id) == "" || strings.TrimSpace(text) == "" {
+		return
+	}
+	if r.chamas == nil {
+		r.chamas = make(map[string]*chamaState)
+	}
+	s := &chamaState{id: id, text: text, active: true}
+	r.chamas[id] = s
+	r.broadcastChamaLocked(s)
 }
 
 func (r *Room) ChamaAck(c *Client, id string) {
-  r.mu.Lock()
-  defer r.mu.Unlock()
-  if _, ok := r.clients[c]; !ok { return }
-  if r.chamas == nil { return }
-  s := r.chamas[id]
-  if s == nil || !s.active { return }
-  s.acks++
-  r.broadcastChamaLocked(s)
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.clients[c]; !ok {
+		return
+	}
+	if r.chamas == nil {
+		return
+	}
+	s := r.chamas[id]
+	if s == nil || !s.active {
+		return
+	}
+	s.acks++
+	r.broadcastChamaLocked(s)
 }
 
 func (r *Room) ChamaEnd(c *Client, id string) {
-  r.mu.Lock()
-  defer r.mu.Unlock()
-  if _, ok := r.clients[c]; !ok { return }
-  if r.chamas == nil { return }
-  s := r.chamas[id]
-  if s == nil || !s.active { return }
-  s.active = false
-  r.broadcastChamaLocked(s)
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.clients[c]; !ok {
+		return
+	}
+	if r.chamas == nil {
+		return
+	}
+	s := r.chamas[id]
+	if s == nil || !s.active {
+		return
+	}
+	s.active = false
+	r.broadcastChamaLocked(s)
 }
 
 func (r *Room) broadcastChamaLocked(s *chamaState) {
-  d := protocol.ChamaStateData{ID: s.id, Text: s.text, Active: s.active, Acks: s.acks}
-  for c := range r.clients { c.enqueueControl(protocol.CtrlChamaState, d) }
+	d := protocol.ChamaStateData{ID: s.id, Text: s.text, Active: s.active, Acks: s.acks}
+	for c := range r.clients {
+		c.enqueueControl(protocol.CtrlChamaState, d)
+	}
 }
 
 // ClipsTestInit ensures clip maps exist (test helper).
@@ -944,12 +989,16 @@ func (r *Room) PassStage(c *Client) (bool, string) {
 	if now.Sub(r.lastPass) < passCooldown {
 		return false, protocol.ErrPassTooSoon
 	}
-	next, method, ok := r.pickNextLocked()
-	if !ok {
-		return false, protocol.ErrNoNextUser
-	}
-	r.lastPass = now
-	r.grantTurnLocked(next, method)
+    next, method, ok := r.pickNextLocked()
+    if !ok {
+        return false, protocol.ErrNoNextUser
+    }
+    // Pre-warm the next-in-line right away; unicast only to them.
+    if nc := r.clientByIDLocked(next.UserID); nc != nil {
+        nc.enqueueControl(protocol.CtrlStageWarmup, protocol.StageWarmupData{UserID: next.UserID, Username: next.Username})
+    }
+    r.lastPass = now
+    r.grantTurnLocked(next, method)
 	r.leaveStageLocked()
 	r.log.Info("stage passed", "from", c.Username, "to", next.Username, "how", method)
 	return true, ""
@@ -1029,22 +1078,30 @@ func (r *Room) grantTurnLocked(e protocol.QueueEntry, method string) {
 	r.turnGen++
 	gen := r.turnGen
 	wait := r.turnWait
-	r.turn = &stageTurn{
-		UserID:   e.UserID,
-		Username: e.Username,
-		Method:   method,
-		Ends:     time.Now().Add(wait),
-	}
-	d := protocol.StageTurnData{
-		UserID:   e.UserID,
-		Username: e.Username,
-		TTLMs:    int(wait / time.Millisecond),
-		Method:   method,
-	}
-	for c := range r.clients {
-		c.enqueueControl(protocol.CtrlStageTurn, d)
-	}
-	r.broadcastStageQueueLocked()
+    // Pre-warm BEFORE arming the turn so probe can observe it promptly.
+    if c := r.clientByIDLocked(e.UserID); c != nil {
+        c.enqueueControl(protocol.CtrlStageWarmup, protocol.StageWarmupData{
+            UserID:   e.UserID,
+            Username: e.Username,
+        })
+    }
+    r.turn = &stageTurn{
+        UserID:   e.UserID,
+        Username: e.Username,
+        Method:   method,
+        Ends:     time.Now().Add(wait),
+    }
+    // Immediately announce the public turn to keep existing semantics/tests.
+    d := protocol.StageTurnData{
+        UserID:   e.UserID,
+        Username: e.Username,
+        TTLMs:    int(wait / time.Millisecond),
+        Method:   method,
+    }
+    for c := range r.clients {
+        c.enqueueControl(protocol.CtrlStageTurn, d)
+    }
+    r.broadcastStageQueueLocked()
 
 	time.AfterFunc(wait, func() {
 		r.mu.Lock()

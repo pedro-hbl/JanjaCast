@@ -35,6 +35,7 @@ export type ControlType =
   | "stage_mode"
   | "stage_extend"
   | "stage_queue"
+  | "stage_warmup"
   | "stage_turn"
   | "stage_cancel"
   | "room_phase"
@@ -147,6 +148,11 @@ export interface StageTurnData {
   username: string;
   ttlMs: number;
   method: StageTurnMethod;
+}
+
+export interface StageWarmupData {
+  userId: string;
+  username: string;
 }
 
 export interface StageCancelData {

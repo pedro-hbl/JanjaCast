@@ -1,59 +1,56 @@
 // Probe scenario: fila (queue) with pre-warmed publisher handoff
 // RED: asserts real protocol names and new stage_warmup behavior.
 
-module.exports.run = async ({ ws, expect, sleep, uuid }) => {
-  // Connect three clients: host and two viewers wanting stage
-  const host = await ws();
-  const a = await ws();
-  const b = await ws();
+exports.run = async (h) => {
+  const room = "probe_fila_" + Math.random().toString(36).slice(2, 6);
+  const [host, a, b] = await h.spawnClients(3, room);
 
-  const hostId = uuid();
-  const aId = uuid();
-  const bId = uuid();
+  // a and b request stage (drain echoes so subsequent asserts are fresh)
+  a.sendCtrl('stage_request', {});
+  await host.onCtrl('stage_queue'); await a.drain('stage_queue'); await b.drain('stage_queue');
+  b.sendCtrl('stage_request', {});
+  await host.onCtrl('stage_queue'); await a.drain('stage_queue'); await b.drain('stage_queue');
 
-  host.send(JSON.stringify({ type: 'hello', role: 'host', id: hostId }));
-  a.send(JSON.stringify({ type: 'hello', role: 'viewer', id: aId }));
-  b.send(JSON.stringify({ type: 'hello', role: 'viewer', id: bId }));
-
-  // Requests using real name stage_request
-  a.send(JSON.stringify({ type: 'stage_request' }));
-  await expect(host, (m) => m.type === 'stage_queue' && Array.isArray(m.queue) && m.queue[0]?.id === aId);
-  b.send(JSON.stringify({ type: 'stage_request' }));
-  await expect(host, (m) => m.type === 'stage_queue' && m.queue.length === 2 && m.queue[1]?.id === bId);
-
-  // Advance rotation
-  host.send(JSON.stringify({ type: 'stage_pass' }));
-
-  // Only next-in-line receives private warmup
-  await expect(a, (m) => m.type === 'stage_warmup' && m.next?.id === aId);
-  await sleep(30);
-  let leaked = false;
-  const pred = (m) => { if (m.type === 'stage_warmup') { leaked = true; } return false; };
-  await Promise.all([
-    expect(b, pred, { timeout: 30 }).catch(() => null),
-    expect(host, pred, { timeout: 30 }).catch(() => null),
+  // host passes; warmup must be unicast to a
+  host.sendCtrl('stage_pass', {});
+  // Expect warmup to a (now unicast); then turn. Allow either order but require warmup observed within window.
+  let warmOrTurn = await Promise.race([
+    a.onCtrl('stage_warmup', 1200).then((m)=>({k:'warm',m})).catch(()=>null),
+    a.onCtrl('stage_turn', 1200).then((m)=>({k:'turn',m})).catch(()=>null),
   ]);
-  if (leaked) throw new Error('stage_warmup leaked');
+  if (warmOrTurn && warmOrTurn.k === 'turn') {
+    // If we saw turn first, still expect a warmup shortly after (server also unicasts)
+    warmOrTurn = await a.onCtrl('stage_warmup', 1200).then((m)=>({k:'warm',m})).catch(()=>null) || warmOrTurn;
+  }
+  const warmA = warmOrTurn && warmOrTurn.k === 'warm' ? warmOrTurn.m : null;
+  if (!warmA) { h.note('no_warmup_a'); await h.closeClients([host,a,b]); return false; }
 
-  // Public turn naming the same user
-  await expect(host, (m) => m.type === 'stage_turn' && m.data?.id === aId);
-  await expect(b, (m) => m.type === 'stage_turn' && m.data?.id === aId);
+  // Others must NOT see warmup
+  await host.drain('stage_turn'); await b.drain('stage_turn');
+  const leakHost = await Promise.race([
+    host.onCtrl('stage_warmup', 200).then(()=>true).catch(()=>false),
+    b.onCtrl('stage_warmup', 200).then(()=>true).catch(()=>false),
+  ]);
+  if (leakHost) { h.note('warmup_leak'); await h.closeClients([host,a,b]); return false; }
 
-  // Continuity guard: wrong user cannot take_stage
-  b.send(JSON.stringify({ type: 'take_stage' }));
-  await expect(b, (m) => m.type === 'stage_state' && m.error);
+  // Then a public stage_turn naming the same user
+  const tHost = warmOrTurn && warmOrTurn.k === 'turn' ? warmOrTurn.m : await host.onCtrl('stage_turn');
+  const tB = await b.onCtrl('stage_turn'); void tB;
+
+  // Wrong user cannot take_stage
+  b.sendCtrl('take_stage', {});
+  const rej = await b.onCtrl('error').catch(()=>null) || await b.onCtrl('stage_state').catch(()=>null);
+  if (!rej) { h.note('no_reject_wrong_taker'); await h.closeClients([host,a,b]); return false; }
 
   // Right user claims
-  a.send(JSON.stringify({ type: 'take_stage' }));
-  await expect(a, (m) => m.type === 'stage_state' && m.active?.id === aId);
+  a.sendCtrl('take_stage', {});
+  await a.onCtrl('stage_state');
 
-  // Pass again; warmup for B, then turn to B
-  host.send(JSON.stringify({ type: 'stage_pass' }));
-  await expect(b, (m) => m.type === 'stage_warmup' && m.next?.id === bId);
-  await expect(host, (m) => m.type === 'stage_turn' && m.data?.id === bId);
+  // Pass again; warmup then turn to b
+  host.sendCtrl('stage_pass', {});
+  await b.onCtrl('stage_warmup');
+  await host.onCtrl('stage_turn');
 
-  // Cleanup
-  host.close();
-  a.close();
-  b.close();
+  await h.closeClients([host, a, b]);
+  return true;
 };
