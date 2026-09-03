@@ -299,6 +299,13 @@ const en = {
   "lobby.alone": "Just you for now",
   
   // --- instant clips -------------------------------------------------
+  "replay.button": "Quem entrou? â replay the last stretch",
+  "replay.title": "Who came in?",
+  "replay.noJoins": "Nobody new in this stretch",
+  "replay.quiet": "All quiet",
+  "replay.heatLabel": "Hype over the last stretch",
+  "replay.download": "Save the last 90s",
+  "replay.close": "Close",
   "clip.button": "Clip that!",
   "clip.working": "Cutting the last 30s...",
   "clip.ready": "Clip's ready — grab it",
@@ -574,6 +581,13 @@ const ptBR: Record<MessageKey, Message> = {
   "lobby.alone": "Só você por enquanto",
   
   // --- clipe instantâneo --------------------------------------------
+  "replay.button": "Quem entrou? â rever o Ãºltimo trecho",
+  "replay.title": "Quem entrou?",
+  "replay.noJoins": "NinguÃ©m novo nesse trecho",
+  "replay.quiet": "Tudo calmo",
+  "replay.heatLabel": "Hype do Ãºltimo trecho",
+  "replay.download": "Salvar os Ãºltimos 90s",
+  "replay.close": "Fechar",
   "clip.button": "Clipa isso!",
   "clip.working": "Recortando os últimos 30s...",
   "clip.ready": "Clipe pronto — pega aí",
