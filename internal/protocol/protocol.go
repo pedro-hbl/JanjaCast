@@ -170,7 +170,7 @@ const (
 	CtrlPlacarCreate ControlType = "placar_create"
 	CtrlPlacarVote   ControlType = "placar_vote"
 	CtrlPlacarClose  ControlType = "placar_close"
-	CtrlPlacarState  ControlType = "placar_state"
+  CtrlPlacarState  ControlType = "placar_state"
 )
 
 // --- reactions -------------------------------------------------------------
@@ -367,6 +367,59 @@ type PlacarStateData struct {
 	Active bool           `json:"active"`
 	Prompt string         `json:"prompt"`
 	Scores map[string]int `json:"scores"`
+}
+
+// Bolao (prediction) wire shapes.
+const (
+    CtrlBolaoStart  ControlType = "bolao_start"
+    CtrlBolaoVote   ControlType = "bolao_vote"
+    CtrlBolaoResolve ControlType = "bolao_resolve"
+    CtrlBolaoState  ControlType = "bolao_state"
+)
+
+type BolaoStartData struct {
+    ID     string `json:"id"`
+    Prompt string `json:"prompt"`
+}
+type BolaoVoteData struct {
+    ID   string `json:"id"`
+    Vote string `json:"vote"` // "yes" | "no"
+}
+type BolaoResolveData struct {
+    ID     string `json:"id"`
+    Result string `json:"result"` // "yes" | "no"
+}
+type BolaoStateData struct {
+    ID     string `json:"id"`
+    Prompt string `json:"prompt"`
+    Open   bool   `json:"open"`
+    Yes    int    `json:"yes"`
+    No     int    `json:"no"`
+    Result string `json:"result,omitempty"`
+}
+
+// Chama (call to action) wire shapes.
+const (
+    CtrlChamaStart ControlType = "chama_start"
+    CtrlChamaAck   ControlType = "chama_ack"
+    CtrlChamaEnd   ControlType = "chama_end"
+    CtrlChamaState ControlType = "chama_state"
+)
+type ChamaStartData struct {
+    ID   string `json:"id"`
+    Text string `json:"text"`
+}
+type ChamaAckData struct {
+    ID string `json:"id"`
+}
+type ChamaEndData struct {
+    ID string `json:"id"`
+}
+type ChamaStateData struct {
+    ID    string `json:"id"`
+    Text  string `json:"text"`
+    Active bool  `json:"active"`
+    Acks  int    `json:"acks,omitempty"`
 }
 
 // TokenRefreshData is the payload of CtrlTokenRefresh: a fresh share token

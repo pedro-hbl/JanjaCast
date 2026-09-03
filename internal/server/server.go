@@ -696,6 +696,36 @@ func (s *Server) handleControl(room *relay.Room, client *relay.Client, data []by
 		if err := room.ClosePlacar(client); err != nil {
 			client.SendControl(protocol.CtrlError, protocol.ErrorData{Code: err.Error()})
 		}
+	case protocol.CtrlBolaoStart:
+		var d protocol.BolaoStartData
+		if err := json.Unmarshal(ctrl.Data, &d); err == nil {
+			room.BolaoStart(client, d.ID, d.Prompt)
+		}
+	case protocol.CtrlBolaoVote:
+		var d protocol.BolaoVoteData
+		if err := json.Unmarshal(ctrl.Data, &d); err == nil {
+			room.BolaoVote(client, d.ID, d.Vote)
+		}
+	case protocol.CtrlBolaoResolve:
+		var d protocol.BolaoResolveData
+		if err := json.Unmarshal(ctrl.Data, &d); err == nil {
+			room.BolaoResolve(client, d.ID, d.Result)
+		}
+	case protocol.CtrlChamaStart:
+		var d protocol.ChamaStartData
+		if err := json.Unmarshal(ctrl.Data, &d); err == nil {
+			room.ChamaStart(client, d.ID, d.Text)
+		}
+	case protocol.CtrlChamaAck:
+		var d protocol.ChamaAckData
+		if err := json.Unmarshal(ctrl.Data, &d); err == nil {
+			room.ChamaAck(client, d.ID)
+		}
+	case protocol.CtrlChamaEnd:
+		var d protocol.ChamaEndData
+		if err := json.Unmarshal(ctrl.Data, &d); err == nil {
+			room.ChamaEnd(client, d.ID)
+		}
 	case protocol.CtrlClip:
 		room.RequestClip(client)
 	}
