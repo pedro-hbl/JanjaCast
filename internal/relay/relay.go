@@ -205,6 +205,7 @@ func (h *Hub) Join(roomID, userID, username string) (*Room, *Client, iter.Seq[Ou
 		done:         make(chan struct{}),
 		needKeyframe: true, // must not decode deltas before a keyframe
 		maxTL:        maxTemporalLayer,
+		subs:         [6]bool{true, true, true, true, true, true},
 	}
 
 	c.enqueueControl(protocol.CtrlWelcome, protocol.WelcomeData{
@@ -861,6 +862,10 @@ type Client struct {
 	// lastKFAsk budgets this client's own keyframe requests. Guarded by
 	// Room.mu.
 	lastKFAsk time.Time
+	// subs marks which slots this viewer receives media from. Default all
+	// true (Seam 3: byte-identical behavior); the tiles UI narrows it.
+	// Guarded by Room.mu.
+	subs [6]bool
 	// lastStingerAsk budgets this client's own manual stinger triggers.
 	// Guarded by Room.mu.
 	lastStingerAsk time.Time
@@ -1788,6 +1793,11 @@ func (r *Room) ForwardMedia(from *Client, msg []byte) {
 		if baseID(c.UserID) == baseID(from.UserID) {
 			continue
 		}
+		// Seam 3: a viewer only receives the chairs it subscribed to. The
+		// header names the chunk's slot; default subs are all-true.
+		if int(hdr.Slot) < len(c.subs) && !c.subs[hdr.Slot] {
+			continue
+		}
 		if hdr.Kind == protocol.KindVideo {
 			if c.needKeyframe && !hdr.Keyframe() {
 				continue
@@ -2535,6 +2545,55 @@ func (r *Room) ApostaJudge(c *Client, id, winner string) {
 	a.phase = "resolved"
 	r.broadcastApostaLocked(a, winnerID)
 	delete(r.apostas, id)
+}
+
+// --- slot subscriptions (Seam 3) --------------------------------------------
+
+// Subscribe adds slots to a viewer's set. Re-subscribing an occupied slot
+// replays that slot's GOP cache so the tile paints instantly — the same
+// late-join treatment a fresh client gets.
+func (r *Room) Subscribe(c *Client, slots []int) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.clients[c]; !ok {
+		return
+	}
+	for _, i := range slots {
+		if i < 0 || i >= len(c.subs) || c.subs[i] {
+			continue
+		}
+		c.subs[i] = true
+		sl := r.slots[i]
+		if sl == nil || sl.pub == nil || len(sl.gop) == 0 {
+			continue
+		}
+		replayed := true
+		for _, msg := range sl.gop {
+			if !c.trySend(outMsg{binary: true, payload: msg}) {
+				replayed = false
+			}
+		}
+		if replayed {
+			c.needKeyframe = false
+		} else {
+			r.requestKeyframeLocked()
+		}
+	}
+}
+
+// Unsubscribe removes slots from a viewer's set; their media stops at the
+// relay, which is the whole point on a residential uplink.
+func (r *Room) Unsubscribe(c *Client, slots []int) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.clients[c]; !ok {
+		return
+	}
+	for _, i := range slots {
+		if i >= 0 && i < len(c.subs) {
+			c.subs[i] = false
+		}
+	}
 }
 
 // baseID strips the companion-tab suffix, yielding the person's identity.

@@ -217,6 +217,12 @@ const (
 	CtrlAttentionReport ControlType = "attention_report" // client -> server {visible}
 	CtrlAttentionState  ControlType = "attention_state"  // server -> publisher {watching, total}
 
+	// Slot subscriptions (multistream Seam 3): a viewer names the chairs it
+	// wants media from. Absent any call, the default is ALL chairs — with
+	// maxSlots=1 that is exactly today's behavior.
+	CtrlSubscribe   ControlType = "subscribe"   // client -> server {slots:[u8]}
+	CtrlUnsubscribe ControlType = "unsubscribe" // client -> server {slots:[u8]}
+
 	// Aposta paralela: on-the-spot 1v1 side-bets. The challenger writes the
 	// bet's text live; the target answers; the current publisher judges.
 	CtrlApostaChallenge ControlType = "aposta_challenge" // client -> server {target, text}
@@ -244,6 +250,12 @@ type Control struct {
 type ClipReadyData struct {
 	URL       string `json:"url"`
 	ExpiresMs int64  `json:"expiresMs"`
+}
+
+// SubscribeData names slot indices to (un)subscribe. Set semantics,
+// idempotent: subscribing twice is subscribing once.
+type SubscribeData struct {
+	Slots []int `json:"slots"`
 }
 
 // AttentionReportData is one client visibility ping.

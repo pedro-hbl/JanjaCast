@@ -731,6 +731,16 @@ func (s *Server) handleControl(room *relay.Room, client *relay.Client, data []by
 		if err := json.Unmarshal(ctrl.Data, &d); err == nil {
 			room.AssistPoint(client, d.X, d.Y)
 		}
+	case protocol.CtrlSubscribe:
+		var d protocol.SubscribeData
+		if err := json.Unmarshal(ctrl.Data, &d); err == nil {
+			room.Subscribe(client, d.Slots)
+		}
+	case protocol.CtrlUnsubscribe:
+		var d protocol.SubscribeData
+		if err := json.Unmarshal(ctrl.Data, &d); err == nil {
+			room.Unsubscribe(client, d.Slots)
+		}
 	case protocol.CtrlAttentionReport:
 		var d protocol.AttentionReportData
 		if err := json.Unmarshal(ctrl.Data, &d); err == nil {
