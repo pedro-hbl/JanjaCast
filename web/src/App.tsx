@@ -202,6 +202,14 @@ const App: Component = () => {
   const [apostaWins, setApostaWins] = createSignal<Record<string, number>>({});
   const [betting, setBetting] = createSignal<{ id: string; name: string } | null>(null);
   const [betText, setBetText] = createSignal("");
+  // Captions: last two lines under the stage, publisher-gated input.
+  const [captionLines, setCaptionLines] = createSignal<Array<{ id: number; text: string; author: string }>>([]);
+  const [captionsEnabled, setCaptionsEnabled] = createSignal(false);
+  const [captionDraft, setCaptionDraft] = createSignal("");
+  let captionSeq = 0;
+  // Jukebox: the request line, host-approved, played room-wide.
+  const [jukeboxQueue, setJukeboxQueue] = createSignal<Array<{ id: string; asset: string; requester: string }>>([]);
+  let jukeboxAudio: HTMLAudioElement | null = null;
   // "Cadê todo mundo?": the room's attention, publisher-only knowledge.
   const [attention, setAttention] = createSignal<{ watching: number; total: number } | null>(null);
   const [replayEvents, setReplayEvents] = createSignal<Array<{ type: string; user?: string; density?: number; at: number }>>([]);
@@ -643,6 +651,22 @@ const App: Component = () => {
         document.removeEventListener("visibilitychange", reportVis);
         clearInterval(attnTimer);
       });
+      s.onCaptionBroadcast = (d) => {
+        const id = ++captionSeq;
+        setCaptionLines((xs) => [...xs, { id, text: d.text, author: d.author }].slice(-2));
+        setTimeout(() => setCaptionLines((xs) => xs.filter((l) => l.id !== id)), 8000);
+      };
+      s.onCaptionState = (on) => setCaptionsEnabled(on);
+      s.onCaptionClear = () => setCaptionLines([]);
+      s.onJukeboxQueue = (d) => setJukeboxQueue(d.queue ?? []);
+      s.onJukeboxPlay = (d) => {
+        // Same Audio pattern as the stinger overlay: same-origin URL via
+        // apiPath, one element reused, volume riding the viewer slider.
+        jukeboxAudio?.pause();
+        jukeboxAudio = new Audio(apiPath(d.asset));
+        jukeboxAudio.volume = Math.min(1, volume() / 100);
+        void jukeboxAudio.play().catch(() => {});
+      };
       s.onApostaState = (d) => {
         if (d.wins) setApostaWins(d.wins);
         setAposta(d);
@@ -1326,6 +1350,45 @@ const App: Component = () => {
 
         </div>
 
+        {/* Legendas: the collaborative caption band UNDER the stage — the
+            words live below the picture, never on it. */}
+        <Show when={captionLines().length > 0 || captionsEnabled()}>
+          <div class="caption-band">
+            <For each={captionLines()}>
+              {(l) => (
+                <p class="caption-line">
+                  <span class="caption-text">{l.text}</span>
+                  <span class="caption-author">{l.author}</span>
+                </p>
+              )}
+            </For>
+            <Show when={captionsEnabled()}>
+              <input
+                class="aposta-input caption-input"
+                maxlength="120"
+                placeholder={t("caption.placeholder")}
+                value={captionDraft()}
+                onInput={(e) => setCaptionDraft(e.currentTarget.value)}
+                onKeyDown={(e) => {
+                  if (e.key !== "Enter") return;
+                  const txt = captionDraft().trim();
+                  if (!txt) return;
+                  session()?.submitCaption(txt);
+                  setCaptionDraft("");
+                }}
+              />
+            </Show>
+            <Show when={session()?.ownsStage()}>
+              <button
+                class="crayon-btn crayon-btn--chalk caption-toggle"
+                onClick={() => session()?.toggleCaptions(!captionsEnabled())}
+              >
+                {captionsEnabled() ? t("caption.disable") : t("caption.enable")}
+              </button>
+            </Show>
+          </div>
+        </Show>
+
         {/* Corrente da tela: the nomination countdown — border chrome, the
             room's light consensus in two buttons. */}
         <Show when={corrente()}>
@@ -1490,6 +1553,28 @@ const App: Component = () => {
               <Show when={aposta()!.phase === "expired"}>
                 <span class="aposta-note">{t("aposta.expired")}</span>
               </Show>
+            </div>
+          </Show>
+
+          {/* Jukebox: the request line beside the roster. Anyone queues a
+              sound off the vinhetas shelf; the host approves; the room
+              hears it together. */}
+          <Show when={jukeboxQueue().length > 0 || (stingersOn() && live())}>
+            <div class="jukebox-panel">
+              <h5 class="jukebox-title">{t("jukebox.title")}</h5>
+              <For each={jukeboxQueue()}>
+                {(item) => (
+                  <div class="jukebox-row">
+                    <span class="jukebox-name" title={item.asset}>{item.asset.split("/").pop()}</span>
+                    <span class="jukebox-by">{t("jukebox.by", { name: item.requester })}</span>
+                    <Show when={session()?.ownsStage()}>
+                      <button class="crayon-btn crayon-btn--chalk" onClick={() => session()?.approveJukebox(item.id)}>
+                        {t("jukebox.approve")}
+                      </button>
+                    </Show>
+                  </div>
+                )}
+              </For>
             </div>
           </Show>
 

@@ -95,6 +95,16 @@ export class Session {
   onStageCancel: ((cancel: StageCancelData) => void) | null = null;
   /** The server refused something we asked for, with a code to translate. */
   onServerError: ((code: string) => void) | null = null;
+  /** A caption line landed under the video band. */
+  onCaptionBroadcast: ((d: { text: string; author: string }) => void) | null = null;
+  /** Captions toggled on/off (publisher-gated). */
+  onCaptionState: ((enabled: boolean) => void) | null = null;
+  /** Publisher left: wipe the caption band. */
+  onCaptionClear: (() => void) | null = null;
+  /** The jukebox line changed. */
+  onJukeboxQueue: ((d: { queue: Array<{ id: string; asset: string; requester: string }> }) => void) | null = null;
+  /** Host approved a sound: the whole room plays it. */
+  onJukeboxPlay: ((d: { id: string; asset: string }) => void) | null = null;
   /** Placar state broadcast. */
   onPlacarState: ((d: { active: boolean; prompt: string; scores: Record<string, number> }) => void) | null = null;
   /** A clip is ready to download. */
@@ -272,6 +282,10 @@ export class Session {
 
   /** Viewer side: point at a spot on the picture (normalized 0..1). */
   sendAssistPoint(x: number, y: number): void { this.sendControl("assist_point" as any, { x, y }); }
+  submitCaption(text: string): void { this.sendControl("caption_submit" as any, { text }); }
+  toggleCaptions(enabled: boolean): void { this.sendControl("caption_toggle" as any, { enabled }); }
+  requestJukebox(id: string, asset: string): void { this.sendControl("jukebox_request" as any, { id, asset }); }
+  approveJukebox(id: string): void { this.sendControl("jukebox_approve" as any, { id }); }
   reportAttention(visible: boolean): void { this.sendControl("attention_report" as any, { visible }); }
   challengeAposta(target: string, text: string): void { this.sendControl("aposta_challenge" as any, { target, text }); }
   answerAposta(id: string, accept: boolean): void { this.sendControl((accept ? "aposta_accept" : "aposta_decline") as any, { id }); }
@@ -467,6 +481,28 @@ export class Session {
       case "assist_show": {
         const d = ctrl.data as { x: number; y: number; userId: string; username: string; ttlMs: number };
         this.onAssistShow?.(d);
+        break;
+      }
+      case "caption_broadcast": {
+        const d = ctrl.data as { text: string; author: string };
+        this.onCaptionBroadcast?.(d);
+        break;
+      }
+      case "caption_state": {
+        const d = ctrl.data as { enabled: boolean };
+        this.onCaptionState?.(!!(d && d.enabled));
+        break;
+      }
+      case "caption_clear": {
+        this.onCaptionClear?.();
+        break;
+      }
+      case "jukebox_queue_state": {
+        this.onJukeboxQueue?.(ctrl.data as never);
+        break;
+      }
+      case "jukebox_play": {
+        this.onJukeboxPlay?.(ctrl.data as { id: string; asset: string });
         break;
       }
       case "attention_state": {
