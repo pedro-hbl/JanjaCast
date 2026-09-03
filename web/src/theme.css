@@ -2309,3 +2309,6 @@ label.fps-label {
 .tile-name { position: absolute; left: 6px; bottom: 4px; padding: 0 6px; font-family: var(--font-hand); font-size: var(--step--1); background: color-mix(in oklab, var(--surface-2) 80%, transparent); border-radius: var(--wobble-sm); pointer-events: none; }
 .tile-blank { position: absolute; inset: 0; display: grid; place-items: center; background: var(--surface-2); }
 .tile-blank-art { width: 40%; max-width: 160px; }
+
+/* the vinhetas' own little volume knob */
+.crayon-range--short { width: 72px; }

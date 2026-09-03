@@ -113,6 +113,7 @@ const en = {
   "footer.volume": "🎧 Volume",
   "footer.volumeTitle":
     "On speakers, your mic feeds the stream back into the call — headphones avoid it.",
+  "footer.stingerVolumeTitle": "How loud the vinhetas play for you (yours alone)",
   "footer.stingers": "🎺 Stingers",
   "footer.stingersTitle": "Add, curate and fire the room's stingers",
 
@@ -421,6 +422,7 @@ const ptBR: Record<MessageKey, Message> = {
   "footer.volume": "🎧 Volume",
   "footer.volumeTitle":
     "No alto-falante, seu microfone joga o som da transmissão de volta na call — fone resolve.",
+  "footer.stingerVolumeTitle": "Volume das vinhetas só pra você",
   "footer.stingers": "🎺 Vinhetas",
   "footer.stingersTitle": "Adicione, escolha e dispare as vinhetas da sala",
 

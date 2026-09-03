@@ -153,6 +153,20 @@ const App: Component = () => {
       }
     })(),
   );
+  /** How loud the vinhetas (and jukebox sounds) play for THIS viewer —
+   *  independent of the stream volume, because a meme airhorn at stream
+   *  loudness is how friendships end. Purely local, persisted. */
+  const [stingerVolume, setStingerVolume] = createSignal(
+    (() => {
+      try {
+        const v = localStorage.getItem("jc-stinger-volume");
+        return v !== null ? Math.min(100, Math.max(0, Number(v))) : 70;
+      } catch {
+        return 70;
+      }
+    })(),
+  );
+
   /** Viewer magnification (scroll to zoom, drag to pan — see player.ts). */
   const [zoom, setZoom] = createSignal(1);
 
@@ -436,7 +450,7 @@ const App: Component = () => {
 
     if (s.audio) {
       const audio = new Audio(apiPath(s.audio));
-      audio.volume = 0.8;
+      audio.volume = stingerVolume() / 100;
       stingerAudio = audio;
       // Autoplay may be rejected before the first user interaction with the
       // page; the animation still plays, which is acceptable.
@@ -714,7 +728,7 @@ const App: Component = () => {
         // apiPath, one element reused, volume riding the viewer slider.
         jukeboxAudio?.pause();
         jukeboxAudio = new Audio(apiPath(d.asset));
-        jukeboxAudio.volume = Math.min(1, volume() / 100);
+        jukeboxAudio.volume = stingerVolume() / 100;
         void jukeboxAudio.play().catch(() => {});
       };
       s.onApostaState = (d) => {
@@ -1838,6 +1852,30 @@ const App: Component = () => {
           </span>
         </Show>
 
+          <Show when={stingersOn()}>
+            <label class="fps-label" title={t("footer.stingerVolumeTitle")}>
+              🎺{" "}
+              <input
+                class="crayon-range crayon-range--short"
+                type="range"
+                min="0"
+                max="100"
+                value={stingerVolume()}
+                onInput={(e) => {
+                  const v = Number(e.currentTarget.value);
+                  setStingerVolume(v);
+                  // A live vinheta follows the knob instantly.
+                  if (stingerAudio) stingerAudio.volume = v / 100;
+                  if (jukeboxAudio) jukeboxAudio.volume = v / 100;
+                  try {
+                    localStorage.setItem("jc-stinger-volume", String(v));
+                  } catch {
+                    /* private mode */
+                  }
+                }}
+              />
+            </label>
+          </Show>
         <Show when={live() && !session()?.ownsStage()}>
           <label class="fps-label" title={t("footer.volumeTitle")}>
             {t("footer.volume")}{" "}
