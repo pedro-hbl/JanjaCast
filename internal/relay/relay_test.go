@@ -323,7 +323,7 @@ func TestTemporalSheddingBeforeFreeze(t *testing.T) {
 	frozen := func() bool {
 		room.mu.Lock()
 		defer room.mu.Unlock()
-		return bob.needKeyframe
+		return bob.needKF[0]
 	}
 
 	// Overflow with a T2 chunk: shed to maxTL 1, no freeze.

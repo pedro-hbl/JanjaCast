@@ -182,9 +182,16 @@ func (h *Hub) Join(roomID, userID, username string) (*Room, *Client, iter.Seq[Ou
 		old.closeOnce.Do(func() { close(old.done) })
 		if sl := r.slotOfLocked(old); sl != nil && sl.pub == old {
 			sl.pub = nil
-			r.config = nil
-			r.clearGOPLocked()
-			r.clearBlankLocked()
+			sl.config = nil
+			sl.blanked = false
+			r.clearSlotGOPLocked(sl)
+			sl.clipBuf = nil
+			sl.clipBytes = 0
+			sl.clipStartTs = 0
+			if sl.idx == 0 {
+				r.config = nil
+				r.clearBlankLocked()
+			}
 			r.gateViewersLocked()
 			// The rodízio clock stops with the stage. The expected
 			// immediate re-take starts a fresh twenty minutes, which is
@@ -202,13 +209,13 @@ func (h *Hub) Join(roomID, userID, username string) (*Room, *Client, iter.Seq[Ou
 	}
 
 	c := &Client{
-		UserID:       userID,
-		Username:     username,
-		out:          make(chan outMsg, sendBuffer),
-		done:         make(chan struct{}),
-		needKeyframe: true, // must not decode deltas before a keyframe
-		maxTL:        maxTemporalLayer,
-		subs:         [6]bool{true, true, true, true, true, true},
+		UserID:   userID,
+		Username: username,
+		out:      make(chan outMsg, sendBuffer),
+		done:     make(chan struct{}),
+		needKF:   [6]bool{true, true, true, true, true, true},
+		maxTL:    maxTemporalLayer,
+		subs:     [6]bool{true, true, true, true, true, true},
 	}
 
 	c.enqueueControl(protocol.CtrlWelcome, protocol.WelcomeData{
@@ -243,7 +250,7 @@ func (h *Hub) Join(roomID, userID, username string) (*Room, *Client, iter.Seq[Ou
 		}
 	}
 	if len(r.slots[0].gop) > 0 && replayed {
-		c.needKeyframe = false
+		c.needKF[0] = false
 	} else if r.slots[0].pub != nil {
 		// No usable cache: get this joiner a picture as fast as possible.
 		r.requestKeyframeLocked()
@@ -309,9 +316,16 @@ func (h *Hub) Leave(r *Room, c *Client) {
 	var assembled []AwardData
 	if sl := r.slotOfLocked(c); sl != nil && sl.pub == c {
 		sl.pub = nil
-		r.config = nil
-		r.clearGOPLocked()
-		r.clearBlankLocked()
+		sl.config = nil
+		sl.blanked = false
+		r.clearSlotGOPLocked(sl)
+		sl.clipBuf = nil
+		sl.clipBytes = 0
+		sl.clipStartTs = 0
+		if sl.idx == 0 {
+			r.config = nil
+			r.clearBlankLocked()
+		}
 		r.stopRodizioClockLocked()
 		// Assemble awards if the session qualifies (stats snapshot under lock).
 		assembled = r.assembleAwardsLocked()
@@ -866,9 +880,10 @@ type Client struct {
 	// done is closed exactly once by Leave; the write loop exits on it.
 	done      chan struct{}
 	closeOnce sync.Once
-	// needKeyframe marks that video was dropped and delta frames must be
-	// suppressed until the next keyframe arrives. Guarded by Room.mu.
-	needKeyframe bool
+	// needKF marks, PER CHAIR, that video was dropped and delta frames
+	// must be suppressed until that chair's next keyframe. Guarded by
+	// Room.mu. (needKeyframe kept as the slot-0 legacy accessor below.)
+	needKF [6]bool
 	// maxTL is the highest SVC temporal layer this viewer currently
 	// receives. Congestion sheds layers (halving then quartering framerate)
 	// before resorting to the needKeyframe freeze. Guarded by Room.mu.
@@ -1449,22 +1464,27 @@ func plainName(name string) string {
 func (r *Room) gateViewersLocked() {
 	for c := range r.clients {
 		if c != r.slots[0].pub {
-			c.needKeyframe = true
+			c.needKF[0] = true
 		}
 	}
 }
 
-func (r *Room) requestKeyframeLocked() {
-	if r.slots[0].pub == nil || time.Since(r.slots[0].lastKFReq) < kfDebounce {
+func (r *Room) requestKeyframeLocked() { r.requestKeyframeSlotLocked(r.slots[0]) }
+
+// requestKeyframeSlotLocked prods ONE chair's publisher for an IDR, with
+// that chair's own debounce — a viewer stalled on chair N must never cost
+// chair 0's encoder an IDR.
+func (r *Room) requestKeyframeSlotLocked(sl *Slot) {
+	if sl == nil || sl.pub == nil || time.Since(sl.lastKFReq) < kfDebounce {
 		return
 	}
-	if r.blanked {
+	if r.blanked || sl.blanked {
 		// Nothing is being encoded: asking would only prod a publisher that
 		// is deliberately silent. capture.ts forces its own IDR on unblank.
 		return
 	}
-	r.slots[0].lastKFReq = time.Now()
-	r.slots[0].pub.enqueueControl(protocol.CtrlKeyframeRequest, struct{}{})
+	sl.lastKFReq = time.Now()
+	sl.pub.enqueueControl(protocol.CtrlKeyframeRequest, struct{}{})
 }
 
 // LeaveStage clears the stage if c holds it — or if c is the same person on
@@ -1484,9 +1504,17 @@ func (r *Room) LeaveStage(c *Client) {
 // person, then get off", and cancelling the call here would undo the pass.
 // Caller must hold r.mu and must already have checked who is asking.
 func (r *Room) leaveStageLocked() {
-	r.slots[0].pub = nil
+	// Legacy path: frees slot 0 (queue/rodizio/corrente all operate there
+	// until those families grow slot-awareness).
+	sl := r.slots[0]
+	sl.pub = nil
+	sl.config = nil
+	sl.blanked = false
+	r.clearSlotGOPLocked(sl)
+	sl.clipBuf = nil
+	sl.clipBytes = 0
+	sl.clipStartTs = 0
 	r.config = nil
-	r.clearGOPLocked()
 	r.clearBlankLocked()
 	r.stopRodizioClockLocked()
 	// Captions belong to the stream they narrate: the publisher leaving
@@ -1840,7 +1868,7 @@ func (r *Room) ForwardMedia(from *Client, msg []byte) {
 			continue
 		}
 		if hdr.Kind == protocol.KindVideo {
-			if c.needKeyframe && !hdr.Keyframe() {
+			if c.needKF[hdr.Slot] && !hdr.Keyframe() {
 				continue
 			}
 			// Temporal shedding: a degraded viewer skips higher SVC layers
@@ -1854,7 +1882,7 @@ func (r *Room) ForwardMedia(from *Client, msg []byte) {
 				c.lastTLDrop = now
 			}
 			if c.trySend(outMsg{binary: true, payload: msg}) {
-				c.needKeyframe = false
+				c.needKF[hdr.Slot] = false
 			} else {
 				c.lastTLDrop = now
 				if hdr.TemporalID > 0 {
@@ -1864,10 +1892,10 @@ func (r *Room) ForwardMedia(from *Client, msg []byte) {
 					if c.maxTL >= hdr.TemporalID {
 						c.maxTL = hdr.TemporalID - 1
 					}
-				} else if !c.needKeyframe {
+				} else if !c.needKF[0] {
 					// Base-layer chunks are reference frames — a gap here
 					// corrupts decode, so freeze until the next keyframe.
-					c.needKeyframe = true
+					c.needKF[hdr.Slot] = true
 					r.requestKeyframeLocked()
 				}
 			}
@@ -1882,24 +1910,36 @@ func (r *Room) ForwardMedia(from *Client, msg []byte) {
 // maybeSendRateHintLocked tells the publisher how many viewers the relay is
 // degrading, paced to rateHintInterval. Caller must hold r.mu.
 func (r *Room) maybeSendRateHintLocked(now time.Time) {
-	if r.slots[0].pub == nil || now.Sub(r.lastHint) < rateHintInterval {
+	if now.Sub(r.lastHint) < rateHintInterval {
 		return
 	}
 	r.lastHint = now
-	degraded, viewers := 0, 0
-	for c := range r.clients {
-		if c == r.slots[0].pub || baseID(c.UserID) == baseID(r.slots[0].pub.UserID) {
-			continue // the sharer's own connections receive no media
+	// One hint per occupied chair: each encoder learns ITS congestion —
+	// degraded viewers among its own subscribers, and its own audience
+	// size so the egress budget splits by who is actually watched.
+	for _, sl := range r.slots {
+		if sl.pub == nil {
+			continue
 		}
-		viewers++
-		if c.needKeyframe || c.maxTL < maxTemporalLayer {
-			degraded++
+		degraded := 0
+		viewers := 0
+		for c := range r.clients {
+			if c == sl.pub || baseID(c.UserID) == baseID(sl.pub.UserID) {
+				continue
+			}
+			if !c.subs[sl.idx] {
+				continue
+			}
+			viewers++
+			if c.needKF[sl.idx] || c.maxTL < maxTemporalLayer {
+				degraded++
+			}
 		}
+		sl.pub.enqueueControl(protocol.CtrlRateHint, protocol.RateHintData{
+			Degraded: degraded,
+			Viewers:  viewers,
+		})
 	}
-	r.slots[0].pub.enqueueControl(protocol.CtrlRateHint, protocol.RateHintData{
-		Degraded: degraded,
-		Viewers:  viewers,
-	})
 }
 
 // stageStateLocked snapshots the stage. Caller must hold r.mu.
@@ -2604,7 +2644,7 @@ func (r *Room) Subscribe(c *Client, slots []int) {
 		return
 	}
 	for _, i := range slots {
-		if i < 0 || i >= len(c.subs) || c.subs[i] {
+		if i < 0 || i >= len(c.subs) || i >= r.maxSlots || c.subs[i] {
 			continue
 		}
 		c.subs[i] = true
@@ -2619,9 +2659,10 @@ func (r *Room) Subscribe(c *Client, slots []int) {
 			}
 		}
 		if replayed {
-			c.needKeyframe = false
+			c.needKF[i] = false
 		} else {
-			r.requestKeyframeLocked()
+			c.needKF[i] = true
+			r.requestKeyframeSlotLocked(sl)
 		}
 	}
 }
