@@ -278,6 +278,9 @@ func (s *Server) handleShareToken(w http.ResponseWriter, r *http.Request) {
 		// ownsStage()/remote-stop work in the plain-browser flow too.
 		UserID   string `json:"userId"`
 		Username string `json:"username"`
+		// Mode "telinha" mints a WATCH-ONLY identity (":telinha" suffix)
+		// so the mini-player never supersedes the person's capture tab.
+		Mode string `json:"mode"`
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, 8<<10)
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Room == "" {
@@ -288,6 +291,10 @@ func (s *Server) handleShareToken(w http.ResponseWriter, r *http.Request) {
 		Room: body.Room,
 		Exp:  time.Now().Add(10 * time.Minute).Unix(),
 	}
+	suffix, tag := ":tab", " (sharing)"
+	if body.Mode == "telinha" {
+		suffix, tag = ":telinha", " (telinha)"
+	}
 	if s.cfg.AllowAnon {
 		id := body.UserID
 		if id == "" {
@@ -297,16 +304,16 @@ func (s *Server) handleShareToken(w http.ResponseWriter, r *http.Request) {
 		if name == "" {
 			name = "sharer"
 		}
-		claims.UserID = id + ":tab"
-		claims.Username = name + " (sharing)"
+		claims.UserID = id + suffix
+		claims.Username = name + tag
 	} else {
 		id, err := s.auth.verifyDiscordToken(r.Context(), body.AccessToken)
 		if err != nil {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
-		claims.UserID = id.UserID + ":tab"
-		claims.Username = id.Username + " (sharing)"
+		claims.UserID = id.UserID + suffix
+		claims.Username = id.Username + tag
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]string{

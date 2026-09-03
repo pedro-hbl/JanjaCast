@@ -76,8 +76,12 @@ interface RosterRow {
 
 /** A companion capture tab joins as "<id>:tab" / "<name> (sharing)". Both
  *  belong to one person, so presentation collapses them onto one row. */
-const baseId = (id: string) => (id.endsWith(":tab") ? id.slice(0, -4) : id);
-const plainName = (n: string) => n.replace(/\s*\(sharing\)\s*$/i, "");
+const baseId = (id: string) => {
+  if (id.endsWith(":tab")) return id.slice(0, -4);
+  if (id.endsWith(":telinha")) return id.slice(0, -8);
+  return id;
+};
+const plainName = (n: string) => n.replace(/\s*\((sharing|telinha)\)\s*$/i, "");
 
 /** The transport states in words. They are only ever *read out* — the `title`
  *  on the dot and its screen-reader label — so they get translated, while
@@ -735,6 +739,36 @@ const App: Component = () => {
   /** Discord's iframe denies display-capture, so sharing happens in a
    *  companion tab in the user's real browser (same room, direct origin).
    *  The tab authenticates with a short-lived share token minted here. */
+  /** The telinha: a watch-only mirror in the real browser, a few seconds
+   *  late by design. Its token carries a ":telinha" identity so it can
+   *  never supersede this person's capture tab. */
+  const openTelinha = async () => {
+    const id = identity();
+    if (!id) return;
+    const [origin, tokenResp] = await Promise.all([
+      fetchPublicOrigin(),
+      fetch(apiPath("/api/share-token"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          accessToken: id.accessToken,
+          room: id.room,
+          userId: id.userId,
+          username: id.username,
+          mode: "telinha",
+        }),
+      }),
+    ]);
+    if (!tokenResp.ok) return;
+    const { shareToken } = (await tokenResp.json()) as { shareToken: string };
+    const url = new URL("/telinha", origin);
+    url.searchParams.set("token", shareToken);
+    url.searchParams.set("room", id.room);
+    url.searchParams.set("name", id.username);
+    url.searchParams.set("lang", localeParam());
+    void openExternal(url.toString());
+  };
+
   const openCompanion = async (id: Identity) => {
     const [origin, tokenResp] = await Promise.all([
       fetchPublicOrigin(),
@@ -1439,6 +1473,14 @@ const App: Component = () => {
               }}
             />
           </label>
+          <button
+            type="button"
+            class="crayon-btn crayon-btn--chalk"
+            title={t("telinha.badge")}
+            onClick={() => void openTelinha()}
+          >
+            {t("telinha.open")}
+          </button>
         </Show>
 
         <div class="field">
