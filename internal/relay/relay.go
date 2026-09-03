@@ -14,6 +14,7 @@ import (
 	"iter"
 	"log/slog"
 	"math/rand/v2"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -470,6 +471,11 @@ type Room struct {
 	correnteTarget string
 	correnteGen    uint64
 	correnteVotes  map[string]string // base user id -> "vai" | "calma"
+
+	// --- pitacos (guarded by mu): 4 bezel slots per side, self-expiring.
+	pitacoExpiry map[string]time.Time // "left:0".."right:3" -> busy until
+	pitacoLast   map[string]time.Time // base user id -> last post
+	pitacoSeq    uint64
 }
 
 // rAwardsCallback is installed by the server layer to receive assembled
@@ -2355,6 +2361,81 @@ func (r *Room) CorrenteVote(c *Client, choice string) {
 		for cl := range r.clients {
 			cl.enqueueControl(protocol.CtrlCorrenteCanceled, protocol.CorrenteCanceledData{Reason: "veto"})
 		}
+	}
+}
+
+// --- mural de pitacos -------------------------------------------------------
+
+const (
+	pitacoTTL      = 10 * time.Second
+	pitacoCooldown = 8 * time.Second
+	pitacoMaxText  = 60
+)
+
+var pitacoTagRe = regexp.MustCompile(`<[^>]*>`)
+
+// PitacoPost validates, sanitizes and pins a note to a free bezel slot,
+// fanning pitaco_show to the whole room. Slots free themselves by expiry.
+func (r *Room) PitacoPost(c *Client, text, side string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.clients[c]; !ok {
+		return
+	}
+	if side != "left" && side != "right" {
+		return
+	}
+	text = pitacoTagRe.ReplaceAllString(text, "")
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return
+	}
+	if len(text) > pitacoMaxText {
+		text = text[:pitacoMaxText]
+	}
+	if r.pitacoLast == nil {
+		r.pitacoLast = make(map[string]time.Time)
+	}
+	now := time.Now()
+	if now.Sub(r.pitacoLast[baseID(c.UserID)]) < pitacoCooldown {
+		c.enqueueControl(protocol.CtrlError, protocol.ErrorData{Code: "pitaco.cooldown"})
+		return
+	}
+	if r.pitacoExpiry == nil {
+		r.pitacoExpiry = make(map[string]time.Time)
+	}
+	// The asked side first, the other as spillover; refuse only when the
+	// whole bezel is shouting already.
+	slot, chosen := -1, side
+	for _, sd := range []string{side, map[string]string{"left": "right", "right": "left"}[side]} {
+		for i := 0; i < 4; i++ {
+			key := sd + ":" + strconv.Itoa(i)
+			if r.pitacoExpiry[key].Before(now) {
+				slot, chosen = i, sd
+				break
+			}
+		}
+		if slot >= 0 {
+			break
+		}
+	}
+	if slot < 0 {
+		c.enqueueControl(protocol.CtrlError, protocol.ErrorData{Code: "pitaco.full"})
+		return
+	}
+	r.pitacoLast[baseID(c.UserID)] = now
+	r.pitacoExpiry[chosen+":"+strconv.Itoa(slot)] = now.Add(pitacoTTL)
+	r.pitacoSeq++
+	d := protocol.PitacoShowData{
+		ID:         strconv.FormatUint(r.pitacoSeq, 10),
+		Text:       text,
+		Side:       chosen,
+		Slot:       slot,
+		AuthorName: c.Username,
+		TTLMs:      int(pitacoTTL / time.Millisecond),
+	}
+	for cl := range r.clients {
+		cl.enqueueControl(protocol.CtrlPitacoShow, d)
 	}
 }
 

@@ -202,6 +202,10 @@ const (
 	CtrlCorrenteStarted  ControlType = "corrente_started"  // server -> all {target, targetName, by, endsAtMs}
 	CtrlCorrenteTally    ControlType = "corrente_tally"    // server -> all {vai, calma}
 	CtrlCorrenteCanceled ControlType = "corrente_canceled" // server -> all {reason}
+
+	// Mural de pitacos: ephemeral sticky notes on the bezel around the video.
+	CtrlPitacoPost ControlType = "pitaco_post" // client -> server {text, side}
+	CtrlPitacoShow ControlType = "pitaco_show" // server -> all {id, text, side, slot, authorName, ttlMs}
 	// Varal (session memory board)
 	CtrlVaralPin    ControlType = "varal_pin"
 	CtrlVaralRemove ControlType = "varal_remove"
@@ -226,6 +230,22 @@ type Control struct {
 type ClipReadyData struct {
 	URL       string `json:"url"`
 	ExpiresMs int64  `json:"expiresMs"`
+}
+
+// PitacoPostData is one shouted note from the couch.
+type PitacoPostData struct {
+	Text string `json:"text"`
+	Side string `json:"side"` // "left" | "right"
+}
+
+// PitacoShowData pins the note to a bezel slot for everyone, briefly.
+type PitacoShowData struct {
+	ID         string `json:"id"`
+	Text       string `json:"text"`
+	Side       string `json:"side"`
+	Slot       int    `json:"slot"`
+	AuthorName string `json:"authorName"`
+	TTLMs      int    `json:"ttlMs"`
 }
 
 // CorrenteNominateData names who the publisher wants next.

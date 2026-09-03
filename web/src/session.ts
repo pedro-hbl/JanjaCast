@@ -215,6 +215,8 @@ export class Session {
   onAssistShow: ((d: { x: number; y: number; userId: string; username: string; ttlMs: number }) => void) | null = null;
   /** The varal: the whole board every time it changes (and in welcome). */
   /** Corrente: nomination banner lifecycle. */
+  /** A sticky note landed on the bezel — everyone draws it. */
+  onPitacoShow: ((d: { id: string; text: string; side: string; slot: number; authorName: string; ttlMs: number }) => void) | null = null;
   onCorrenteStarted: ((d: { target: string; targetName: string; by: string; endsAtMs: number }) => void) | null = null;
   onCorrenteTally: ((d: { vai: number; calma: number }) => void) | null = null;
   onCorrenteCanceled: ((d: { reason: string }) => void) | null = null;
@@ -380,6 +382,7 @@ export class Session {
   sendVaralPin(pin: { kind: "quote"; quote: { text: string } } | { kind: "frame"; frame: { dataUrl: string; publisher: string } }): void {
     this.sendControl("varal_pin" as any, pin);
   }
+  postPitaco(text: string, side: "left" | "right"): void { this.sendControl("pitaco_post" as any, { text, side }); }
   nominateCorrente(target: string): void { this.sendControl("corrente_nominate" as any, { target }); }
   voteCorrente(choice: "vai" | "calma"): void { this.sendControl("corrente_vote" as any, { choice }); }
   removeVaralPin(id: string): void { this.sendControl("varal_remove" as any, { id }); }
@@ -572,6 +575,10 @@ export class Session {
       case "assist_show": {
         const d = ctrl.data as { x: number; y: number; userId: string; username: string; ttlMs: number };
         this.onAssistShow?.(d);
+        break;
+      }
+      case "pitaco_show": {
+        this.onPitacoShow?.(ctrl.data as { id: string; text: string; side: string; slot: number; authorName: string; ttlMs: number });
         break;
       }
       case "corrente_started": {

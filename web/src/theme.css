@@ -2277,3 +2277,13 @@ label.fps-label {
 .corrente-banner { grid-column: 1 / -1; display: flex; align-items: center; gap: 10px; padding: 6px 12px; background: var(--surface-2); border: 3px solid var(--outline); border-radius: var(--wobble-sm); box-shadow: var(--shadow-ink); font-family: var(--font-hand); }
 .corrente-line { flex: 1; }
 .corrente-pick { border: 3px solid var(--outline); border-radius: var(--wobble-sm); background: var(--surface-2); font-family: var(--font-hand); padding: 3px 6px; max-width: 160px; }
+
+/* ---- mural de pitacos (bezel sticky notes) ---- */
+.pitaco-layer { position: absolute; inset: 0; pointer-events: none; z-index: 6; }
+.pitaco { position: absolute; max-width: 17%; padding: 4px 8px; background: var(--yellow, #f5d76e); border: 2px solid var(--outline); border-radius: 2px; box-shadow: var(--shadow-ink); font-family: var(--font-hand); animation: pitaco-in 200ms ease-out, pitaco-out 500ms ease-in 9.4s forwards; }
+.pitaco--left { left: 6px; transform: rotate(-3deg); }
+.pitaco--right { right: 6px; transform: rotate(3deg); }
+.pitaco-text { display: block; font-size: var(--step--1); word-break: break-word; }
+.pitaco-author { display: block; font-size: 10px; opacity: .7; text-align: right; }
+@keyframes pitaco-in { from { opacity: 0; transform: scale(.6) rotate(-8deg); } to { opacity: 1; } }
+@keyframes pitaco-out { to { opacity: 0; } }
