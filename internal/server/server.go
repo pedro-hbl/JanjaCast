@@ -596,11 +596,11 @@ func (s *Server) Drain() {
 }
 
 func (s *Server) handleControl(room *relay.Room, client *relay.Client, data []byte) {
-	var ctrl protocol.Control
-	if err := json.Unmarshal(data, &ctrl); err != nil {
-		return
-	}
-	switch ctrl.Type {
+  var ctrl protocol.Control
+  if err := json.Unmarshal(data, &ctrl); err != nil {
+    return
+  }
+  switch ctrl.Type {
 	case protocol.CtrlTakeStage:
 		room.TakeStage(client)
 	case protocol.CtrlLeaveStage:
@@ -678,14 +678,37 @@ func (s *Server) handleControl(room *relay.Room, client *relay.Client, data []by
 				client.SendControl(protocol.CtrlError, protocol.ErrorData{Code: code})
 			}
 		}
-	case protocol.CtrlPlacarCreate:
-		var d protocol.PlacarCreateData
-		if err := json.Unmarshal(ctrl.Data, &d); err == nil {
-			if err2 := room.CreatePlacar(client, d.Prompt); err2 != nil {
-				client.SendControl(protocol.CtrlError, protocol.ErrorData{Code: err2.Error()})
-			}
-		}
-	case protocol.CtrlPlacarVote:
+  case protocol.CtrlPlacarCreate:
+        var d protocol.PlacarCreateData
+        if err := json.Unmarshal(ctrl.Data, &d); err == nil {
+            if err2 := room.CreatePlacar(client, d.Prompt); err2 != nil {
+                client.SendControl(protocol.CtrlError, protocol.ErrorData{Code: err2.Error()})
+            }
+        }
+		// --- captions --------------------------------------------------------
+  case protocol.CtrlCaptionToggle:
+    var d protocol.CaptionToggleData
+    if err := json.Unmarshal(ctrl.Data, &d); err == nil {
+      // Publisher-only toggle; store under Room.mu
+      room.ToggleCaptions(client, d.Enabled)
+    }
+    break
+  case protocol.CtrlCaptionSubmit:
+    var sd protocol.CaptionSubmitData
+    if err := json.Unmarshal(ctrl.Data, &sd); err != nil { break }
+    // Basic guards live outside lock for fast-fail; state checks inside.
+    text := sd.Text
+    if len(text) > 120 {
+      text = text[:120]
+    }
+    nowMs := time.Now().UnixMilli()
+    sent := false
+    if ok := room.SubmitCaption(client, text, nowMs); ok {
+      sent = true
+    }
+    _ = sent
+    break
+  case protocol.CtrlPlacarVote:
 		var d protocol.PlacarVoteData
 		if err := json.Unmarshal(ctrl.Data, &d); err == nil {
 			if err2 := room.PlacarVote(client, d.TargetUserID, d.Delta); err2 != nil {

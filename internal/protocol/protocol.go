@@ -74,7 +74,7 @@ func ParseMediaHeader(msg []byte) (MediaHeader, error) {
 type ControlType string
 
 const (
-	// Client -> server.
+  // Client -> server.
 	CtrlJoin       ControlType = "join"        // enter a room as viewer
 	CtrlTakeStage  ControlType = "take_stage"  // become the publisher
 	CtrlLeaveStage ControlType = "leave_stage" // stop publishing
@@ -99,9 +99,14 @@ const (
 	// The publisher has already stopped encoding by the time this arrives —
 	// this engages the relay's own independent gates (fan-out drop + GOP
 	// eviction), so a leaked frame would have to defeat both sides.
-	CtrlBlank ControlType = "blank"
+  CtrlBlank ControlType = "blank"
 
-	// --- the stage queue ("pedir a vez") -----------------------------
+  // Captions (legenda) — collaborative live text under the video band.
+  // Client -> server submits and toggles; server -> clients broadcasts.
+  CtrlCaptionSubmit ControlType = "caption_submit"
+  CtrlCaptionToggle ControlType = "caption_toggle"
+
+  // --- the stage queue ("pedir a vez") -----------------------------
 	// Identity always comes from the authenticated connection, never the
 	// payload — exactly like CtrlStingerPlay.
 
@@ -170,7 +175,12 @@ const (
 	CtrlPlacarCreate ControlType = "placar_create"
 	CtrlPlacarVote   ControlType = "placar_vote"
 	CtrlPlacarClose  ControlType = "placar_close"
-	CtrlPlacarState  ControlType = "placar_state"
+  CtrlPlacarState  ControlType = "placar_state"
+
+  // Captions server -> clients.
+  CtrlCaptionBroadcast ControlType = "caption_broadcast"
+  CtrlCaptionState     ControlType = "caption_state"
+  CtrlCaptionClear     ControlType = "caption_clear"
 )
 
 // --- reactions -------------------------------------------------------------
@@ -295,17 +305,37 @@ type Participant struct {
 // (docs/i18n.md § "What is deliberately not localized"); Code, when set, is a
 // stable identifier the client maps onto its own translated string.
 type ErrorData struct {
-	Message string `json:"message,omitempty"`
-	Code    string `json:"code,omitempty"`
+  Message string `json:"message,omitempty"`
+  Code    string `json:"code,omitempty"`
 }
 
 // Error codes carried by ErrorData.Code. Each has a matching `err.<code>`
 // key in web/src/i18n.ts, in both dictionaries.
 const (
-	ErrNoNextUser  = "stage.noNext"   // nobody in line and nobody to spin for
-	ErrAlreadyExt  = "stage.extended" // the one +5 minutes is already spent
-	ErrPassTooSoon = "stage.cooldown" // passing again inside the cooldown
+  ErrNoNextUser  = "stage.noNext"   // nobody in line and nobody to spin for
+  ErrAlreadyExt  = "stage.extended" // the one +5 minutes is already spent
+  ErrPassTooSoon = "stage.cooldown" // passing again inside the cooldown
+  // Captions
+  ErrCaptionRate   = "caption.rateLimit"
+  ErrCaptionOff    = "caption.off"
 )
+
+// Captions wire shapes.
+type CaptionSubmitData struct {
+  Text string `json:"text"`
+}
+type CaptionToggleData struct {
+  Enabled bool `json:"enabled"`
+}
+type CaptionBroadcastData struct {
+  Text      string `json:"text"`
+  Author    string `json:"author"`
+  UserID    string `json:"user_id"`
+  Timestamp int64  `json:"timestamp"`
+}
+type CaptionStateData struct {
+  Enabled bool `json:"enabled"`
+}
 
 // --- cinema mode (pause + shared doodles) -----------------------------------
 

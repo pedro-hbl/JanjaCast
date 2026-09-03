@@ -422,6 +422,10 @@ type Room struct {
 	// --- session stats for end-of-session awards (guarded by mu) ---------
 	sessionStats map[string]*ParticipantStats
 
+	// --- captions (guarded by mu) ---------------------------------------
+	CaptionsEnabled bool
+	CaptionLast     map[string]int64 // userId -> last submit ms
+
 	// --- instant clips: rolling buffer (video+audio), keyframe-bounded ------
 	// clipBuf stores recent media chunks for instant clips. It is trimmed on
 	// keyframe boundaries and bounded by both wall-time (~30s) and bytes.
@@ -432,6 +436,10 @@ type Room struct {
 	clips map[string]clipItem
 	// per-client cooldown for clip requests.
 	lastClipAsk map[*Client]time.Time
+
+	// --- captions (guarded by mu) ---------------------------------------
+	captionsEnabled bool
+	captionLast     map[string]int64 // userId -> last submit ms
 }
 
 // rAwardsCallback is installed by the server layer to receive assembled
@@ -475,7 +483,57 @@ func (r *Room) ClipsTestInit() *Room {
 	if r.lastClipAsk == nil {
 		r.lastClipAsk = make(map[*Client]time.Time)
 	}
+	if r.captionLast == nil {
+		r.captionLast = make(map[string]int64)
+	}
 	return r
+}
+
+// ToggleCaptions flips the room captions enabled state. Publisher-only.
+func (r *Room) ToggleCaptions(c *Client, enabled bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.publisher == nil || baseID(r.publisher.UserID) != baseID(c.UserID) {
+		return
+	}
+	if _, ok := r.clients[c]; !ok {
+		return
+	}
+	r.captionsEnabled = enabled
+	// Broadcast to all clients
+	d := protocol.CaptionStateData{Enabled: enabled}
+	for cl := range r.clients {
+		cl.enqueueControl(protocol.CtrlCaptionState, d)
+	}
+}
+
+// SubmitCaption enforces cooldown/length and broadcasts a sanitized caption.
+func (r *Room) SubmitCaption(c *Client, text string, nowMs int64) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.clients[c]; !ok {
+		return false
+	}
+	if !r.captionsEnabled {
+		c.enqueueControl(protocol.CtrlError, protocol.ErrorData{Code: protocol.ErrCaptionOff})
+		return false
+	}
+	if r.captionLast == nil {
+		r.captionLast = make(map[string]int64)
+	}
+	last := r.captionLast[baseID(c.UserID)]
+	if nowMs-last < 4000 {
+		c.enqueueControl(protocol.CtrlError, protocol.ErrorData{Code: protocol.ErrCaptionRate})
+		return false
+	}
+	r.captionLast[baseID(c.UserID)] = nowMs
+	// sanitize minimal HTML
+	esc := strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;", "\"", "&quot;", "'", "&#39;").Replace(text)
+	d := protocol.CaptionBroadcastData{Text: esc, Author: c.Username, UserID: c.UserID, Timestamp: nowMs}
+	for cl := range r.clients {
+		cl.enqueueControl(protocol.CtrlCaptionBroadcast, d)
+	}
+	return true
 }
 
 // rTestMint is a test-only wrapper to call mintClipTokenLocked.
@@ -1127,6 +1185,14 @@ func (r *Room) leaveStageLocked() {
 	r.clearGOPLocked()
 	r.clearBlankLocked()
 	r.stopRodizioClockLocked()
+	// Captions belong to the stream they narrate: the publisher leaving
+	// disables them and tells every client to wipe the band.
+	if r.captionsEnabled {
+		r.captionsEnabled = false
+		for c := range r.clients {
+			c.enqueueControl(protocol.CtrlCaptionClear, nil)
+		}
+	}
 	r.broadcastStageStateLocked()
 	r.broadcastStageQueueLocked()
 	r.scheduleStingerStopLocked()
@@ -1221,6 +1287,15 @@ func (r *Room) ForwardControl(from *Client, t protocol.ControlType, data any) {
 		}
 	default:
 		// Unknown forwarded control: ignore.
+	}
+}
+
+// BroadcastControl sends a server-originated control to all clients in the room.
+func (r *Room) BroadcastControl(t protocol.ControlType, data any) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for c := range r.clients {
+		c.enqueueControl(t, data)
 	}
 }
 
