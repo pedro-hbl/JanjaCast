@@ -412,8 +412,8 @@ const ptBR: Record<MessageKey, Message> = {
   "footer.volume": "🎧 Volume",
   "footer.volumeTitle":
     "No alto-falante, seu microfone joga o som da transmissão de volta na call — fone resolve.",
-  "footer.stingers": "🎺 Stingers",
-  "footer.stingersTitle": "Adicione, escolha e dispare os stingers da sala",
+  "footer.stingers": "🎺 Vinhetas",
+  "footer.stingersTitle": "Adicione, escolha e dispare as vinhetas da sala",
 
   // --- cinema pause + shared doodles ---------------------------------
   "cinema.pause": "Pausar pra galera",
@@ -526,8 +526,8 @@ const ptBR: Record<MessageKey, Message> = {
   "share.overBudget": " ⚠ acima do seu limite de banda",
   "share.minimize": "Pode minimizar esta aba; a transmissão continua rodando.",
 
-  "st.title": "Stingers",
-  "st.close": "Fechar os stingers",
+  "st.title": "Vinhetas",
+  "st.close": "Fechar as vinhetas",
   "st.dropLetGo": "Solta!",
   "st.drop": "Solte imagens e sons aqui",
   "st.uploading": "Enviando…",
@@ -542,7 +542,7 @@ const ptBR: Record<MessageKey, Message> = {
   "st.sounds": "Sons ({count})",
   "st.chipStart": "começo",
   "st.chipStop": "fim",
-  "st.chipOn": "on",
+  "st.chipOn": "usar",
   "st.chipStartTitle": "Tocar quando uma transmissão começa",
   "st.chipStopTitle": "Tocar quando uma transmissão acaba",
   "st.chipOnTitle": "Usar esta aqui",
