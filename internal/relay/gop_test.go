@@ -155,14 +155,15 @@ func TestClipBufferKeyframeBoundary(t *testing.T) {
 		}
 		// temporal id 0
 		ts := start.Add(time.Duration(s) * time.Second).UnixMicro()
-		msg[5] = byte(ts >> 56)
-		msg[6] = byte(ts >> 48)
-		msg[7] = byte(ts >> 40)
-		msg[8] = byte(ts >> 32)
-		msg[9] = byte(ts >> 24)
-		msg[10] = byte(ts >> 16)
-		msg[11] = byte(ts >> 8)
-		msg[12] = byte(ts)
+		// header v2: timestamp lives at [6:14]
+		msg[6] = byte(ts >> 56)
+		msg[7] = byte(ts >> 48)
+		msg[8] = byte(ts >> 40)
+		msg[9] = byte(ts >> 32)
+		msg[10] = byte(ts >> 24)
+		msg[11] = byte(ts >> 16)
+		msg[12] = byte(ts >> 8)
+		msg[13] = byte(ts)
 		room.ForwardMedia(alice, msg)
 	}
 	if len(room.slots[0].gop) == 0 {

@@ -1,6 +1,6 @@
 // Probe scenario: Seam 1 contract (multistream migration, S1c).
 // The multi-slot view must ride ADDITIVELY beside the legacy fields, byte-
-// compatible: welcome carries headerVersion:1 + maxSlots:1; while someone
+// compatible: welcome carries headerVersion:2 + maxSlots:1; while someone
 // holds the stage, stage_state.slots is exactly one entry whose occupant
 // mirrors publisherId/publisherName; a free stage has no slots entries; and
 // media fan-out still flows keyframe-first from the (slot 0) GOP cache.
@@ -12,7 +12,7 @@ module.exports.run = async (h) => {
 
   // Welcome asserts the wire era.
   const w = pub.ctrl.find((m) => m.type === "welcome");
-  if (!w || w.data.headerVersion !== 1 || w.data.maxSlots !== 1) {
+  if (!w || w.data.headerVersion !== 2 || w.data.maxSlots !== 1) {
     h.note("fail_welcome_version", { got: w && w.data });
     return false;
   }

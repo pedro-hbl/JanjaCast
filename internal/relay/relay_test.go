@@ -289,7 +289,7 @@ func TestConcurrentJoinLeave(t *testing.T) {
 
 func mediaMsgTL(keyframe bool, tid uint8) []byte {
 	msg := mediaMsg(keyframe)
-	msg[2] = tid
+	msg[3] = tid // header v2: slot at [2], temporalId at [3]
 	return msg
 }
 

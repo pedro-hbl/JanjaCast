@@ -36,16 +36,17 @@ async function waitForHealth(timeoutMs = 8000) {
   return false;
 }
 
-// 13-byte media header: kind u8, flags u8, temporalId u8, seq u16be, ts u64be.
-function buildMediaChunk({ kind = 1, keyframe = false, temporalId = 0, seq = 0, timestampUs = 0n, payload = Buffer.alloc(16) }) {
-  const buf = Buffer.alloc(13 + payload.length);
+// 14-byte media header v2: kind u8, flags u8, slot u8, temporalId u8, seq u16be, ts u64be.
+function buildMediaChunk({ kind = 1, keyframe = false, slot = 0, temporalId = 0, seq = 0, timestampUs = 0n, payload = Buffer.alloc(16) }) {
+  const buf = Buffer.alloc(14 + payload.length);
   buf.writeUInt8(kind, 0);
   buf.writeUInt8(keyframe ? 1 : 0, 1);
-  buf.writeUInt8(temporalId, 2);
-  buf.writeUInt16BE(seq & 0xffff, 3);
-  buf.writeUInt32BE(Number((timestampUs >> 32n) & 0xffffffffn), 5);
-  buf.writeUInt32BE(Number(timestampUs & 0xffffffffn), 9);
-  payload.copy(buf, 13);
+  buf.writeUInt8(slot, 2);
+  buf.writeUInt8(temporalId, 3);
+  buf.writeUInt16BE(seq & 0xffff, 4);
+  buf.writeUInt32BE(Number((timestampUs >> 32n) & 0xffffffffn), 6);
+  buf.writeUInt32BE(Number(timestampUs & 0xffffffffn), 10);
+  payload.copy(buf, 14);
   return buf;
 }
 

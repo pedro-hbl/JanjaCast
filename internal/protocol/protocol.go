@@ -37,12 +37,20 @@ const (
 )
 
 // HeaderSize is the fixed size of the binary media header in bytes.
-const HeaderSize = 13
+// v2 (multistream Seam 2): kind u8, flags u8, slot u8, temporalId u8,
+// seq u16be (per-slot), timestampUs u64be. Clean cut from the 13-byte v1 —
+// client and server deploy atomically and welcome asserts headerVersion.
+const HeaderSize = 14
+
+// HeaderVersion is asserted in every welcome; a client that sees a version
+// it does not speak is stale HTML and must hard-refresh.
+const HeaderVersion = 2
 
 // MediaHeader is the parsed fixed header of a binary media message.
 type MediaHeader struct {
 	Kind       uint8
 	Flags      uint8
+	Slot       uint8 // publisher chair 0..5 (Seam 2: always 0)
 	TemporalID uint8 // SVC temporal layer; 0 = base layer (always kept)
 	Sequence   uint16
 	Timestamp  uint64 // microseconds
@@ -64,9 +72,10 @@ func ParseMediaHeader(msg []byte) (MediaHeader, error) {
 	return MediaHeader{
 		Kind:       msg[0],
 		Flags:      msg[1],
-		TemporalID: msg[2],
-		Sequence:   binary.BigEndian.Uint16(msg[3:5]),
-		Timestamp:  binary.BigEndian.Uint64(msg[5:13]),
+		Slot:       msg[2],
+		TemporalID: msg[3],
+		Sequence:   binary.BigEndian.Uint16(msg[4:6]),
+		Timestamp:  binary.BigEndian.Uint64(msg[6:14]),
 	}, nil
 }
 

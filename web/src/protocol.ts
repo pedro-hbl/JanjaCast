@@ -5,7 +5,9 @@
 export const KIND_VIDEO = 1;
 export const KIND_AUDIO = 2;
 export const FLAG_KEYFRAME = 1 << 0;
-export const HEADER_SIZE = 13;
+export const HEADER_SIZE = 14;
+/** Binary header era; welcome asserts it (stale HTML must hard-refresh). */
+export const HEADER_VERSION = 2;
 
 export type ControlType =
   | "join"
@@ -318,6 +320,8 @@ export interface RoomStateData {
 export interface MediaChunk {
   kind: number;
   keyframe: boolean;
+  /** Publisher chair 0..5 (always 0 until Seam 4 lifts the cap). */
+  slot: number;
   /** SVC temporal layer id; 0 = base layer. */
   temporalId: number;
   sequence: number;
@@ -332,14 +336,16 @@ export function packMedia(
   sequence: number,
   timestamp: number,
   payload: Uint8Array,
+  slot = 0,
 ): ArrayBuffer {
   const buf = new ArrayBuffer(HEADER_SIZE + payload.byteLength);
   const view = new DataView(buf);
   view.setUint8(0, kind);
   view.setUint8(1, keyframe ? FLAG_KEYFRAME : 0);
-  view.setUint8(2, temporalId & 0xff);
-  view.setUint16(3, sequence & 0xffff, false);
-  view.setBigUint64(5, BigInt(Math.round(timestamp)), false);
+  view.setUint8(2, slot & 0xff);
+  view.setUint8(3, temporalId & 0xff);
+  view.setUint16(4, sequence & 0xffff, false);
+  view.setBigUint64(6, BigInt(Math.round(timestamp)), false);
   new Uint8Array(buf, HEADER_SIZE).set(payload);
   return buf;
 }
@@ -350,9 +356,10 @@ export function unpackMedia(buf: ArrayBuffer): MediaChunk | null {
   return {
     kind: view.getUint8(0),
     keyframe: (view.getUint8(1) & FLAG_KEYFRAME) !== 0,
-    temporalId: view.getUint8(2),
-    sequence: view.getUint16(3, false),
-    timestamp: Number(view.getBigUint64(5, false)),
+    slot: view.getUint8(2),
+    temporalId: view.getUint8(3),
+    sequence: view.getUint16(4, false),
+    timestamp: Number(view.getBigUint64(6, false)),
     payload: new Uint8Array(buf, HEADER_SIZE),
   };
 }

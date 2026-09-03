@@ -210,7 +210,7 @@ func (h *Hub) Join(roomID, userID, username string) (*Room, *Client, iter.Seq[Ou
 	c.enqueueControl(protocol.CtrlWelcome, protocol.WelcomeData{
 		StageStateData: r.stageStateLocked(),
 		SelfID:         c.UserID,
-		HeaderVersion:  1, // 13-byte header until Seam 2
+		HeaderVersion:  protocol.HeaderVersion,
 		MaxSlots:       1, // the cap lifts at Seam 4
 	})
 	// Right behind the welcome, so a late joiner renders the mode, the
