@@ -431,7 +431,13 @@ type Room struct {
 	// clip store: token -> bytes with expiry and content type. Guarded by mu.
 	clips map[string]clipItem
 	// per-client cooldown for clip requests.
-	lastClipAsk map[*Client]time.Time
+  lastClipAsk map[*Client]time.Time
+
+  // --- bolao (prediction), guarded by mu ---------------------------------
+  boloes map[string]*bolaoState
+
+  // --- chama (call to action), guarded by mu ------------------------------
+  chamas map[string]*chamaState
 }
 
 // rAwardsCallback is installed by the server layer to receive assembled
@@ -463,6 +469,108 @@ type clipItem struct {
 	data      []byte
 	mime      string
 	expiresAt time.Time
+}
+
+type bolaoState struct {
+  id     string
+  prompt string
+  open   bool
+  yes    int
+  no     int
+  result string
+}
+
+type chamaState struct {
+  id     string
+  text   string
+  active bool
+  acks   int
+}
+
+// --- bolao API --------------------------------------------------------------
+
+func (r *Room) BolaoStart(c *Client, id, prompt string) {
+  r.mu.Lock()
+  defer r.mu.Unlock()
+  if _, ok := r.clients[c]; !ok { return }
+  if strings.TrimSpace(id) == "" || strings.TrimSpace(prompt) == "" { return }
+  if r.boloes == nil { r.boloes = make(map[string]*bolaoState) }
+  s := &bolaoState{id: id, prompt: prompt, open: true}
+  r.boloes[id] = s
+  r.broadcastBolaoLocked(s)
+}
+
+func (r *Room) BolaoVote(c *Client, id, vote string) {
+  r.mu.Lock()
+  defer r.mu.Unlock()
+  if _, ok := r.clients[c]; !ok { return }
+  if r.boloes == nil { return }
+  s := r.boloes[id]
+  if s == nil || !s.open { return }
+  switch vote {
+  case "yes": s.yes++
+  case "no": s.no++
+  default: return
+  }
+  r.broadcastBolaoLocked(s)
+}
+
+func (r *Room) BolaoResolve(c *Client, id, result string) {
+  r.mu.Lock()
+  defer r.mu.Unlock()
+  if _, ok := r.clients[c]; !ok { return }
+  if r.boloes == nil { return }
+  s := r.boloes[id]
+  if s == nil || !s.open { return }
+  if result != "yes" && result != "no" { return }
+  s.open = false
+  s.result = result
+  r.broadcastBolaoLocked(s)
+}
+
+func (r *Room) broadcastBolaoLocked(s *bolaoState) {
+  d := protocol.BolaoStateData{ID: s.id, Prompt: s.prompt, Open: s.open, Yes: s.yes, No: s.no, Result: s.result}
+  for c := range r.clients { c.enqueueControl(protocol.CtrlBolaoState, d) }
+}
+
+// --- chama API --------------------------------------------------------------
+
+func (r *Room) ChamaStart(c *Client, id, text string) {
+  r.mu.Lock()
+  defer r.mu.Unlock()
+  if _, ok := r.clients[c]; !ok { return }
+  if strings.TrimSpace(id) == "" || strings.TrimSpace(text) == "" { return }
+  if r.chamas == nil { r.chamas = make(map[string]*chamaState) }
+  s := &chamaState{id: id, text: text, active: true}
+  r.chamas[id] = s
+  r.broadcastChamaLocked(s)
+}
+
+func (r *Room) ChamaAck(c *Client, id string) {
+  r.mu.Lock()
+  defer r.mu.Unlock()
+  if _, ok := r.clients[c]; !ok { return }
+  if r.chamas == nil { return }
+  s := r.chamas[id]
+  if s == nil || !s.active { return }
+  s.acks++
+  r.broadcastChamaLocked(s)
+}
+
+func (r *Room) ChamaEnd(c *Client, id string) {
+  r.mu.Lock()
+  defer r.mu.Unlock()
+  if _, ok := r.clients[c]; !ok { return }
+  if r.chamas == nil { return }
+  s := r.chamas[id]
+  if s == nil || !s.active { return }
+  s.active = false
+  r.broadcastChamaLocked(s)
+}
+
+func (r *Room) broadcastChamaLocked(s *chamaState) {
+  d := protocol.ChamaStateData{ID: s.id, Text: s.text, Active: s.active, Acks: s.acks}
+  for c := range r.clients { c.enqueueControl(protocol.CtrlChamaState, d) }
 }
 
 // ClipsTestInit ensures clip maps exist (test helper).

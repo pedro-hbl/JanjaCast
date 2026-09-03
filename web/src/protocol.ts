@@ -47,6 +47,14 @@ export type ControlType =
   | "placar_vote"
   | "placar_close"
   | "placar_state"
+  | "bolao_start"
+  | "bolao_vote"
+  | "bolao_resolve"
+  | "bolao_state"
+  | "chama_start"
+  | "chama_ack"
+  | "chama_end"
+  | "chama_state"
   | "error";
 
 export type OutboundControlType =
@@ -66,7 +74,13 @@ export type OutboundControlType =
   | "stage_extend"
   | "cinema_pause"
   | "cinema_resume"
-  | "cinema_stroke";
+  | "cinema_stroke"
+  | "bolao_start"
+  | "bolao_vote"
+  | "bolao_resolve"
+  | "chama_start"
+  | "chama_ack"
+  | "chama_end";
 
 export interface ClipReadyData {
   url: string;
@@ -180,6 +194,18 @@ export interface StingerAsset {
 export interface PlacarCreateData { prompt: string }
 export interface PlacarVoteData { targetUserId: string; delta: number }
 export interface PlacarStateData { active: boolean; prompt: string; scores: Record<string, number> }
+
+// bolao
+export interface BolaoStartData { id: string; prompt: string }
+export interface BolaoVoteData { id: string; vote: "yes" | "no" }
+export interface BolaoResolveData { id: string; result: "yes" | "no" }
+export interface BolaoStateData { id: string; prompt: string; open: boolean; yes: number; no: number; result?: "yes" | "no" }
+
+// chama
+export interface ChamaStartData { id: string; text: string }
+export interface ChamaAckData { id: string }
+export interface ChamaEndData { id: string }
+export interface ChamaStateData { id: string; text: string; active: boolean; acks?: number }
 
 /** GET /api/stingers. */
 export interface StingerListData {
