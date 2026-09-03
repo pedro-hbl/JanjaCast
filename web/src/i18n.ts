@@ -185,6 +185,8 @@ const en = {
   "err.cinema.notPublisher": "⛔ Only the person sharing can pause.",
   "err.cinema.rateLimited": "⛔ Easy! You're drawing too fast.",
   "err.cinema.badStroke": "⛔ That stroke didn't go through — try a shorter one.",
+  "err.assist.cooldown": "⛔ Hold on — wait a moment before pointing again.",
+  "err.assist.bounds": "⛔ That point is off-screen.",
 
   // --- takeover modal ----------------------------------------------
   "modal.kick": "✋ Kick {name} off the stage?",
@@ -288,6 +290,7 @@ const en = {
   "lobby.alone": "Just you for now",
   
   // --- instant clips -------------------------------------------------
+  "assist.button": "Deixa comigo â point at the screen",
   "replay.button": "Quem entrou? â replay the last stretch",
   "replay.title": "Who came in?",
   "replay.noJoins": "Nobody new in this stretch",
@@ -459,6 +462,8 @@ const ptBR: Record<MessageKey, Message> = {
   "err.cinema.notPublisher": "⛔ Só quem tá transmitindo pode pausar.",
   "err.cinema.rateLimited": "⛔ Calma! Você tá desenhando rápido demais.",
   "err.cinema.badStroke": "⛔ Esse traço não foi — tenta um mais curto.",
+  "err.assist.cooldown": "⛔ Calma — espera um pouquinho antes de apontar de novo.",
+  "err.assist.bounds": "⛔ Esse ponto ficou fora da tela.",
 
   "modal.kick": "✋ Tirar {name} do palco?",
   "modal.yes": "Bora, minha vez",
@@ -559,6 +564,7 @@ const ptBR: Record<MessageKey, Message> = {
   "lobby.alone": "Só você por enquanto",
   
   // --- clipe instantâneo --------------------------------------------
+  "assist.button": "Deixa comigo â aponta na tela",
   "replay.button": "Quem entrou? â rever o Ãºltimo trecho",
   "replay.title": "Quem entrou?",
   "replay.noJoins": "NinguÃ©m novo nesse trecho",

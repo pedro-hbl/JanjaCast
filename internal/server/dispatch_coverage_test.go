@@ -43,8 +43,10 @@ var serverToClientOnly = map[string]bool{
 	"CtrlRoomPhase":        true,
 	"CtrlAwardsReady":      true,
 	"CtrlClipReady":        true,
-	"CtrlReplayReady":      true,
-	"CtrlError":            true,
+  "CtrlReplayReady":      true,
+  // Assist show is server->publisher only (unicast). Client never sends it.
+  "CtrlAssistShow":       true,
+  "CtrlError":            true,
 	"CtrlJoin":             true, // consumed by handleWS before the switch
 	// Jukebox probe messages are server-originated fan-outs only.
 	"CtrlJukeboxQueue": true,

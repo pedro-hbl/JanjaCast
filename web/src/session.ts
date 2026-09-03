@@ -211,6 +211,8 @@ export class Session {
   /** A 90s replay is cut and waiting: fetch /clip/{token} and its
    *  /events.json sidecar while the 2min TTL lasts. */
   onReplayReady: ((d: { token: string; expiresMs: number }) => void) | null = null;
+  /** Publisher side: a viewer pointed at the screen — draw the arrow. */
+  onAssistShow: ((d: { x: number; y: number; userId: string; username: string; ttlMs: number }) => void) | null = null;
 
   constructor(
     private identity: Identity,
@@ -365,6 +367,9 @@ export class Session {
   /** "Quem entrou?" — ask the relay to cut the last ~90s plus the room's
    *  event timeline. Answered with replay_ready. */
   requestReplay(seconds = 90): void { this.sendControl("replay_request" as any, { seconds }); }
+
+  /** Viewer side: point at a spot on the picture (normalized 0..1). */
+  sendAssistPoint(x: number, y: number): void { this.sendControl("assist_point" as any, { x, y }); }
 
   /** Local-only undo: hide this client's most recent stroke. There is no
    *  cinema_undo on the wire, so a later full `cinema_state` (pause/resume)
@@ -549,6 +554,11 @@ export class Session {
       case "clip_ready": {
         const d = ctrl.data as { url: string; expiresMs: number };
         if (d && typeof d.url === "string") this.onClipReady?.(d);
+        break;
+      }
+      case "assist_show": {
+        const d = ctrl.data as { x: number; y: number; userId: string; username: string; ttlMs: number };
+        this.onAssistShow?.(d);
         break;
       }
       case "replay_ready": {

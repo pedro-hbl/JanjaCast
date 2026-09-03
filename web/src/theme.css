@@ -2249,3 +2249,13 @@ label.fps-label {
 .replay-heat { display: flex; align-items: flex-end; gap: 3px; height: 30px; margin-bottom: 8px; }
 .heat-bar { width: 8px; background: var(--redorange); border-radius: 2px 2px 0 0; opacity: 0.85; }
 .replay-actions { display: flex; gap: 6px; }
+
+/* ---- "Deixa comigo" assist pointers ---- */
+.stage--aiming { cursor: crosshair; }
+.fs-btn--armed { outline: 3px solid var(--crayon-blue); }
+.assist-layer { position: absolute; inset: 0; pointer-events: none; z-index: 7; }
+.assist-arrow { position: absolute; transform: translate(-6px, -50%); display: flex; align-items: center; gap: 4px; animation: assist-in 220ms ease-out, assist-out 600ms ease-in 3.2s forwards; }
+.assist-glyph { font-size: 28px; filter: drop-shadow(1px 2px 0 rgba(0,0,0,.35)); }
+.assist-name { font-family: var(--font-hand); font-size: var(--step--1); background: var(--surface-2); border: 2px solid var(--outline); border-radius: var(--wobble-sm); padding: 0 6px; }
+@keyframes assist-in { from { transform: translate(-6px,-50%) scale(0.4) rotate(-14deg); opacity: 0; } to { transform: translate(-6px,-50%) scale(1) rotate(0); opacity: 1; } }
+@keyframes assist-out { to { opacity: 0; } }

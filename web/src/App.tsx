@@ -189,6 +189,11 @@ const App: Component = () => {
   const [clipWorking, setClipWorking] = createSignal(false);
   // "Quem entrou?" replay: token + fetched event timeline for the panel.
   const [replayTok, setReplayTok] = createSignal<string | null>(null);
+  // "Deixa comigo": one armed tap sends a pointer; the publisher sees crayon
+  // arrows that fade on their own (TTL) — nothing ever lingers on the video.
+  const [aiming, setAiming] = createSignal(false);
+  const [arrows, setArrows] = createSignal<Array<{ id: number; x: number; y: number; name: string }>>([]);
+  let arrowSeq = 0;
   const [replayEvents, setReplayEvents] = createSignal<Array<{ type: string; user?: string; density?: number; at: number }>>([]);
   const [clipUrl, setClipUrl] = createSignal<string | null>(null);
   const [clipExpires, setClipExpires] = createSignal<number | null>(null);
@@ -610,6 +615,11 @@ const App: Component = () => {
         setClipWorking(false);
         setClipUrl(d.url);
         setClipExpires(d.expiresMs);
+      };
+      s.onAssistShow = (d) => {
+        const id = ++arrowSeq;
+        setArrows((xs) => [...xs, { id, x: d.x, y: d.y, name: d.username }]);
+        setTimeout(() => setArrows((xs) => xs.filter((a) => a.id !== id)), d.ttlMs || 4000);
       };
       s.onReplayReady = (d) => {
         setReplayTok(d.token);
@@ -1039,9 +1049,19 @@ const App: Component = () => {
 
       <main class="app-main">
         <div
-          class="stage"
+          class={aiming() ? "stage stage--aiming" : "stage"}
           ref={stageRef}
           onDblClick={() => void toggleFullscreen()}
+          onClick={(e) => {
+            if (!aiming()) return;
+            e.stopPropagation();
+            setAiming(false);
+            const r = canvasRef.getBoundingClientRect();
+            if (!r.width || !r.height) return;
+            const x = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width));
+            const y = Math.min(1, Math.max(0, (e.clientY - r.top) / r.height));
+            session()?.sendAssistPoint(x, y);
+          }}
         >
           <Show
             when={
@@ -1090,6 +1110,21 @@ const App: Component = () => {
                 </button>
               </div>
               <ScribbleSVG />
+            </div>
+          </Show>
+          {/* Assist arrows: the "vai na TERCEIRA opção" made visible. Only
+              the publisher renders them, they ride a short TTL, and they are
+              chrome over the sharer's own view — viewers never see them. */}
+          <Show when={session()?.ownsStage() || capture()}>
+            <div class="assist-layer" aria-hidden="true">
+              <For each={arrows()}>
+                {(a) => (
+                  <div class="assist-arrow" style={{ left: `${a.x * 100}%`, top: `${a.y * 100}%` }}>
+                    <span class="assist-glyph">👉</span>
+                    <span class="assist-name">{a.name}</span>
+                  </div>
+                )}
+              </For>
             </div>
           </Show>
           {/* Stinger overlay: inside .stage so fullscreen/theater show it;
@@ -1177,6 +1212,15 @@ const App: Component = () => {
             onClick={() => session()?.requestReplay(90)}
           >
             ⏪
+          </button>
+          {/* "Deixa comigo" — arm one tap that points for the streamer. */}
+          <button
+            class={aiming() ? "fs-btn fs-btn--assist fs-btn--armed" : "fs-btn fs-btn--assist"}
+            title={t("assist.button")}
+            aria-pressed={aiming()}
+            onClick={() => setAiming((v) => !v)}
+          >
+            👉
           </button>
         </Show>
         {/* Clip ready toast with external-open to escape CSP */}
