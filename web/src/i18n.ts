@@ -298,6 +298,17 @@ const en = {
   "clip.download": "Download",
   "clip.cooldown": "Hang on a sec",
   "clip.expired": "That clip expired",
+  
+  // --- captions -------------------------------------------------------
+  "caption.placeholder": "Type a caption and hit Enter",
+  "caption.enable": "Enable captions",
+  "caption.disable": "Disable captions",
+  
+  // --- jukebox --------------------------------------------------------
+  "jukebox.title": "Jukebox",
+  "jukebox.by": "requested by {name}",
+  "jukebox.approve": "Approve",
+  "jukebox.request_asset": "Request: {title}",
 } satisfies Record<string, Message>;
 
 export type MessageKey = keyof typeof en;
@@ -555,6 +566,17 @@ const ptBR: Record<MessageKey, Message> = {
   "clip.download": "Baixar",
   "clip.cooldown": "Calma aí, já já",
   "clip.expired": "Esse clipe expirou",
+  
+  // --- legendas -------------------------------------------------------
+  "caption.placeholder": "Escreve a legenda e dá Enter",
+  "caption.enable": "Ligar legendas",
+  "caption.disable": "Desligar legendas",
+  
+  // --- jukebox --------------------------------------------------------
+  "jukebox.title": "Jukebox",
+  "jukebox.by": "pedido por {name}",
+  "jukebox.approve": "Aprovar",
+  "jukebox.request_asset": "Pedir: {title}",
 };
 
 const dictionaries: Record<Locale, Record<MessageKey, Message>> = {

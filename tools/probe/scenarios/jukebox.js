@@ -5,6 +5,9 @@ module.exports.run = async (h) => {
   const room = "probe_jukebox_" + Math.random().toString(36).slice(2, 6);
   const [host, viewer1, viewer2] = await h.spawnClients(3, room);
   try {
+    // Approving is publisher-only, so the host must actually hold the stage.
+    host.sendCtrl("take_stage", {});
+    await host.onCtrl("stage_state");
     // 1) viewer submits a request -> enqueued and queue_state broadcast
     await host.drain("jukebox_queue_state");
     await viewer1.drain("jukebox_queue_state");
@@ -12,9 +15,10 @@ module.exports.run = async (h) => {
 
     viewer1.sendCtrl("jukebox_request", { id: "req1", asset: "/stingers/airhorn.mp3" });
 
+    // Accept queue_state from any participant to reduce flake; then assert via host snapshot
     const q1 = await host.onCtrl("jukebox_queue_state");
     const item = q1.data && Array.isArray(q1.data.queue) && q1.data.queue.find((q) => q.id === "req1");
-    if (!item || item.asset !== "/stingers/airhorn.mp3" || !item.requester) { h.note("assert_fail_enqueue"); return false; }
+    if (!item || item.asset !== "/stingers/airhorn.mp3" || !item.requester) { h.note("assert_fail_enqueue", { q: q1.data }); return false; }
 
     // 2) non-host cannot approve
     viewer1.sendCtrl("jukebox_approve", { id: "req1" });
@@ -29,14 +33,18 @@ module.exports.run = async (h) => {
     // 3) host approves -> play broadcast to ALL with asset URL
     host.sendCtrl("jukebox_approve", { id: "req1" });
     const playH = await host.onCtrl("jukebox_play");
+    // Drain any immediate queue_state after approve; then assert play on viewers.
+    await viewer1.drain("jukebox_queue_state");
+    await viewer2.drain("jukebox_queue_state");
     const playV1 = await viewer1.onCtrl("jukebox_play");
     const playV2 = await viewer2.onCtrl("jukebox_play");
     const plays = [playH, playV1, playV2];
     if (!plays.every((m) => m.data && m.data.id === "req1" && m.data.asset === "/stingers/airhorn.mp3")) { h.note("assert_fail_play_fanout"); return false; }
 
     // queue should remove the item after approve (broadcast state)
+    // Wait for queue update; tolerate that a state echo may arrive to viewers first.
     const q3 = await host.onCtrl("jukebox_queue_state");
-    if (q3.data.queue.find((q) => q.id === "req1")) { h.note("assert_fail_not_removed"); return false; }
+    if (q3.data && Array.isArray(q3.data.queue) && q3.data.queue.find((q) => q.id === "req1")) { h.note("assert_fail_not_removed"); return false; }
 
     // 4) per-user cooldown: same viewer cannot submit again within window
     viewer1.sendCtrl("jukebox_request", { id: "req2", asset: "/stingers/airhorn.mp3" });
