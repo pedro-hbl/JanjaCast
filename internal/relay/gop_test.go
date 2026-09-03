@@ -1,12 +1,12 @@
 package relay
 
 import (
-    "bytes"
-    "sync"
-    "testing"
-    "time"
+	"bytes"
+	"sync"
+	"testing"
+	"time"
 
-    "github.com/pedro-hbl/janjacast/internal/protocol"
+	"github.com/pedro-hbl/janjacast/internal/protocol"
 )
 
 func TestLateJoinerGetsGOPReplay(t *testing.T) {
@@ -141,44 +141,58 @@ func TestTruncatedGOPReplayKeepsNeedKeyframe(t *testing.T) {
 // span between first and last cached chunks stays bounded after many seconds
 // of stream time (since only the latest GOP survives).
 func TestClipBufferKeyframeBoundary(t *testing.T) {
-    hub := NewHub(discard())
-    room, alice, _ := hub.Join("r1", "a", "alice")
-    room.TakeStage(alice)
-    start := time.Now()
-    // 40 seconds, keyframe every 5s, small payloads.
-    for s := 0; s < 40; s++ {
-        isKF := s%5 == 0
-        msg := make([]byte, protocol.HeaderSize+64)
-        msg[0] = protocol.KindVideo
-        if isKF { msg[1] = protocol.FlagKeyframe }
-        // temporal id 0
-        ts := start.Add(time.Duration(s) * time.Second).UnixMicro()
-        msg[5] = byte(ts >> 56)
-        msg[6] = byte(ts >> 48)
-        msg[7] = byte(ts >> 40)
-        msg[8] = byte(ts >> 32)
-        msg[9] = byte(ts >> 24)
-        msg[10] = byte(ts >> 16)
-        msg[11] = byte(ts >> 8)
-        msg[12] = byte(ts)
-        room.ForwardMedia(alice, msg)
-    }
-    if len(room.gop) == 0 { t.Fatal("empty GOP cache") }
-    first, err := protocol.ParseMediaHeader(room.gop[0])
-    if err != nil { t.Fatalf("bad header: %v", err) }
-    if !first.Keyframe() { t.Fatalf("first cached chunk not keyframe") }
-    last, _ := protocol.ParseMediaHeader(room.gop[len(room.gop)-1])
-    span := time.Duration(int64(last.Timestamp-first.Timestamp)) * time.Microsecond
-    if span > 12*time.Second { t.Fatalf("span too large: %v", span) }
-    // Bytes bound: single GOP should be well under cap.
-    if room.gopBytes <= 0 || room.gopBytes > maxGOPBytes {
-        t.Fatalf("gopBytes out of bounds: %d", room.gopBytes)
-    }
-    // Chunks are contiguous in time and all video.
-    for i, b := range room.gop {
-        h, err := protocol.ParseMediaHeader(b)
-        if err != nil { t.Fatalf("parse %d: %v", i, err) }
-        if h.Kind != protocol.KindVideo { t.Fatalf("non-video in GOP at %d", i) }
-    }
-    _ = bytes.MinRead // silence unused import on old Go
+	hub := NewHub(discard())
+	room, alice, _ := hub.Join("r1", "a", "alice")
+	room.TakeStage(alice)
+	start := time.Now()
+	// 40 seconds, keyframe every 5s, small payloads.
+	for s := 0; s < 40; s++ {
+		isKF := s%5 == 0
+		msg := make([]byte, protocol.HeaderSize+64)
+		msg[0] = protocol.KindVideo
+		if isKF {
+			msg[1] = protocol.FlagKeyframe
+		}
+		// temporal id 0
+		ts := start.Add(time.Duration(s) * time.Second).UnixMicro()
+		msg[5] = byte(ts >> 56)
+		msg[6] = byte(ts >> 48)
+		msg[7] = byte(ts >> 40)
+		msg[8] = byte(ts >> 32)
+		msg[9] = byte(ts >> 24)
+		msg[10] = byte(ts >> 16)
+		msg[11] = byte(ts >> 8)
+		msg[12] = byte(ts)
+		room.ForwardMedia(alice, msg)
+	}
+	if len(room.slots[0].gop) == 0 {
+		t.Fatal("empty GOP cache")
+	}
+	first, err := protocol.ParseMediaHeader(room.slots[0].gop[0])
+	if err != nil {
+		t.Fatalf("bad header: %v", err)
+	}
+	if !first.Keyframe() {
+		t.Fatalf("first cached chunk not keyframe")
+	}
+	last, _ := protocol.ParseMediaHeader(room.slots[0].gop[len(room.slots[0].gop)-1])
+	span := time.Duration(int64(last.Timestamp-first.Timestamp)) * time.Microsecond
+	if span > 12*time.Second {
+		t.Fatalf("span too large: %v", span)
+	}
+	// Bytes bound: single GOP should be well under cap.
+	if room.slots[0].gopBytes <= 0 || room.slots[0].gopBytes > maxGOPBytes {
+		t.Fatalf("gopBytes out of bounds: %d", room.slots[0].gopBytes)
+	}
+	// Chunks are contiguous in time and all video.
+	for i, b := range room.slots[0].gop {
+		h, err := protocol.ParseMediaHeader(b)
+		if err != nil {
+			t.Fatalf("parse %d: %v", i, err)
+		}
+		if h.Kind != protocol.KindVideo {
+			t.Fatalf("non-video in GOP at %d", i)
+		}
+	}
+	_ = bytes.MinRead // silence unused import on old Go
 }
