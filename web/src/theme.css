@@ -2273,3 +2273,11 @@ label.fps-label {
 
 /* the aposta composer's little input (was varal-input before that shipped out) */
 .aposta-input { flex: 1; min-width: 80px; max-width: 260px; border: 3px solid var(--outline); border-radius: var(--wobble-sm); padding: 3px 8px; font-family: var(--font-hand); background: var(--surface-2); }
+
+/* ---- compositor polish (wave R, package 4) ----
+   The canvas gets its own composited layer and paint containment so Solid
+   re-renders in the chrome can never trigger a repaint of the picture; the
+   sidebar's long scrollers skip layout/paint for offscreen rows. */
+.stage-canvas { contain: layout paint; will-change: transform; }
+.stage { contain: layout; }
+.roster, .queue-panel { content-visibility: auto; contain-intrinsic-size: auto 200px; }
