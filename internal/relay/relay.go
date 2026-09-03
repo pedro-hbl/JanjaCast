@@ -230,6 +230,14 @@ func (h *Hub) Join(roomID, userID, username string) (*Room, *Client, iter.Seq[Ou
 	r.clients[c] = struct{}{}
 	r.broadcastRoomStateLocked()
 	r.log.Info("joined", "user", username, "id", userID)
+	// The replay timeline: a join is a real room event. Bounded like the
+	// probe path; caller already holds r.mu.
+	if len(r.probeEvents) >= 200 {
+		r.probeEvents = r.probeEvents[1:]
+	}
+	r.probeEvents = append(r.probeEvents, map[string]any{
+		"type": "join", "user": username, "at": time.Now().UnixMilli(),
+	})
 
 	// The sequence drains queued messages before honoring done, so nothing
 	// already accepted is dropped on the floor at disconnect.
@@ -437,8 +445,13 @@ type Room struct {
 	clipStartTs int64 // microseconds of first chunk in clipBuf; 0 when empty
 	// clip store: token -> bytes with expiry and content type. Guarded by mu.
 	clips map[string]clipItem
+	// sidecar events per clip token (served as JSON next to /clip/{token}).
+	clipEvents map[string][]byte
 	// per-client cooldown for clip requests.
 	lastClipAsk map[*Client]time.Time
+
+	// probe-only: recent synthetic room events to export as replay sidecar
+	probeEvents []map[string]any
 
 	// --- bolao (prediction), guarded by mu ---------------------------------
 	boloes map[string]*bolaoState
@@ -1438,6 +1451,12 @@ func (r *Room) ForwardControl(from *Client, t protocol.ControlType, data any) {
 				for c := range r.clients {
 					c.enqueueControl(protocol.CtrlReactionBurst, burst)
 				}
+				if len(r.probeEvents) >= 200 {
+					r.probeEvents = r.probeEvents[1:]
+				}
+				r.probeEvents = append(r.probeEvents, map[string]any{
+					"type": "reaction_burst", "density": i, "at": time.Now().UnixMilli(),
+				})
 				// Auto-storm trigger: density threshold and 20s cooldown.
 				if i >= 15 {
 					r.maybeStormLocked()
@@ -2031,6 +2050,68 @@ func (r *Room) RequestClip(c *Client) {
 	// Relay-origin URL path; actual host determined by client.
 	url := "/clip/" + token
 	c.enqueueControl(protocol.CtrlClipReady, protocol.ClipReadyData{URL: url, ExpiresMs: time.Now().Add(2 * time.Minute).UnixMilli()})
+}
+
+// RequestReplay handles a client's replay request (90s variant). For now we
+// reuse the same rolling clip buffer and framing; room sidecar events, when
+// present, are exposed via Server's /clip/{token}/events.json.
+func (r *Room) RequestReplay(c *Client, seconds int) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.clients[c]; !ok {
+		return
+	}
+	if len(r.clipBuf) == 0 {
+		return
+	}
+	if seconds <= 0 {
+		seconds = 90
+	}
+	if seconds > 90 {
+		seconds = 90
+	}
+	data := r.buildRawClipLocked()
+	token := r.mintClipTokenLocked(data, "application/octet-stream", 2*time.Minute)
+	// Attach probe events snapshot as JSON sidecar under the same token.
+	if r.clipEvents == nil {
+		r.clipEvents = make(map[string][]byte)
+	}
+	if len(r.probeEvents) > 0 {
+		if b, err := json.Marshal(r.probeEvents); err == nil {
+			r.clipEvents[token] = b
+		} else {
+			r.clipEvents[token] = []byte("[]")
+		}
+	} else {
+		r.clipEvents[token] = []byte("[]")
+	}
+	c.enqueueControl(protocol.CtrlReplayReady, protocol.ReplayReadyData{
+		Token:     token,
+		ExpiresMs: int64(2 * time.Minute / time.Millisecond),
+	})
+}
+
+// GetClipEvents returns an empty sidecar by default; server may attach.
+func (r *Room) GetClipEvents(token string) ([]byte, bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if it, ok := r.clips[token]; ok && time.Now().Before(it.expiresAt) {
+		if b, ok2 := r.clipEvents[token]; ok2 {
+			out := append([]byte(nil), b...)
+			return out, true
+		}
+	}
+	return nil, false
+}
+
+// AppendProbeEvent records a synthetic event into the room timeline (probe-only).
+func (r *Room) AppendProbeEvent(ev map[string]any) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if len(r.probeEvents) >= 200 {
+		r.probeEvents = r.probeEvents[1:]
+	}
+	r.probeEvents = append(r.probeEvents, ev)
 }
 
 func (r *Room) broadcastCinemaStateLocked() {

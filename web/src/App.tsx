@@ -184,6 +184,9 @@ const App: Component = () => {
   }>({ fps: 0, kbps: 0 });
   // Clip UI state
   const [clipWorking, setClipWorking] = createSignal(false);
+  // "Quem entrou?" replay: token + fetched event timeline for the panel.
+  const [replayTok, setReplayTok] = createSignal<string | null>(null);
+  const [replayEvents, setReplayEvents] = createSignal<Array<{ type: string; user?: string; density?: number; at: number }>>([]);
   const [clipUrl, setClipUrl] = createSignal<string | null>(null);
   const [clipExpires, setClipExpires] = createSignal<number | null>(null);
 
@@ -604,6 +607,13 @@ const App: Component = () => {
         setClipWorking(false);
         setClipUrl(d.url);
         setClipExpires(d.expiresMs);
+      };
+      s.onReplayReady = (d) => {
+        setReplayTok(d.token);
+        void fetch(apiPath(`/clip/${d.token}/events.json`))
+          .then((r) => (r.ok ? r.json() : []))
+          .then((evs) => setReplayEvents(Array.isArray(evs) ? evs : []))
+          .catch(() => setReplayEvents([]));
       };
       // Somebody was called to the stage. The cue is room-wide on purpose —
       // "é tua!" is something the whole call hears, the way it would be said
@@ -1127,6 +1137,14 @@ const App: Component = () => {
           >
             {clipWorking() ? "⏳" : "🎬"}
           </button>
+          {/* "Quem entrou?" — replay the last stretch for late arrivals. */}
+          <button
+            class="fs-btn fs-btn--replay"
+            title={t("replay.button")}
+            onClick={() => session()?.requestReplay(90)}
+          >
+            ⏪
+          </button>
         </Show>
         {/* Clip ready toast with external-open to escape CSP */}
         <Show when={clipUrl()}>
@@ -1235,6 +1253,49 @@ const App: Component = () => {
               )}
             </For>
           </div>
+
+          {/* "Quem entrou?" replay panel — margin UI, never over the stage.
+              A joins list (the literal answer), a hype heatmap from the
+              event timeline, and the 90s cut as a real file. */}
+          <Show when={replayTok()}>
+            <div class="replay-panel">
+              <h5 class="replay-title">{t("replay.title")}</h5>
+              <div class="replay-joins">
+                <For each={replayEvents().filter((e) => e.type === "join").slice(-6)}>
+                  {(e) => <span class="replay-join">{e.user}</span>}
+                </For>
+                <Show when={!replayEvents().some((e) => e.type === "join")}>
+                  <span class="replay-join replay-join--none">{t("replay.noJoins")}</span>
+                </Show>
+              </div>
+              <div class="replay-heat" aria-label={t("replay.heatLabel")}>
+                {(() => {
+                  const bursts = replayEvents().filter((e) => e.type === "reaction_burst");
+                  if (!bursts.length) return <span class="replay-join--none">{t("replay.quiet")}</span>;
+                  const t0 = bursts[0]!.at;
+                  const buckets = new Array<number>(12).fill(0);
+                  for (const b of bursts) {
+                    const i = Math.min(11, Math.floor((b.at - t0) / 7500));
+                    buckets[i] = Math.max(buckets[i]!, b.density ?? 1);
+                  }
+                  const max = Math.max(...buckets, 1);
+                  return buckets.map((v) => (
+                    <span class="heat-bar" style={{ height: `${6 + (v / max) * 22}px` }} />
+                  ));
+                })()}
+              </div>
+              <div class="replay-actions">
+                <button class="crayon-btn" onClick={async () => {
+                  const tok = replayTok(); if (!tok) return;
+                  try { const { downloadClip } = await import("./clipmux"); await downloadClip(`/clip/${tok}`); }
+                  catch { await openExternal(apiPath(`/clip/${tok}`)); }
+                }}>{t("replay.download")}</button>
+                <button class="crayon-btn crayon-btn--chalk" onClick={() => { setReplayTok(null); setReplayEvents([]); }}>
+                  {t("replay.close")}
+                </button>
+              </div>
+            </div>
+          </Show>
 
           {/* Placar panel — margin UI under roster; never over the stage. */}
           <Show when={placarActive()}>

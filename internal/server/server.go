@@ -126,6 +126,8 @@ func New(cfg Config, log *slog.Logger) *Server {
 	s.mux.HandleFunc("GET /api/config", s.handleConfig)
 	// Clip serving: relay-origin, tokenized.
 	s.mux.HandleFunc("GET /clip/{token}", s.handleClip)
+	// Sidecar for replay events: /clip/{token}/events.json
+	s.mux.HandleFunc("GET /clip/{token}/events.json", s.handleClipEvents)
 	s.mux.HandleFunc("GET /ws", s.handleWS)
 	s.mux.HandleFunc("GET /awards/{id}", s.handleAwards)
 
@@ -600,6 +602,15 @@ func (s *Server) handleControl(room *relay.Room, client *relay.Client, data []by
 	if err := json.Unmarshal(data, &ctrl); err != nil {
 		return
 	}
+	// Synthetic timeline events for the wire probe — anonymous dev servers
+	// only, so production rooms can never have their replay sidecar polluted.
+	if ctrl.Type == protocol.ControlType("probe_room_event") && s.cfg.AllowAnon {
+		var m map[string]any
+		if err := json.Unmarshal(ctrl.Data, &m); err == nil {
+			room.AppendProbeEvent(m)
+		}
+		return
+	}
 	switch ctrl.Type {
 	case protocol.CtrlTakeStage:
 		room.TakeStage(client)
@@ -753,6 +764,11 @@ func (s *Server) handleControl(room *relay.Room, client *relay.Client, data []by
 		}
 	case protocol.CtrlClip:
 		room.RequestClip(client)
+	case protocol.CtrlReplay:
+		var d protocol.ReplayRequestData
+		if err := json.Unmarshal(ctrl.Data, &d); err == nil {
+			room.RequestReplay(client, d.Seconds)
+		}
 	// --- jukebox ---------------------------------------------------------
 	case protocol.CtrlJukeboxRequest:
 		var d protocol.JukeboxRequestData
@@ -774,7 +790,11 @@ func (s *Server) handleControl(room *relay.Room, client *relay.Client, data []by
 // handleClip serves a stored clip by token with throttling. Clips live in the
 // room state; we do not reveal whether the room exists.
 func (s *Server) handleClip(w http.ResponseWriter, r *http.Request) {
+	// Strip optional suffix like "/events.json" if misrouted here.
 	token := strings.TrimPrefix(r.URL.Path, "/clip/")
+	if i := strings.IndexByte(token, '/'); i >= 0 {
+		token = token[:i]
+	}
 	if token == "" {
 		http.NotFound(w, r)
 		return
@@ -802,6 +822,40 @@ func (s *Server) handleClip(w http.ResponseWriter, r *http.Request) {
 	// Serve outside of Hub.mu
 	w.Header().Set("Content-Type", mime)
 	w.Header().Set("Content-Disposition", "attachment; filename=\"janjacast-clip.jclp\"")
+	w.Header().Set("Cache-Control", "no-store")
+	_, _ = w.Write(data)
+}
+
+// handleClipEvents serves a JSON sidecar of events for a given clip token.
+func (s *Server) handleClipEvents(w http.ResponseWriter, r *http.Request) {
+	token := strings.TrimPrefix(r.URL.Path, "/clip/")
+	// expect {token}/events.json
+	if i := strings.IndexByte(token, '/'); i >= 0 {
+		token = token[:i]
+	}
+	if token == "" {
+		http.NotFound(w, r)
+		return
+	}
+	var data []byte
+	found := false
+	mu := s.hub.Mu()
+	mu.Lock()
+	for _, room := range s.hub.RoomsUnsafe() {
+		if b, ok := room.GetClipEvents(token); ok {
+			data = append([]byte(nil), b...)
+			found = true
+			break
+		}
+	}
+	mu.Unlock()
+	if !found {
+		// Return empty array to keep client simple; 200 aligns with probe.
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte("[]"))
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-store")
 	_, _ = w.Write(data)
 }

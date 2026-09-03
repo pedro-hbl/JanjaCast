@@ -207,6 +207,9 @@ export class Session {
   onPlacarState: ((d: { active: boolean; prompt: string; scores: Record<string, number> }) => void) | null = null;
   /** A clip is ready to download. */
   onClipReady: ((d: { url: string; expiresMs: number }) => void) | null = null;
+  /** A 90s replay is cut and waiting: fetch /clip/{token} and its
+   *  /events.json sidecar while the 2min TTL lasts. */
+  onReplayReady: ((d: { token: string; expiresMs: number }) => void) | null = null;
 
   constructor(
     private identity: Identity,
@@ -360,6 +363,10 @@ export class Session {
   sendReaction(emoji: string): void { this.sendControl("reaction" as any, { emoji }); }
   // Instant clip: viewer requests the relay to cut the last ~30s.
   requestClip(): void { this.sendControl("clip_request" as any, {}); }
+
+  /** "Quem entrou?" — ask the relay to cut the last ~90s plus the room's
+   *  event timeline. Answered with replay_ready. */
+  requestReplay(seconds = 90): void { this.sendControl("replay_request" as any, { seconds }); }
 
   /** Local-only undo: hide this client's most recent stroke. There is no
    *  cinema_undo on the wire, so a later full `cinema_state` (pause/resume)
@@ -544,6 +551,11 @@ export class Session {
       case "clip_ready": {
         const d = ctrl.data as { url: string; expiresMs: number };
         if (d && typeof d.url === "string") this.onClipReady?.(d);
+        break;
+      }
+      case "replay_ready": {
+        const d = ctrl.data as { token: string; expiresMs: number };
+        if (d && typeof d.token === "string") this.onReplayReady?.(d);
         break;
       }
       case "stage_taken": {

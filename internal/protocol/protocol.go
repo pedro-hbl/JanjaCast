@@ -83,6 +83,9 @@ const (
 	// CtrlClip asks the relay to cut an instant clip from the rolling buffer.
 	// No payload.
 	CtrlClip ControlType = "clip_request"
+	// CtrlReplay asks the relay for a short (≈90s) replay token cut from the
+	// rolling buffer. Payload declares seconds desired; server may cap.
+	CtrlReplay ControlType = "replay_request"
 	// CtrlKeyframeRequest asks the publisher for an immediate keyframe —
 	// sent by viewers stuck waiting (late join with no cache, drop-to-live)
 	// and by the relay itself when it starts dropping a viewer's video.
@@ -161,6 +164,8 @@ const (
 	// CtrlClipReady is a unicast reply to the requester with a relay-origin
 	// URL to download and the absolute expiry timestamp (Unix ms).
 	CtrlClipReady ControlType = "clip_ready"
+	// CtrlReplayReady mirrors clip_ready for replay.
+	CtrlReplayReady ControlType = "replay_ready"
 
 	// Server -> every room client: the stage queue plus the rodízio clock,
 	// in ONE message. One state broadcast rather than three keeps every
@@ -206,6 +211,18 @@ type Control struct {
 type ClipReadyData struct {
 	URL       string `json:"url"`
 	ExpiresMs int64  `json:"expiresMs"`
+}
+
+// ReplayReadyData answers a replay_request: fetch /clip/{token} for the raw
+// JCLP stream and /clip/{token}/events.json for the room timeline sidecar.
+type ReplayReadyData struct {
+	Token     string `json:"token"`
+	ExpiresMs int64  `json:"expiresMs"`
+}
+
+// ReplayRequestData is the payload of CtrlReplay.
+type ReplayRequestData struct {
+	Seconds int `json:"seconds"`
 }
 
 // JoinData is the payload of CtrlJoin. Exactly one credential is expected

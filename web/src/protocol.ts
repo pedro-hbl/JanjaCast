@@ -14,6 +14,7 @@ export type ControlType =
   | "config"
   | "ping"
   | "clip_request"
+  | "replay_request"
   | "pong"
   | "sync"
   | "keyframe_request"
@@ -26,6 +27,7 @@ export type ControlType =
   | "superseded"
   | "stinger"
   | "clip_ready"
+  | "replay_ready"
   | "stinger_play"
   | "blank"
   | "blank_state"
@@ -225,6 +227,11 @@ export interface StingerListData {
 export interface SyncData {
   captureTs: number;
   wallTs: number;
+}
+
+export interface ReplayReadyData {
+  token: string;
+  expiresMs: number;
 }
 
 export interface Control<T = unknown> {

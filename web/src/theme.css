@@ -2254,3 +2254,13 @@ label.fps-label {
   white-space: nowrap;
   border: 0;
 }
+
+/* ---- "Quem entrou?" replay panel (sidebar margin UI) ---- */
+.replay-panel { margin-top: 10px; padding: 8px 10px; background: var(--surface-2); border: 3px solid var(--outline); border-radius: var(--wobble-sm); box-shadow: var(--shadow-ink); }
+.replay-title { margin: 0 0 6px; font-family: var(--font-hand); font-size: var(--step-0); }
+.replay-joins { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 6px; }
+.replay-join { padding: 1px 6px; background: var(--hover-wash); border-radius: var(--wobble-sm); font-size: var(--step--1); }
+.replay-join--none { opacity: 0.7; font-size: var(--step--1); }
+.replay-heat { display: flex; align-items: flex-end; gap: 3px; height: 30px; margin-bottom: 8px; }
+.heat-bar { width: 8px; background: var(--redorange); border-radius: 2px 2px 0 0; opacity: 0.85; }
+.replay-actions { display: flex; gap: 6px; }
