@@ -79,6 +79,7 @@ class Harness {
         ...process.env,
         JANJACAST_ADDR: ":8102",
         JANJACAST_ALLOW_ANON: "1",
+        JANJACAST_TURN_LEN_MS: "1200", // short rodizio slots for probes
         // base64 of 32 zero bytes — a throwaway secret good enough for :8102
         JANJACAST_TOKEN_SECRET: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
       },

@@ -14,6 +14,7 @@ import (
 	"iter"
 	"log/slog"
 	"math/rand/v2"
+	"os"
 	"slices"
 	"strconv"
 	"strings"
@@ -61,9 +62,20 @@ const turnTTL = 20 * time.Second
 // the single "+5 min" they may spend. Both are fixed — the only choice this
 // feature exposes is livre vs rodízio (docs/design.md § 8, "settings creep").
 const (
-	rodizioTurn      = 20 * time.Minute
-	rodizioExtension = 5 * time.Minute
+	rodizioTurnDefault = 20 * time.Minute
+	rodizioExtension   = 5 * time.Minute
 )
+
+// rodizioTurn honors JANJACAST_TURN_LEN_MS when set (probe/dev only); the
+// product keeps its one fixed slot length (docs/design.md, settings creep).
+var rodizioTurn = func() time.Duration {
+	if v := os.Getenv("JANJACAST_TURN_LEN_MS"); v != "" {
+		if ms, err := strconv.Atoi(v); err == nil && ms > 0 {
+			return time.Duration(ms) * time.Millisecond
+		}
+	}
+	return rodizioTurnDefault
+}()
 
 // passCooldown keeps a jittery double-tap on "Passar a vez" from burning two
 // people's turns. Per room, because passing is a room-wide event.
@@ -470,6 +482,14 @@ type Room struct {
 	correnteTarget string
 	correnteGen    uint64
 	correnteVotes  map[string]string // base user id -> "vai" | "calma"
+
+	// --- attention (guarded by mu) ---------------------------------------
+	attentionHidden   map[string]bool // base user id -> reported hidden
+	lastAttentionEmit time.Time
+
+	// rodizioAutoGen guards the auto-pass timer the way turnGen guards
+	// stage turns; bumping it disarms any pending expiry.
+	rodizioAutoGen uint64
 }
 
 // rAwardsCallback is installed by the server layer to receive assembled
@@ -1010,6 +1030,7 @@ func (r *Room) TakeStage(c *Client) {
 	r.removeFromQueueLocked(c.UserID)
 	r.rodizioStart = time.Now()
 	r.rodizioExtended = false
+	r.armRodizioAutoPassLocked()
 	r.broadcastStageQueueLocked()
 	r.log.Info("stage taken", "user", c.Username)
 }
@@ -1255,6 +1276,7 @@ func (r *Room) ExtendStage(c *Client) (bool, string) {
 		return false, protocol.ErrAlreadyExt
 	}
 	r.rodizioExtended = true
+	r.armRodizioAutoPassLocked()
 	r.broadcastStageQueueLocked()
 	return true, ""
 }
@@ -1383,6 +1405,7 @@ func (r *Room) advanceTurnLocked() {
 func (r *Room) stopRodizioClockLocked() {
 	r.rodizioStart = time.Time{}
 	r.rodizioExtended = false
+	r.rodizioAutoGen++ // disarm any pending auto-pass
 }
 
 func (r *Room) modeLocked() string {
@@ -2356,6 +2379,87 @@ func (r *Room) CorrenteVote(c *Client, choice string) {
 			cl.enqueueControl(protocol.CtrlCorrenteCanceled, protocol.CorrenteCanceledData{Reason: "veto"})
 		}
 	}
+}
+
+// --- attention signal -------------------------------------------------------
+
+// AttentionReport folds one client visibility ping into the room aggregate
+// and, throttled to one emission per 5s, tells the publisher alone how many
+// of the room are actually looking. Optimistic default: whoever never
+// reported counts as watching.
+func (r *Room) AttentionReport(c *Client, visible bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.clients[c]; !ok {
+		return
+	}
+	if r.attentionHidden == nil {
+		r.attentionHidden = make(map[string]bool)
+	}
+	if visible {
+		delete(r.attentionHidden, baseID(c.UserID))
+	} else {
+		r.attentionHidden[baseID(c.UserID)] = true
+	}
+	now := time.Now()
+	if now.Sub(r.lastAttentionEmit) < 5*time.Second {
+		return
+	}
+	if r.publisher == nil {
+		return
+	}
+	r.lastAttentionEmit = now
+	people := make(map[string]struct{}, len(r.clients))
+	for cl := range r.clients {
+		people[baseID(cl.UserID)] = struct{}{}
+	}
+	total := len(people)
+	hidden := 0
+	for id := range r.attentionHidden {
+		if _, still := people[id]; still {
+			hidden++
+		}
+	}
+	r.publisher.enqueueControl(protocol.CtrlAttentionState, protocol.AttentionStateData{
+		Watching: total - hidden,
+		Total:    total,
+	})
+}
+
+// --- rodizio auto-pass ------------------------------------------------------
+
+// armRodizioAutoPassLocked schedules the hands-free handoff: when the slot
+// fully runs out in rodizio mode and the publisher never passed, the relay
+// passes for them — same pick, warmup, turn and free-the-stage path, no
+// cooldown (the clock IS the consent). Caller holds r.mu.
+func (r *Room) armRodizioAutoPassLocked() {
+	r.rodizioAutoGen++
+	gen := r.rodizioAutoGen
+	wait := rodizioTurn
+	if r.rodizioExtended {
+		wait = rodizioTurn + rodizioExtension - time.Since(r.rodizioStart)
+		if wait < 0 {
+			wait = 0
+		}
+	}
+	time.AfterFunc(wait, func() {
+		r.mu.Lock()
+		defer r.mu.Unlock()
+		if r.rodizioAutoGen != gen || r.publisher == nil || r.mode != protocol.ModeRodizio {
+			return
+		}
+		next, method, ok := r.pickNextLocked()
+		if !ok {
+			return // nobody to hand to; the publisher plays on
+		}
+		if nc := r.clientByIDLocked(next.UserID); nc != nil {
+			nc.enqueueControl(protocol.CtrlStageWarmup, protocol.StageWarmupData{UserID: next.UserID, Username: next.Username})
+		}
+		r.grantTurnLocked(next, method)
+		from := r.publisher.Username
+		r.leaveStageLocked()
+		r.log.Info("stage auto-passed", "from", from, "to", next.Username, "how", method)
+	})
 }
 
 // baseID strips the companion-tab suffix, yielding the person's identity.

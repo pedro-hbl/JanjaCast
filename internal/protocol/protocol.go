@@ -202,6 +202,11 @@ const (
 	CtrlCorrenteStarted  ControlType = "corrente_started"  // server -> all {target, targetName, by, endsAtMs}
 	CtrlCorrenteTally    ControlType = "corrente_tally"    // server -> all {vai, calma}
 	CtrlCorrenteCanceled ControlType = "corrente_canceled" // server -> all {reason}
+
+	// Attention signal: clients report tab visibility; the relay aggregates
+	// and tells the PUBLISHER alone whether the room is actually looking.
+	CtrlAttentionReport ControlType = "attention_report" // client -> server {visible}
+	CtrlAttentionState  ControlType = "attention_state"  // server -> publisher {watching, total}
 	// Varal (session memory board)
 	CtrlVaralPin    ControlType = "varal_pin"
 	CtrlVaralRemove ControlType = "varal_remove"
@@ -226,6 +231,17 @@ type Control struct {
 type ClipReadyData struct {
 	URL       string `json:"url"`
 	ExpiresMs int64  `json:"expiresMs"`
+}
+
+// AttentionReportData is one client visibility ping.
+type AttentionReportData struct {
+	Visible bool `json:"visible"`
+}
+
+// AttentionStateData is the aggregated look-count, publisher-only.
+type AttentionStateData struct {
+	Watching int `json:"watching"`
+	Total    int `json:"total"`
 }
 
 // CorrenteNominateData names who the publisher wants next.

@@ -2277,3 +2277,9 @@ label.fps-label {
 .corrente-banner { grid-column: 1 / -1; display: flex; align-items: center; gap: 10px; padding: 6px 12px; background: var(--surface-2); border: 3px solid var(--outline); border-radius: var(--wobble-sm); box-shadow: var(--shadow-ink); font-family: var(--font-hand); }
 .corrente-line { flex: 1; }
 .corrente-pick { border: 3px solid var(--outline); border-radius: var(--wobble-sm); background: var(--surface-2); font-family: var(--font-hand); padding: 3px 6px; max-width: 160px; }
+
+/* ---- attention pill + rodizio party hat ---- */
+.attn-pill { font-variant-numeric: tabular-nums; }
+.hat { position: relative; display: inline-flex; align-items: flex-end; justify-content: center; width: 30px; height: 34px; margin: 4px auto 0; overflow: hidden; border: 3px solid var(--outline); border-radius: var(--wobble-sm); background: var(--surface-2); }
+.hat-fill { position: absolute; left: 0; right: 0; bottom: 0; background: var(--grass); opacity: .5; transition: height 1s linear; }
+.hat-cone { position: relative; z-index: 1; font-size: 16px; line-height: 30px; }

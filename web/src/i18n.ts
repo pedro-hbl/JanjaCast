@@ -293,6 +293,8 @@ const en = {
   
   // --- instant clips -------------------------------------------------
   "assist.button": "Deixa comigo â point at the screen",
+  "attn.title": "How many are really watching",
+  "hat.title": "The slot is filling up â auto-pass when it brims",
   "corrente.pick": "Passar a Telaâ¦",
   "corrente.line": "â¡ {name} takes over in {s}s â speak now or cheer",
   "corrente.vai": "Vai!",
@@ -581,6 +583,8 @@ const ptBR: Record<MessageKey, Message> = {
   
   // --- clipe instantâneo --------------------------------------------
   "assist.button": "Deixa comigo â aponta na tela",
+  "attn.title": "Quantos tÃ£o olhando de verdade",
+  "hat.title": "O tempo tÃ¡ enchendo â passa sozinho quando transbordar",
   "corrente.pick": "Passar a Telaâ¦",
   "corrente.line": "â¡ {name} assume em {s}s â fala agora ou torce",
   "corrente.vai": "Vai!",
