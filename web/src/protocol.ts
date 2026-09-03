@@ -58,6 +58,9 @@ export type ControlType =
   | "chama_ack"
   | "chama_end"
   | "chama_state"
+  | "varal_pin"
+  | "varal_remove"
+  | "varal_state"
   // jukebox (probe-limited)
   | "jukebox_request"
   | "jukebox_approve"
@@ -84,6 +87,8 @@ export type OutboundControlType =
   | "cinema_pause"
   | "cinema_resume"
   | "cinema_stroke"
+  | "varal_pin"
+  | "varal_remove"
   | "bolao_start"
   | "bolao_vote"
   | "bolao_resolve"
@@ -209,6 +214,20 @@ export interface ChamaStartData { id: string; text: string }
 export interface ChamaAckData { id: string }
 export interface ChamaEndData { id: string }
 export interface ChamaStateData { id: string; text: string; active: boolean; acks?: number }
+
+// Varal (session memory board)
+export interface VaralFrame { dataUrl: string; publisher: string }
+export interface VaralQuote { text: string }
+export interface VaralPinData {
+  id: string;
+  kind: "frame" | "quote";
+  authorId: string;
+  ts: number;
+  frame?: VaralFrame;
+  quote?: VaralQuote;
+}
+export interface VaralRemoveData { id: string }
+export interface VaralStateData { pins: VaralPinData[] }
 
 /** GET /api/stingers. */
 export interface StingerListData {

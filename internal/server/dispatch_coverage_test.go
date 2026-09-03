@@ -36,6 +36,7 @@ var serverToClientOnly = map[string]bool{
 	"CtrlStageWarmup":      true, // unicast relay->next-in-line only
 	"CtrlStageCancel":      true,
 	"CtrlPlacarState":      true,
+	"CtrlVaralState":       true, // server->clients board broadcast + welcome backlog
 	"CtrlBolaoState":       true,
 	"CtrlChamaState":       true,
 	"CtrlCinemaState":      true,

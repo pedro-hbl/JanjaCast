@@ -187,6 +187,8 @@ const en = {
   "err.cinema.badStroke": "⛔ That stroke didn't go through — try a shorter one.",
   "err.assist.cooldown": "⛔ Hold on — wait a moment before pointing again.",
   "err.assist.bounds": "⛔ That point is off-screen.",
+  "err.varal.cooldown": "⛔ Too soon — wait a bit before pinning again.",
+  "err.varal.forbidden": "⛔ You can only remove your own pin.",
 
   // --- takeover modal ----------------------------------------------
   "modal.kick": "✋ Kick {name} off the stage?",
@@ -291,6 +293,10 @@ const en = {
   
   // --- instant clips -------------------------------------------------
   "assist.button": "Deixa comigo â point at the screen",
+  "varal.empty": "Nothing on the line yet â pin the first moment",
+  "varal.placeholder": "quote of the nightâ¦",
+  "varal.pinFrame": "Pin this exact frame",
+  "varal.remove": "Take it down",
   "replay.button": "Quem entrou? â replay the last stretch",
   "replay.title": "Who came in?",
   "replay.noJoins": "Nobody new in this stretch",
@@ -464,6 +470,8 @@ const ptBR: Record<MessageKey, Message> = {
   "err.cinema.badStroke": "⛔ Esse traço não foi — tenta um mais curto.",
   "err.assist.cooldown": "⛔ Calma — espera um pouquinho antes de apontar de novo.",
   "err.assist.bounds": "⛔ Esse ponto ficou fora da tela.",
+  "err.varal.cooldown": "⛔ Calma aí — espera um pouco antes de fixar de novo.",
+  "err.varal.forbidden": "⛔ Só dá pra remover o que você colocou.",
 
   "modal.kick": "✋ Tirar {name} do palco?",
   "modal.yes": "Bora, minha vez",
@@ -565,6 +573,10 @@ const ptBR: Record<MessageKey, Message> = {
   
   // --- clipe instantâneo --------------------------------------------
   "assist.button": "Deixa comigo â aponta na tela",
+  "varal.empty": "Varal vazio â pendura o primeiro momento",
+  "varal.placeholder": "frase da noiteâ¦",
+  "varal.pinFrame": "Pendurar esse frame",
+  "varal.remove": "Tirar do varal",
   "replay.button": "Quem entrou? â rever o Ãºltimo trecho",
   "replay.title": "Quem entrou?",
   "replay.noJoins": "NinguÃ©m novo nesse trecho",

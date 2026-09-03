@@ -188,12 +188,16 @@ const (
 	// Captions server -> clients.
 	CtrlCaptionBroadcast ControlType = "caption_broadcast"
 	CtrlCaptionState     ControlType = "caption_state"
-    CtrlCaptionClear     ControlType = "caption_clear"
+	CtrlCaptionClear     ControlType = "caption_clear"
 
-    // Assist pointers: viewers send a single normalized point; the server
-    // unicasts a short-lived hint to the current publisher only.
-    CtrlAssistPoint ControlType = "assist_point" // client -> server {x,y}
-    CtrlAssistShow  ControlType = "assist_show"  // server -> publisher {x,y,userId,username,ttlMs}
+	// Assist pointers: viewers send a single normalized point; the server
+	// unicasts a short-lived hint to the current publisher only.
+	CtrlAssistPoint ControlType = "assist_point" // client -> server {x,y}
+	CtrlAssistShow  ControlType = "assist_show"  // server -> publisher {x,y,userId,username,ttlMs}
+	// Varal (session memory board)
+	CtrlVaralPin    ControlType = "varal_pin"
+	CtrlVaralRemove ControlType = "varal_remove"
+	CtrlVaralState  ControlType = "varal_state"
 )
 
 const (
@@ -339,10 +343,10 @@ const (
 	ErrPassTooSoon = "stage.cooldown" // passing again inside the cooldown
 	// Captions
 	ErrCaptionRate = "caption.rateLimit"
-    ErrCaptionOff  = "caption.off"
-    // Assist errors
-    ErrAssistCooldown = "assist.cooldown"
-    ErrAssistBounds   = "assist.bounds"
+	ErrCaptionOff  = "caption.off"
+	// Assist errors
+	ErrAssistCooldown = "assist.cooldown"
+	ErrAssistBounds   = "assist.bounds"
 )
 
 // Captions wire shapes.
@@ -379,23 +383,23 @@ const (
 
 // Point is one 0..1 normalized point.
 type Point struct {
-    X float64 `json:"x"`
-    Y float64 `json:"y"`
+	X float64 `json:"x"`
+	Y float64 `json:"y"`
 }
 
 // AssistPointData is the payload of CtrlAssistPoint.
 type AssistPointData struct {
-    X float64 `json:"x"`
-    Y float64 `json:"y"`
+	X float64 `json:"x"`
+	Y float64 `json:"y"`
 }
 
 // AssistShowData is the payload of CtrlAssistShow.
 type AssistShowData struct {
-    X        float64 `json:"x"`
-    Y        float64 `json:"y"`
-    UserID   string  `json:"userId"`
-    Username string  `json:"username"`
-    TTLms    int     `json:"ttlMs"`
+	X        float64 `json:"x"`
+	Y        float64 `json:"y"`
+	UserID   string  `json:"userId"`
+	Username string  `json:"username"`
+	TTLms    int     `json:"ttlMs"`
 }
 
 // CinemaStrokeData is the client->server payload to add a stroke.
@@ -491,6 +495,29 @@ type ChamaStateData struct {
 	Text   string `json:"text"`
 	Active bool   `json:"active"`
 	Acks   int    `json:"acks,omitempty"`
+}
+
+// Varal wire shapes.
+type VaralPinData struct {
+	ID       string      `json:"id"`
+	Kind     string      `json:"kind"` // "frame" | "quote"
+	AuthorID string      `json:"authorId"`
+	Ts       int64       `json:"ts"`
+	Frame    *VaralFrame `json:"frame,omitempty"`
+	Quote    *VaralQuote `json:"quote,omitempty"`
+}
+type VaralFrame struct {
+	DataURL   string `json:"dataUrl"` // <=64KB
+	Publisher string `json:"publisher"`
+}
+type VaralQuote struct {
+	Text string `json:"text"` // sanitized, <=80
+}
+type VaralRemoveData struct {
+	ID string `json:"id"`
+}
+type VaralStateData struct {
+	Pins []VaralPinData `json:"pins"`
 }
 
 // TokenRefreshData is the payload of CtrlTokenRefresh: a fresh share token

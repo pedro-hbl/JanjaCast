@@ -213,6 +213,8 @@ export class Session {
   onReplayReady: ((d: { token: string; expiresMs: number }) => void) | null = null;
   /** Publisher side: a viewer pointed at the screen — draw the arrow. */
   onAssistShow: ((d: { x: number; y: number; userId: string; username: string; ttlMs: number }) => void) | null = null;
+  /** The varal: the whole board every time it changes (and in welcome). */
+  onVaralState: ((d: { pins: import('./protocol').VaralPinData[] }) => void) | null = null;
 
   constructor(
     private identity: Identity,
@@ -370,6 +372,11 @@ export class Session {
 
   /** Viewer side: point at a spot on the picture (normalized 0..1). */
   sendAssistPoint(x: number, y: number): void { this.sendControl("assist_point" as any, { x, y }); }
+  /** Pin a quote magnet or a frame polaroid to the varal. */
+  sendVaralPin(pin: { kind: "quote"; quote: { text: string } } | { kind: "frame"; frame: { dataUrl: string; publisher: string } }): void {
+    this.sendControl("varal_pin" as any, pin);
+  }
+  removeVaralPin(id: string): void { this.sendControl("varal_remove" as any, { id }); }
 
   /** Local-only undo: hide this client's most recent stroke. There is no
    *  cinema_undo on the wire, so a later full `cinema_state` (pause/resume)
@@ -559,6 +566,10 @@ export class Session {
       case "assist_show": {
         const d = ctrl.data as { x: number; y: number; userId: string; username: string; ttlMs: number };
         this.onAssistShow?.(d);
+        break;
+      }
+      case "varal_state": {
+        this.onVaralState?.(ctrl.data as { pins: import('./protocol').VaralPinData[] });
         break;
       }
       case "replay_ready": {

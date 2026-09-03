@@ -225,6 +225,9 @@ func (h *Hub) Join(roomID, userID, username string) (*Room, *Client, iter.Seq[Ou
 
 	// Welcome placar state right after welcome + queue.
 	c.enqueueControl(protocol.CtrlPlacarState, r.placarStateLocked())
+	// The varal survives everyone's comings and goings: hand the joiner
+	// the whole board so the session's lore is already hanging.
+	c.enqueueControl(protocol.CtrlVaralState, protocol.VaralStateData{Pins: append([]protocol.VaralPinData(nil), r.varalPins...)})
 
 	r.clients[c] = struct{}{}
 	r.broadcastRoomStateLocked()
@@ -455,6 +458,11 @@ type Room struct {
 	jukeboxQueue []protocol.JukeboxItem
 	// last request time per user base id
 	jukeboxLast map[string]time.Time
+
+	// --- varal (session memory board), guarded by mu ----------------------
+	// pins is a FIFO of at most 24 items. Author cooldown is 10s per base id.
+	varalPins []protocol.VaralPinData
+	varalLast map[string]time.Time // base user id -> last pin time
 }
 
 // rAwardsCallback is installed by the server layer to receive assembled
@@ -655,33 +663,152 @@ func (r *Room) ClipsTestInit() *Room {
 	if r.assistLast == nil {
 		r.assistLast = make(map[string]int64)
 	}
+	if r.varalLast == nil {
+		r.varalLast = make(map[string]time.Time)
+	}
 	return r
 }
 
 // AssistPoint validates a viewer hint and unicasts it to the current
 // publisher only. Bounds: 0..1 for both axes. Cooldown: short per viewer.
 func (r *Room) AssistPoint(c *Client, x, y float64) {
-    r.mu.Lock()
-    defer r.mu.Unlock()
-    if _, ok := r.clients[c]; !ok { return }
-    if r.publisher == nil { return }
-    if x < 0 || x > 1 || y < 0 || y > 1 {
-        c.enqueueControl(protocol.CtrlError, protocol.ErrorData{Code: protocol.ErrAssistBounds})
-        return
-    }
-    if r.assistLast == nil { r.assistLast = make(map[string]int64) }
-    now := time.Now().UnixMilli()
-    last := r.assistLast[baseID(c.UserID)]
-    if now-last < 1000 { // 1s cooldown per viewer
-        c.enqueueControl(protocol.CtrlError, protocol.ErrorData{Code: protocol.ErrAssistCooldown})
-        return
-    }
-    r.assistLast[baseID(c.UserID)] = now
-    // Unicast to publisher only; short TTL so overlays never linger.
-    ttl := 1800 // ms
-    r.publisher.enqueueControl(protocol.CtrlAssistShow, protocol.AssistShowData{
-        X: x, Y: y, UserID: c.UserID, Username: c.Username, TTLms: ttl,
-    })
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.clients[c]; !ok {
+		return
+	}
+	if r.publisher == nil {
+		return
+	}
+	if x < 0 || x > 1 || y < 0 || y > 1 {
+		c.enqueueControl(protocol.CtrlError, protocol.ErrorData{Code: protocol.ErrAssistBounds})
+		return
+	}
+	if r.assistLast == nil {
+		r.assistLast = make(map[string]int64)
+	}
+	now := time.Now().UnixMilli()
+	last := r.assistLast[baseID(c.UserID)]
+	if now-last < 1000 { // 1s cooldown per viewer
+		c.enqueueControl(protocol.CtrlError, protocol.ErrorData{Code: protocol.ErrAssistCooldown})
+		return
+	}
+	r.assistLast[baseID(c.UserID)] = now
+	// Unicast to publisher only; short TTL so overlays never linger.
+	ttl := 1800 // ms
+	r.publisher.enqueueControl(protocol.CtrlAssistShow, protocol.AssistShowData{
+		X: x, Y: y, UserID: c.UserID, Username: c.Username, TTLms: ttl,
+	})
+}
+
+// --- varal API --------------------------------------------------------------
+
+const (
+	varalMaxPins    = 24
+	varalCooldown   = 10 * time.Second
+	varalMaxQuote   = 80
+	varalMaxDataURL = 64 * 1024 // bytes, approximate cap on base64 string length
+)
+
+// VaralPin adds a frame or quote pin from client c. Enforces cooldown,
+// validates size/shape, attaches publisher snapshot for frames, and broadcasts
+// the new varal_state to all clients on success. Returns whether accepted.
+func (r *Room) VaralPin(c *Client, pin protocol.VaralPinData) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.clients[c]; !ok {
+		return false
+	}
+	if r.varalLast == nil {
+		r.varalLast = make(map[string]time.Time)
+	}
+	now := time.Now()
+	bid := baseID(c.UserID)
+	if d := now.Sub(r.varalLast[bid]); d < varalCooldown {
+		c.enqueueControl(protocol.CtrlError, protocol.ErrorData{Code: "varal.cooldown"})
+		return false
+	}
+	// Validate kind and sanitize.
+	pin.AuthorID = c.UserID
+	pin.Ts = time.Now().UnixMilli()
+	switch pin.Kind {
+	case "quote":
+		if pin.Quote == nil {
+			return false
+		}
+		txt := strings.TrimSpace(pin.Quote.Text)
+		if len(txt) > varalMaxQuote {
+			txt = txt[:varalMaxQuote]
+		}
+		// minimal HTML escape
+		esc := strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;", "\"", "&quot;", "'", "&#39;").Replace(txt)
+		pin.Quote.Text = esc
+		pin.Frame = nil
+	case "frame":
+		if pin.Frame == nil {
+			return false
+		}
+		// Cap data URL length roughly; client promised <=64KB
+		if len(pin.Frame.DataURL) > varalMaxDataURL {
+			pin.Frame.DataURL = pin.Frame.DataURL[:varalMaxDataURL]
+		}
+		// Snapshot current publisher name/id for attribution; empty when no publisher.
+		pub := ""
+		if r.publisher != nil {
+			pub = r.publisher.Username
+		}
+		pin.Frame.Publisher = pub
+		pin.Quote = nil
+	default:
+		return false
+	}
+	// Mint a simple id: timestamp + random suffix.
+	pin.ID = fmt.Sprintf("v-%d-%04d", pin.Ts, rand.IntN(10000))
+	// Append FIFO, cap at varalMaxPins
+	r.varalPins = append(r.varalPins, pin)
+	if len(r.varalPins) > varalMaxPins {
+		r.varalPins = r.varalPins[len(r.varalPins)-varalMaxPins:]
+	}
+	r.varalLast[bid] = now
+	r.broadcastVaralLocked()
+	return true
+}
+
+// VaralRemove deletes a pin by id if called by its author or by the current
+// publisher. Broadcasts updated state on success; on rejection, sends error to c.
+func (r *Room) VaralRemove(c *Client, id string) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.clients[c]; !ok {
+		return false
+	}
+	idx := -1
+	for i := range r.varalPins {
+		if r.varalPins[i].ID == id {
+			idx = i
+			break
+		}
+	}
+	if idx < 0 {
+		return false
+	}
+	author := r.varalPins[idx].AuthorID
+	isPublisher := r.publisher != nil && baseID(r.publisher.UserID) == baseID(c.UserID)
+	if baseID(author) != baseID(c.UserID) && !isPublisher {
+		c.enqueueControl(protocol.CtrlError, protocol.ErrorData{Code: "varal.forbidden"})
+		return false
+	}
+	// Remove idx
+	r.varalPins = append(r.varalPins[:idx], r.varalPins[idx+1:]...)
+	r.broadcastVaralLocked()
+	return true
+}
+
+func (r *Room) broadcastVaralLocked() {
+	d := protocol.VaralStateData{Pins: append([]protocol.VaralPinData(nil), r.varalPins...)}
+	for cl := range r.clients {
+		cl.enqueueControl(protocol.CtrlVaralState, d)
+	}
 }
 
 // ToggleCaptions flips the room captions enabled state. Publisher-only.
