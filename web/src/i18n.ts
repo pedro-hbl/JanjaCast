@@ -185,6 +185,8 @@ const en = {
   "err.cinema.notPublisher": "⛔ Only the person sharing can pause.",
   "err.cinema.rateLimited": "⛔ Easy! You're drawing too fast.",
   "err.cinema.badStroke": "⛔ That stroke didn't go through — try a shorter one.",
+  "err.varal.cooldown": "⛔ Too soon — wait a bit before pinning again.",
+  "err.varal.forbidden": "⛔ You can only remove your own pin.",
 
   // --- takeover modal ----------------------------------------------
   "modal.kick": "✋ Kick {name} off the stage?",
@@ -288,6 +290,10 @@ const en = {
   "lobby.alone": "Just you for now",
   
   // --- instant clips -------------------------------------------------
+  "varal.empty": "Nothing on the line yet â pin the first moment",
+  "varal.placeholder": "quote of the nightâ¦",
+  "varal.pinFrame": "Pin this exact frame",
+  "varal.remove": "Take it down",
   "replay.button": "Quem entrou? â replay the last stretch",
   "replay.title": "Who came in?",
   "replay.noJoins": "Nobody new in this stretch",
@@ -459,6 +465,8 @@ const ptBR: Record<MessageKey, Message> = {
   "err.cinema.notPublisher": "⛔ Só quem tá transmitindo pode pausar.",
   "err.cinema.rateLimited": "⛔ Calma! Você tá desenhando rápido demais.",
   "err.cinema.badStroke": "⛔ Esse traço não foi — tenta um mais curto.",
+  "err.varal.cooldown": "⛔ Calma aí — espera um pouco antes de fixar de novo.",
+  "err.varal.forbidden": "⛔ Só dá pra remover o que você colocou.",
 
   "modal.kick": "✋ Tirar {name} do palco?",
   "modal.yes": "Bora, minha vez",
@@ -559,6 +567,10 @@ const ptBR: Record<MessageKey, Message> = {
   "lobby.alone": "Só você por enquanto",
   
   // --- clipe instantâneo --------------------------------------------
+  "varal.empty": "Varal vazio â pendura o primeiro momento",
+  "varal.placeholder": "frase da noiteâ¦",
+  "varal.pinFrame": "Pendurar esse frame",
+  "varal.remove": "Tirar do varal",
   "replay.button": "Quem entrou? â rever o Ãºltimo trecho",
   "replay.title": "Quem entrou?",
   "replay.noJoins": "NinguÃ©m novo nesse trecho",

@@ -189,6 +189,9 @@ const App: Component = () => {
   const [clipWorking, setClipWorking] = createSignal(false);
   // "Quem entrou?" replay: token + fetched event timeline for the panel.
   const [replayTok, setReplayTok] = createSignal<string | null>(null);
+  // The varal: the session's clothesline of polaroids and quote magnets.
+  const [varalPins, setVaralPins] = createSignal<import("./protocol").VaralPinData[]>([]);
+  const [varalQuote, setVaralQuote] = createSignal("");
   const [replayEvents, setReplayEvents] = createSignal<Array<{ type: string; user?: string; density?: number; at: number }>>([]);
   const [clipUrl, setClipUrl] = createSignal<string | null>(null);
   const [clipExpires, setClipExpires] = createSignal<number | null>(null);
@@ -208,6 +211,27 @@ const App: Component = () => {
     (window as any).addEventListener("awards_ready", h);
     onCleanup(() => (window as any).removeEventListener("awards_ready", h));
   });
+
+  // --- the varal ----------------------------------------------------------
+  const pinQuote = () => {
+    const text = varalQuote().trim();
+    if (!text) return;
+    session()?.sendVaralPin({ kind: "quote", quote: { text: text.slice(0, 80) } });
+    setVaralQuote("");
+  };
+  /** Polaroid of the exact frame on screen right now. JPEG, walked down in
+   *  quality until it fits the 64KB wire cap. */
+  const pinFrame = () => {
+    if (!canvasRef || !canvasRef.width) return;
+    let q = 0.7;
+    let url = canvasRef.toDataURL("image/jpeg", q);
+    while (url.length > 60_000 && q > 0.15) {
+      q -= 0.15;
+      url = canvasRef.toDataURL("image/jpeg", q);
+    }
+    if (url.length > 64_000) return;
+    session()?.sendVaralPin({ kind: "frame", frame: { dataUrl: url, publisher: stage().publisherName ?? "" } });
+  };
 
   // --- cinema scribbles (local-only helpers) ------------------------------
   const ownStrokes = () => (session()?.cinemaStrokes() ?? []).filter(s => s.userId === session()?.selfId());
@@ -611,6 +635,7 @@ const App: Component = () => {
         setClipUrl(d.url);
         setClipExpires(d.expiresMs);
       };
+      s.onVaralState = (d) => setVaralPins(d.pins ?? []);
       s.onReplayReady = (d) => {
         setReplayTok(d.token);
         void fetch(apiPath(`/clip/${d.token}/events.json`))
@@ -1242,6 +1267,47 @@ const App: Component = () => {
             </div>
           </Show>
 
+        </div>
+
+        {/* The varal: a clothesline under the TV where the session's best
+            moments hang — polaroids of exact frames and quote magnets.
+            Chrome below the stage, never over it; dies with the room. */}
+        <div class="varal">
+          <div class="varal-line" aria-hidden="true" />
+          <div class="varal-pins">
+            <For each={varalPins()}>
+              {(p) => (
+                <div class={p.kind === "frame" ? "varal-pin varal-pin--frame" : "varal-pin varal-pin--quote"}>
+                  <Show when={p.kind === "frame" && p.frame}>
+                    <img class="varal-photo" src={p.frame!.dataUrl} alt="" />
+                  </Show>
+                  <Show when={p.kind === "quote" && p.quote}>
+                    <span class="varal-text">{p.quote!.text}</span>
+                  </Show>
+                  <Show when={p.authorId === session()?.selfId() || session()?.ownsStage()}>
+                    <button class="varal-x" title={t("varal.remove")} onClick={() => session()?.removeVaralPin(p.id)}>×</button>
+                  </Show>
+                </div>
+              )}
+            </For>
+            <Show when={!varalPins().length}>
+              <span class="varal-empty">{t("varal.empty")}</span>
+            </Show>
+          </div>
+          <div class="varal-actions">
+            <Show when={live()}>
+              <button class="crayon-btn crayon-btn--chalk" title={t("varal.pinFrame")} onClick={pinFrame}>📸</button>
+            </Show>
+            <input
+              class="varal-input"
+              maxlength="80"
+              placeholder={t("varal.placeholder")}
+              value={varalQuote()}
+              onInput={(e) => setVaralQuote(e.currentTarget.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") pinQuote(); }}
+            />
+            <button class="crayon-btn crayon-btn--chalk" onClick={pinQuote}>📌</button>
+          </div>
         </div>
 
         <aside class="sidebar">

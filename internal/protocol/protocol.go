@@ -187,7 +187,11 @@ const (
 
 	// Captions server -> clients.
 	CtrlCaptionBroadcast ControlType = "caption_broadcast"
-	CtrlCaptionState     ControlType = "caption_state"
+    CtrlCaptionState     ControlType = "caption_state"
+    // Varal (session memory board)
+    CtrlVaralPin    ControlType = "varal_pin"
+    CtrlVaralRemove ControlType = "varal_remove"
+    CtrlVaralState  ControlType = "varal_state"
 	CtrlCaptionClear     ControlType = "caption_clear"
 )
 
@@ -468,6 +472,29 @@ type ChamaStateData struct {
 	Text   string `json:"text"`
 	Active bool   `json:"active"`
 	Acks   int    `json:"acks,omitempty"`
+}
+
+// Varal wire shapes.
+type VaralPinData struct {
+    ID       string         `json:"id"`
+    Kind     string         `json:"kind"` // "frame" | "quote"
+    AuthorID string         `json:"authorId"`
+    Ts       int64          `json:"ts"`
+    Frame    *VaralFrame    `json:"frame,omitempty"`
+    Quote    *VaralQuote    `json:"quote,omitempty"`
+}
+type VaralFrame struct {
+    DataURL   string `json:"dataUrl"` // <=64KB
+    Publisher string `json:"publisher"`
+}
+type VaralQuote struct {
+    Text string `json:"text"` // sanitized, <=80
+}
+type VaralRemoveData struct {
+    ID string `json:"id"`
+}
+type VaralStateData struct {
+    Pins []VaralPinData `json:"pins"`
 }
 
 // TokenRefreshData is the payload of CtrlTokenRefresh: a fresh share token

@@ -211,6 +211,8 @@ export class Session {
   /** A 90s replay is cut and waiting: fetch /clip/{token} and its
    *  /events.json sidecar while the 2min TTL lasts. */
   onReplayReady: ((d: { token: string; expiresMs: number }) => void) | null = null;
+  /** The varal: the whole board every time it changes (and in welcome). */
+  onVaralState: ((d: { pins: import('./protocol').VaralPinData[] }) => void) | null = null;
 
   constructor(
     private identity: Identity,
@@ -365,6 +367,12 @@ export class Session {
   /** "Quem entrou?" — ask the relay to cut the last ~90s plus the room's
    *  event timeline. Answered with replay_ready. */
   requestReplay(seconds = 90): void { this.sendControl("replay_request" as any, { seconds }); }
+
+  /** Pin a quote magnet or a frame polaroid to the varal. */
+  sendVaralPin(pin: { kind: "quote"; quote: { text: string } } | { kind: "frame"; frame: { dataUrl: string; publisher: string } }): void {
+    this.sendControl("varal_pin" as any, pin);
+  }
+  removeVaralPin(id: string): void { this.sendControl("varal_remove" as any, { id }); }
 
   /** Local-only undo: hide this client's most recent stroke. There is no
    *  cinema_undo on the wire, so a later full `cinema_state` (pause/resume)
@@ -549,6 +557,10 @@ export class Session {
       case "clip_ready": {
         const d = ctrl.data as { url: string; expiresMs: number };
         if (d && typeof d.url === "string") this.onClipReady?.(d);
+        break;
+      }
+      case "varal_state": {
+        this.onVaralState?.(ctrl.data as { pins: import('./protocol').VaralPinData[] });
         break;
       }
       case "replay_ready": {
