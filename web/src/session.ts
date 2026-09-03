@@ -4,6 +4,115 @@
 // from ping/pong probes (used for glass-to-glass latency).
 
 import { createSignal } from "solid-js";
+// Note: This file augments the existing Session class below; avoid re-imports.
+
+// Session wiring for captions and jukebox
+// Mirrors how other features expose typed methods + reactive signals
+
+export type CaptionLine = {
+  text: string;
+  at: number; // ms epoch
+};
+
+export type JukeboxItem = {
+  id: string;
+  title: string;
+  requestedBy: string;
+};
+
+export function createSession(ws: WebSocket, isPublisher: boolean) {
+  // Captions state
+  const [captionsEnabled, setCaptionsEnabled] = createSignal(false);
+  const [captionLines, setCaptionLines] = createSignal<CaptionLine[]>([]);
+
+  // Jukebox state
+  const [jukeboxQueue, setJukeboxQueue] = createSignal<JukeboxItem[]>([]);
+  const [nowPlaying, setNowPlaying] = createSignal<JukeboxItem | null>(null);
+
+  // Outbound helpers
+  function send(msg: any) {
+    ws.send(JSON.stringify(msg));
+  }
+
+  // Public API: Captions
+  function toggleCaptions(enable: boolean) {
+    send({ type: "caption_toggle", enable });
+  }
+
+  function submitCaption(text: string) {
+    if (!text.trim()) return;
+    send({ type: "caption_submit", text });
+  }
+
+  // Public API: Jukebox
+  function requestJukebox(id: string) {
+    send({ type: "jukebox_request", id });
+  }
+
+  function approveJukebox(id: string) {
+    send({ type: "jukebox_approve", id });
+  }
+
+  // Inbound dispatcher
+  ws.addEventListener("message", (ev) => {
+    let msg: any;
+    try {
+      msg = JSON.parse(ev.data as string);
+    } catch {
+      return;
+    }
+    const type = (msg as any).type;
+    switch (type) {
+      case "caption_broadcast": {
+        const text = (msg as any).text ?? (msg as any).data?.text;
+        const line: CaptionLine = { text: String(text ?? ""), at: Date.now() };
+        setCaptionLines((prev) => {
+          const next = [...prev, line];
+          // keep only last ~8 to avoid unbounded growth; UI shows last 2
+          return next.slice(-8);
+        });
+        break;
+      }
+      case "caption_state": {
+        const enabled = (msg as any).enabled ?? (msg as any).data?.enabled;
+        setCaptionsEnabled(!!enabled);
+        break;
+      }
+      case "caption_clear": {
+        setCaptionLines([]);
+        break;
+      }
+      case "jukebox_queue_state": {
+        const q = ((msg as any).queue ?? (msg as any).data?.queue) as JukeboxItem[];
+        setJukeboxQueue(q || []);
+        break;
+      }
+      case "jukebox_play": {
+        const it = ((msg as any).item ?? (msg as any).data?.item) as JukeboxItem;
+        setNowPlaying(it || null);
+        break;
+      }
+      default:
+        break;
+    }
+  });
+
+  return {
+    // role
+    isPublisher,
+    // captions
+    captionsEnabled,
+    captionLines,
+    submitCaption,
+    toggleCaptions,
+    // jukebox
+    jukeboxQueue,
+    nowPlaying,
+    requestJukebox,
+    approveJukebox,
+  } as const;
+}
+
 import { apiPath, type Identity } from "./discord";
 import type {
   BlankData,

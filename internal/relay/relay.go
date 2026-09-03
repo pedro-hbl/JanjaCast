@@ -130,6 +130,7 @@ func (h *Hub) Join(roomID, userID, username string) (*Room, *Client, iter.Seq[Ou
 			placarLastVote:  make(map[*Client]time.Time),
 			clips:           make(map[string]clipItem),
 			lastClipAsk:     make(map[*Client]time.Time),
+			jukeboxLast:     make(map[string]time.Time),
 		}
 		h.rooms[roomID] = r
 	}
@@ -204,6 +205,8 @@ func (h *Hub) Join(roomID, userID, username string) (*Room, *Client, iter.Seq[Ou
 	c.enqueueControl(protocol.CtrlStageQueue, r.stageQueueLocked())
 	// Cinema welcome right after queue state.
 	c.enqueueControl(protocol.CtrlCinemaState, protocol.CinemaStateData{Paused: r.cinemaPaused, Strokes: slices.Clone(r.cinemaStrokes)})
+	// Jukebox initial empty state for probe.
+	c.enqueueControl(protocol.CtrlJukeboxQueue, protocol.JukeboxQueueState{Queue: append([]protocol.JukeboxItem(nil), r.jukeboxQueue...)})
 
 	// Replay the cached GOP so the newcomer has a picture immediately. If
 	// the replay overflows the queue, the client stays in needKeyframe so a
@@ -422,6 +425,10 @@ type Room struct {
 	// --- session stats for end-of-session awards (guarded by mu) ---------
 	sessionStats map[string]*ParticipantStats
 
+	// --- captions (guarded by mu) ---------------------------------------
+	CaptionsEnabled bool
+	CaptionLast     map[string]int64 // userId -> last submit ms
+
 	// --- instant clips: rolling buffer (video+audio), keyframe-bounded ------
 	// clipBuf stores recent media chunks for instant clips. It is trimmed on
 	// keyframe boundaries and bounded by both wall-time (~30s) and bytes.
@@ -431,13 +438,21 @@ type Room struct {
 	// clip store: token -> bytes with expiry and content type. Guarded by mu.
 	clips map[string]clipItem
 	// per-client cooldown for clip requests.
-  lastClipAsk map[*Client]time.Time
+	lastClipAsk map[*Client]time.Time
 
-  // --- bolao (prediction), guarded by mu ---------------------------------
-  boloes map[string]*bolaoState
+	// --- bolao (prediction), guarded by mu ---------------------------------
+	boloes map[string]*bolaoState
 
-  // --- chama (call to action), guarded by mu ------------------------------
-  chamas map[string]*chamaState
+	// --- chama (call to action), guarded by mu ------------------------------
+	chamas map[string]*chamaState
+	// --- captions (guarded by mu) ---------------------------------------
+	captionsEnabled bool
+	captionLast     map[string]int64 // userId -> last submit ms
+
+	// --- jukebox (probe-limited): simple per-room queue of asset URLs ---
+	jukeboxQueue []protocol.JukeboxItem
+	// last request time per user base id
+	jukeboxLast map[string]time.Time
 }
 
 // rAwardsCallback is installed by the server layer to receive assembled
@@ -472,105 +487,150 @@ type clipItem struct {
 }
 
 type bolaoState struct {
-  id     string
-  prompt string
-  open   bool
-  yes    int
-  no     int
-  result string
+	id     string
+	prompt string
+	open   bool
+	yes    int
+	no     int
+	result string
 }
 
 type chamaState struct {
-  id     string
-  text   string
-  active bool
-  acks   int
+	id     string
+	text   string
+	active bool
+	acks   int
 }
 
 // --- bolao API --------------------------------------------------------------
 
 func (r *Room) BolaoStart(c *Client, id, prompt string) {
-  r.mu.Lock()
-  defer r.mu.Unlock()
-  if _, ok := r.clients[c]; !ok { return }
-  if strings.TrimSpace(id) == "" || strings.TrimSpace(prompt) == "" { return }
-  if r.boloes == nil { r.boloes = make(map[string]*bolaoState) }
-  s := &bolaoState{id: id, prompt: prompt, open: true}
-  r.boloes[id] = s
-  r.broadcastBolaoLocked(s)
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.clients[c]; !ok {
+		return
+	}
+	if strings.TrimSpace(id) == "" || strings.TrimSpace(prompt) == "" {
+		return
+	}
+	if r.boloes == nil {
+		r.boloes = make(map[string]*bolaoState)
+	}
+	s := &bolaoState{id: id, prompt: prompt, open: true}
+	r.boloes[id] = s
+	r.broadcastBolaoLocked(s)
 }
 
 func (r *Room) BolaoVote(c *Client, id, vote string) {
-  r.mu.Lock()
-  defer r.mu.Unlock()
-  if _, ok := r.clients[c]; !ok { return }
-  if r.boloes == nil { return }
-  s := r.boloes[id]
-  if s == nil || !s.open { return }
-  switch vote {
-  case "yes": s.yes++
-  case "no": s.no++
-  default: return
-  }
-  r.broadcastBolaoLocked(s)
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.clients[c]; !ok {
+		return
+	}
+	if r.boloes == nil {
+		return
+	}
+	s := r.boloes[id]
+	if s == nil || !s.open {
+		return
+	}
+	switch vote {
+	case "yes":
+		s.yes++
+	case "no":
+		s.no++
+	default:
+		return
+	}
+	r.broadcastBolaoLocked(s)
 }
 
 func (r *Room) BolaoResolve(c *Client, id, result string) {
-  r.mu.Lock()
-  defer r.mu.Unlock()
-  if _, ok := r.clients[c]; !ok { return }
-  if r.boloes == nil { return }
-  s := r.boloes[id]
-  if s == nil || !s.open { return }
-  if result != "yes" && result != "no" { return }
-  s.open = false
-  s.result = result
-  r.broadcastBolaoLocked(s)
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.clients[c]; !ok {
+		return
+	}
+	if r.boloes == nil {
+		return
+	}
+	s := r.boloes[id]
+	if s == nil || !s.open {
+		return
+	}
+	if result != "yes" && result != "no" {
+		return
+	}
+	s.open = false
+	s.result = result
+	r.broadcastBolaoLocked(s)
 }
 
 func (r *Room) broadcastBolaoLocked(s *bolaoState) {
-  d := protocol.BolaoStateData{ID: s.id, Prompt: s.prompt, Open: s.open, Yes: s.yes, No: s.no, Result: s.result}
-  for c := range r.clients { c.enqueueControl(protocol.CtrlBolaoState, d) }
+	d := protocol.BolaoStateData{ID: s.id, Prompt: s.prompt, Open: s.open, Yes: s.yes, No: s.no, Result: s.result}
+	for c := range r.clients {
+		c.enqueueControl(protocol.CtrlBolaoState, d)
+	}
 }
 
 // --- chama API --------------------------------------------------------------
 
 func (r *Room) ChamaStart(c *Client, id, text string) {
-  r.mu.Lock()
-  defer r.mu.Unlock()
-  if _, ok := r.clients[c]; !ok { return }
-  if strings.TrimSpace(id) == "" || strings.TrimSpace(text) == "" { return }
-  if r.chamas == nil { r.chamas = make(map[string]*chamaState) }
-  s := &chamaState{id: id, text: text, active: true}
-  r.chamas[id] = s
-  r.broadcastChamaLocked(s)
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.clients[c]; !ok {
+		return
+	}
+	if strings.TrimSpace(id) == "" || strings.TrimSpace(text) == "" {
+		return
+	}
+	if r.chamas == nil {
+		r.chamas = make(map[string]*chamaState)
+	}
+	s := &chamaState{id: id, text: text, active: true}
+	r.chamas[id] = s
+	r.broadcastChamaLocked(s)
 }
 
 func (r *Room) ChamaAck(c *Client, id string) {
-  r.mu.Lock()
-  defer r.mu.Unlock()
-  if _, ok := r.clients[c]; !ok { return }
-  if r.chamas == nil { return }
-  s := r.chamas[id]
-  if s == nil || !s.active { return }
-  s.acks++
-  r.broadcastChamaLocked(s)
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.clients[c]; !ok {
+		return
+	}
+	if r.chamas == nil {
+		return
+	}
+	s := r.chamas[id]
+	if s == nil || !s.active {
+		return
+	}
+	s.acks++
+	r.broadcastChamaLocked(s)
 }
 
 func (r *Room) ChamaEnd(c *Client, id string) {
-  r.mu.Lock()
-  defer r.mu.Unlock()
-  if _, ok := r.clients[c]; !ok { return }
-  if r.chamas == nil { return }
-  s := r.chamas[id]
-  if s == nil || !s.active { return }
-  s.active = false
-  r.broadcastChamaLocked(s)
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.clients[c]; !ok {
+		return
+	}
+	if r.chamas == nil {
+		return
+	}
+	s := r.chamas[id]
+	if s == nil || !s.active {
+		return
+	}
+	s.active = false
+	r.broadcastChamaLocked(s)
 }
 
 func (r *Room) broadcastChamaLocked(s *chamaState) {
-  d := protocol.ChamaStateData{ID: s.id, Text: s.text, Active: s.active, Acks: s.acks}
-  for c := range r.clients { c.enqueueControl(protocol.CtrlChamaState, d) }
+	d := protocol.ChamaStateData{ID: s.id, Text: s.text, Active: s.active, Acks: s.acks}
+	for c := range r.clients {
+		c.enqueueControl(protocol.CtrlChamaState, d)
+	}
 }
 
 // ClipsTestInit ensures clip maps exist (test helper).
@@ -583,7 +643,57 @@ func (r *Room) ClipsTestInit() *Room {
 	if r.lastClipAsk == nil {
 		r.lastClipAsk = make(map[*Client]time.Time)
 	}
+	if r.captionLast == nil {
+		r.captionLast = make(map[string]int64)
+	}
 	return r
+}
+
+// ToggleCaptions flips the room captions enabled state. Publisher-only.
+func (r *Room) ToggleCaptions(c *Client, enabled bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.publisher == nil || baseID(r.publisher.UserID) != baseID(c.UserID) {
+		return
+	}
+	if _, ok := r.clients[c]; !ok {
+		return
+	}
+	r.captionsEnabled = enabled
+	// Broadcast to all clients
+	d := protocol.CaptionStateData{Enabled: enabled}
+	for cl := range r.clients {
+		cl.enqueueControl(protocol.CtrlCaptionState, d)
+	}
+}
+
+// SubmitCaption enforces cooldown/length and broadcasts a sanitized caption.
+func (r *Room) SubmitCaption(c *Client, text string, nowMs int64) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.clients[c]; !ok {
+		return false
+	}
+	if !r.captionsEnabled {
+		c.enqueueControl(protocol.CtrlError, protocol.ErrorData{Code: protocol.ErrCaptionOff})
+		return false
+	}
+	if r.captionLast == nil {
+		r.captionLast = make(map[string]int64)
+	}
+	last := r.captionLast[baseID(c.UserID)]
+	if nowMs-last < 4000 {
+		c.enqueueControl(protocol.CtrlError, protocol.ErrorData{Code: protocol.ErrCaptionRate})
+		return false
+	}
+	r.captionLast[baseID(c.UserID)] = nowMs
+	// sanitize minimal HTML
+	esc := strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;", "\"", "&quot;", "'", "&#39;").Replace(text)
+	d := protocol.CaptionBroadcastData{Text: esc, Author: c.Username, UserID: c.UserID, Timestamp: nowMs}
+	for cl := range r.clients {
+		cl.enqueueControl(protocol.CtrlCaptionBroadcast, d)
+	}
+	return true
 }
 
 // rTestMint is a test-only wrapper to call mintClipTokenLocked.
@@ -1235,6 +1345,14 @@ func (r *Room) leaveStageLocked() {
 	r.clearGOPLocked()
 	r.clearBlankLocked()
 	r.stopRodizioClockLocked()
+	// Captions belong to the stream they narrate: the publisher leaving
+	// disables them and tells every client to wipe the band.
+	if r.captionsEnabled {
+		r.captionsEnabled = false
+		for c := range r.clients {
+			c.enqueueControl(protocol.CtrlCaptionClear, nil)
+		}
+	}
 	r.broadcastStageStateLocked()
 	r.broadcastStageQueueLocked()
 	r.scheduleStingerStopLocked()
@@ -1330,6 +1448,95 @@ func (r *Room) ForwardControl(from *Client, t protocol.ControlType, data any) {
 	default:
 		// Unknown forwarded control: ignore.
 	}
+}
+
+// BroadcastControl sends a server-originated control to all clients in the room.
+func (r *Room) BroadcastControl(t protocol.ControlType, data any) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for c := range r.clients {
+		c.enqueueControl(t, data)
+	}
+}
+
+// --- jukebox (probe-limited) -----------------------------------------------
+
+// JukeboxRequest enqueues an asset URL from a viewer with per-user cooldown.
+func (r *Room) JukeboxRequest(c *Client, d protocol.JukeboxRequestData) {
+	if strings.TrimSpace(d.ID) == "" || strings.TrimSpace(d.Asset) == "" {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.clients[c]; !ok {
+		return
+	}
+	if r.jukeboxLast == nil {
+		r.jukeboxLast = make(map[string]time.Time)
+	}
+	base := baseID(c.UserID)
+	now := time.Now()
+	if last, ok := r.jukeboxLast[base]; ok && now.Sub(last) < 10*time.Second {
+		// per-user cooldown
+		c.enqueueControl(protocol.CtrlError, protocol.ErrorData{Code: "jukebox_cooldown"})
+		return
+	}
+	r.jukeboxLast[base] = now
+	// append to queue
+	r.jukeboxQueue = append(r.jukeboxQueue, protocol.JukeboxItem{ID: d.ID, Asset: d.Asset, Requester: c.Username})
+	// broadcast queue state to all
+	st := protocol.JukeboxQueueState{Queue: append([]protocol.JukeboxItem(nil), r.jukeboxQueue...)}
+	for cl := range r.clients {
+		cl.enqueueControl(protocol.CtrlJukeboxQueue, st)
+	}
+}
+
+// JukeboxSendQueue unicasts current state to requester.
+func (r *Room) JukeboxSendQueue(c *Client) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.clients[c]; !ok {
+		return
+	}
+	st := protocol.JukeboxQueueState{Queue: append([]protocol.JukeboxItem(nil), r.jukeboxQueue...)}
+	c.enqueueControl(protocol.CtrlJukeboxQueue, st)
+}
+
+// JukeboxApprove pops an item and broadcasts jukebox_play; host only.
+func (r *Room) JukeboxApprove(c *Client, id string) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.clients[c]; !ok {
+		return false
+	}
+	if r.publisher == nil || baseID(r.publisher.UserID) != baseID(c.UserID) {
+		return false
+	}
+	// find item
+	idx := -1
+	for i, it := range r.jukeboxQueue {
+		if it.ID == id {
+			idx = i
+			break
+		}
+	}
+	if idx < 0 {
+		return true
+	} // nothing to do, treat as ok
+	it := r.jukeboxQueue[idx]
+	r.jukeboxQueue = slices.Delete(r.jukeboxQueue, idx, idx+1)
+	// broadcast play
+	// Broadcast play to all, including the host approver.
+	play := protocol.JukeboxPlay{ID: it.ID, Asset: it.Asset}
+	for cl := range r.clients {
+		cl.enqueueControl(protocol.CtrlJukeboxPlay, play)
+	}
+	// then updated queue
+	st := protocol.JukeboxQueueState{Queue: append([]protocol.JukeboxItem(nil), r.jukeboxQueue...)}
+	for cl := range r.clients {
+		cl.enqueueControl(protocol.CtrlJukeboxQueue, st)
+	}
+	return true
 }
 
 // --- placar (scoreboard) API -----------------------------------------------

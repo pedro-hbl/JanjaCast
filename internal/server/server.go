@@ -685,6 +685,31 @@ func (s *Server) handleControl(room *relay.Room, client *relay.Client, data []by
 				client.SendControl(protocol.CtrlError, protocol.ErrorData{Code: err2.Error()})
 			}
 		}
+	// --- captions --------------------------------------------------------
+	case protocol.CtrlCaptionToggle:
+		var d protocol.CaptionToggleData
+		if err := json.Unmarshal(ctrl.Data, &d); err == nil {
+			// Publisher-only toggle; store under Room.mu
+			room.ToggleCaptions(client, d.Enabled)
+		}
+		break
+	case protocol.CtrlCaptionSubmit:
+		var sd protocol.CaptionSubmitData
+		if err := json.Unmarshal(ctrl.Data, &sd); err != nil {
+			break
+		}
+		// Basic guards live outside lock for fast-fail; state checks inside.
+		text := sd.Text
+		if len(text) > 120 {
+			text = text[:120]
+		}
+		nowMs := time.Now().UnixMilli()
+		sent := false
+		if ok := room.SubmitCaption(client, text, nowMs); ok {
+			sent = true
+		}
+		_ = sent
+		break
 	case protocol.CtrlPlacarVote:
 		var d protocol.PlacarVoteData
 		if err := json.Unmarshal(ctrl.Data, &d); err == nil {
@@ -728,6 +753,21 @@ func (s *Server) handleControl(room *relay.Room, client *relay.Client, data []by
 		}
 	case protocol.CtrlClip:
 		room.RequestClip(client)
+	// --- jukebox ---------------------------------------------------------
+	case protocol.CtrlJukeboxRequest:
+		var d protocol.JukeboxRequestData
+		if err := json.Unmarshal(ctrl.Data, &d); err == nil {
+			room.JukeboxRequest(client, d)
+		}
+	case protocol.CtrlJukeboxApprove:
+		var d protocol.JukeboxApproveData
+		if err := json.Unmarshal(ctrl.Data, &d); err == nil {
+			if ok := room.JukeboxApprove(client, d.ID); !ok {
+				client.SendControl(protocol.CtrlError, protocol.ErrorData{Code: "not_host"})
+			}
+		}
+	case protocol.CtrlJukeboxGetQueue:
+		room.JukeboxSendQueue(client)
 	}
 }
 

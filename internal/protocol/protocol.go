@@ -101,6 +101,11 @@ const (
 	// eviction), so a leaked frame would have to defeat both sides.
 	CtrlBlank ControlType = "blank"
 
+	// Captions (legenda) — collaborative live text under the video band.
+	// Client -> server submits and toggles; server -> clients broadcasts.
+	CtrlCaptionSubmit ControlType = "caption_submit"
+	CtrlCaptionToggle ControlType = "caption_toggle"
+
 	// --- the stage queue ("pedir a vez") -----------------------------
 	// Identity always comes from the authenticated connection, never the
 	// payload — exactly like CtrlStingerPlay.
@@ -170,7 +175,12 @@ const (
 	CtrlPlacarCreate ControlType = "placar_create"
 	CtrlPlacarVote   ControlType = "placar_vote"
 	CtrlPlacarClose  ControlType = "placar_close"
-  CtrlPlacarState  ControlType = "placar_state"
+	CtrlPlacarState  ControlType = "placar_state"
+
+	// Captions server -> clients.
+	CtrlCaptionBroadcast ControlType = "caption_broadcast"
+	CtrlCaptionState     ControlType = "caption_state"
+	CtrlCaptionClear     ControlType = "caption_clear"
 )
 
 // --- reactions -------------------------------------------------------------
@@ -297,6 +307,8 @@ type Participant struct {
 type ErrorData struct {
 	Message string `json:"message,omitempty"`
 	Code    string `json:"code,omitempty"`
+	Op      string `json:"op,omitempty"`
+	ID      string `json:"id,omitempty"`
 }
 
 // Error codes carried by ErrorData.Code. Each has a matching `err.<code>`
@@ -305,7 +317,27 @@ const (
 	ErrNoNextUser  = "stage.noNext"   // nobody in line and nobody to spin for
 	ErrAlreadyExt  = "stage.extended" // the one +5 minutes is already spent
 	ErrPassTooSoon = "stage.cooldown" // passing again inside the cooldown
+	// Captions
+	ErrCaptionRate = "caption.rateLimit"
+	ErrCaptionOff  = "caption.off"
 )
+
+// Captions wire shapes.
+type CaptionSubmitData struct {
+	Text string `json:"text"`
+}
+type CaptionToggleData struct {
+	Enabled bool `json:"enabled"`
+}
+type CaptionBroadcastData struct {
+	Text      string `json:"text"`
+	Author    string `json:"author"`
+	UserID    string `json:"user_id"`
+	Timestamp int64  `json:"timestamp"`
+}
+type CaptionStateData struct {
+	Enabled bool `json:"enabled"`
+}
 
 // --- cinema mode (pause + shared doodles) -----------------------------------
 
@@ -371,55 +403,56 @@ type PlacarStateData struct {
 
 // Bolao (prediction) wire shapes.
 const (
-    CtrlBolaoStart  ControlType = "bolao_start"
-    CtrlBolaoVote   ControlType = "bolao_vote"
-    CtrlBolaoResolve ControlType = "bolao_resolve"
-    CtrlBolaoState  ControlType = "bolao_state"
+	CtrlBolaoStart   ControlType = "bolao_start"
+	CtrlBolaoVote    ControlType = "bolao_vote"
+	CtrlBolaoResolve ControlType = "bolao_resolve"
+	CtrlBolaoState   ControlType = "bolao_state"
 )
 
 type BolaoStartData struct {
-    ID     string `json:"id"`
-    Prompt string `json:"prompt"`
+	ID     string `json:"id"`
+	Prompt string `json:"prompt"`
 }
 type BolaoVoteData struct {
-    ID   string `json:"id"`
-    Vote string `json:"vote"` // "yes" | "no"
+	ID   string `json:"id"`
+	Vote string `json:"vote"` // "yes" | "no"
 }
 type BolaoResolveData struct {
-    ID     string `json:"id"`
-    Result string `json:"result"` // "yes" | "no"
+	ID     string `json:"id"`
+	Result string `json:"result"` // "yes" | "no"
 }
 type BolaoStateData struct {
-    ID     string `json:"id"`
-    Prompt string `json:"prompt"`
-    Open   bool   `json:"open"`
-    Yes    int    `json:"yes"`
-    No     int    `json:"no"`
-    Result string `json:"result,omitempty"`
+	ID     string `json:"id"`
+	Prompt string `json:"prompt"`
+	Open   bool   `json:"open"`
+	Yes    int    `json:"yes"`
+	No     int    `json:"no"`
+	Result string `json:"result,omitempty"`
 }
 
 // Chama (call to action) wire shapes.
 const (
-    CtrlChamaStart ControlType = "chama_start"
-    CtrlChamaAck   ControlType = "chama_ack"
-    CtrlChamaEnd   ControlType = "chama_end"
-    CtrlChamaState ControlType = "chama_state"
+	CtrlChamaStart ControlType = "chama_start"
+	CtrlChamaAck   ControlType = "chama_ack"
+	CtrlChamaEnd   ControlType = "chama_end"
+	CtrlChamaState ControlType = "chama_state"
 )
+
 type ChamaStartData struct {
-    ID   string `json:"id"`
-    Text string `json:"text"`
+	ID   string `json:"id"`
+	Text string `json:"text"`
 }
 type ChamaAckData struct {
-    ID string `json:"id"`
+	ID string `json:"id"`
 }
 type ChamaEndData struct {
-    ID string `json:"id"`
+	ID string `json:"id"`
 }
 type ChamaStateData struct {
-    ID    string `json:"id"`
-    Text  string `json:"text"`
-    Active bool  `json:"active"`
-    Acks  int    `json:"acks,omitempty"`
+	ID     string `json:"id"`
+	Text   string `json:"text"`
+	Active bool   `json:"active"`
+	Acks   int    `json:"acks,omitempty"`
 }
 
 // TokenRefreshData is the payload of CtrlTokenRefresh: a fresh share token
@@ -581,4 +614,36 @@ type ReactionBurstData struct {
 	Counts   map[string]int `json:"counts"`
 	Density  int            `json:"density"`
 	WindowMs int            `json:"windowMs"`
+}
+
+// --- jukebox (viewer-submitted simple asset queue; relay-side only) ---------
+
+// Control types (temporary probe surface). Client -> server unless noted.
+const (
+	CtrlJukeboxRequest  ControlType = "jukebox_request"     // data: {id, asset}
+	CtrlJukeboxApprove  ControlType = "jukebox_approve"     // host only
+	CtrlJukeboxGetQueue ControlType = "jukebox_get_queue"   // any -> unicast state
+	CtrlJukeboxQueue    ControlType = "jukebox_queue_state" // server -> clients
+	CtrlJukeboxPlay     ControlType = "jukebox_play"        // server -> clients
+)
+
+// Wire shapes used by the probe.
+type JukeboxRequestData struct {
+	ID    string `json:"id"`
+	Asset string `json:"asset"`
+}
+type JukeboxApproveData struct {
+	ID string `json:"id"`
+}
+type JukeboxItem struct {
+	ID        string `json:"id"`
+	Asset     string `json:"asset"`
+	Requester string `json:"requester"`
+}
+type JukeboxQueueState struct {
+	Queue []JukeboxItem `json:"queue"`
+}
+type JukeboxPlay struct {
+	ID    string `json:"id"`
+	Asset string `json:"asset"`
 }

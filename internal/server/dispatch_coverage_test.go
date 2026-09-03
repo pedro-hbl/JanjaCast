@@ -22,6 +22,9 @@ var serverToClientOnly = map[string]bool{
 	"CtrlWelcome":         true,
 	"CtrlStageState":      true,
 	"CtrlRoomState":       true,
+    "CtrlCaptionBroadcast": true,
+    "CtrlCaptionState":     true,
+    "CtrlCaptionClear":     true,
 	"CtrlStageTaken":      true,
 	"CtrlRateHint":        true,
 	"CtrlTokenRefresh":    true,
@@ -39,9 +42,12 @@ var serverToClientOnly = map[string]bool{
 	"CtrlCinemaStrokeAdd": true,
 	"CtrlRoomPhase":       true,
 	"CtrlAwardsReady":     true,
-	"CtrlClipReady":       true,
-	"CtrlError":           true,
-	"CtrlJoin":            true, // consumed by handleWS before the switch
+  "CtrlClipReady":       true,
+  "CtrlError":           true,
+  "CtrlJoin":            true, // consumed by handleWS before the switch
+  // Jukebox probe messages are server-originated fan-outs only.
+  "CtrlJukeboxQueue":    true,
+  "CtrlJukeboxPlay":     true,
 }
 
 func TestDispatchCoverage(t *testing.T) {
