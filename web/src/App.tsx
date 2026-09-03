@@ -200,6 +200,8 @@ const App: Component = () => {
   // Corrente da tela: the nomination banner state — server-driven.
   const [corrente, setCorrente] = createSignal<{ target: string; targetName: string; by: string; endsAtMs: number } | null>(null);
   const [correnteTally, setCorrenteTally] = createSignal<{ vai: number; calma: number }>({ vai: 0, calma: 0 });
+  // "Cadê todo mundo?": the room's attention, publisher-only knowledge.
+  const [attention, setAttention] = createSignal<{ watching: number; total: number } | null>(null);
   const [replayEvents, setReplayEvents] = createSignal<Array<{ type: string; user?: string; density?: number; at: number }>>([]);
   const [clipUrl, setClipUrl] = createSignal<string | null>(null);
   const [clipExpires, setClipExpires] = createSignal<number | null>(null);
@@ -649,6 +651,17 @@ const App: Component = () => {
         setTimeout(() => setArrows((xs) => xs.filter((a) => a.id !== id)), d.ttlMs || 4000);
       };
       s.onVaralState = (d) => setVaralPins(d.pins ?? []);
+      s.onAttentionState = (d) => setAttention(d);
+      // Report visibility now, on every change, and as a 30s heartbeat —
+      // the wire is one boolean, the relay does the thinking.
+      const reportVis = () => s.reportAttention(document.visibilityState === "visible");
+      reportVis();
+      document.addEventListener("visibilitychange", reportVis);
+      const attnTimer = setInterval(reportVis, 30_000);
+      onCleanup(() => {
+        document.removeEventListener("visibilitychange", reportVis);
+        clearInterval(attnTimer);
+      });
       s.onCorrenteStarted = (d) => { setCorrente(d); setCorrenteTally({ vai: 0, calma: 0 }); };
       s.onCorrenteTally = (d) => setCorrenteTally(d);
       s.onCorrenteCanceled = () => { setCorrente(null); flashToast("corrente.canceled"); };
@@ -1057,6 +1070,11 @@ const App: Component = () => {
             <span class="live-badge-label">{t("header.onAir")}</span>
             <span class="live-badge-name">{stage().publisherName}</span>
           </span>
+          <Show when={session()?.ownsStage() && attention()}>
+            <span class="stat-pill attn-pill" title={t("attn.title")}>
+              👀 {attention()!.watching}/{attention()!.total}
+            </span>
+          </Show>
           <span class="stat-pill">
             {stats().fps} fps · {stats().kbps} kbps
             {stats().latencyMs != null ? ` · ${stats().latencyMs} ms` : ""}
@@ -1761,6 +1779,15 @@ const App: Component = () => {
             </button>
           </div>
         </div>
+
+        {/* The party hat: the slot filling up, drawn not spelled. Rodízio
+            only, while somebody holds the stage. */}
+        <Show when={queueState().mode === "rodizio" && live() && queueState().timerStartMs}>
+          <span class="hat" title={t("hat.title")} aria-hidden="true">
+            <span class="hat-cone">🎉</span>
+            <span class="hat-fill" style={{ height: `${(() => { tick(); const q = queueState(); const now = session()?.serverNow() ?? Date.now(); return Math.min(100, Math.max(0, ((now - (q.timerStartMs ?? now)) / q.turnLenMs) * 100)); })()}%` }} />
+          </span>
+        </Show>
 
         <Show when={stingersOn()}>
           <button
