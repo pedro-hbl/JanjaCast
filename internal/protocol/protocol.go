@@ -6,14 +6,16 @@
 //   - a text message: a JSON control envelope (join, stage requests, codec
 //     config, stats), or
 //
-//   - a binary message: one encoded media chunk with a fixed 13-byte header:
+//   - a binary message: one encoded media chunk with a fixed 14-byte header
+//     (v2 / multistream):
 //
-//     offset 0  uint8   kind      (1 = video, 2 = audio)
-//     offset 1  uint8   flags     (bit 0: keyframe)
-//     offset 2  uint8   temporal layer id (0 = base; SVC L1T2/L1T3)
-//     offset 3  uint16  sequence  (big endian, wraps)
-//     offset 5  uint64  timestamp (big endian, microseconds)
-//     offset 13 ...     encoded chunk payload (H.264/VP8/Opus bitstream)
+//     offset 0  uint8   kind        (1 = video, 2 = audio)
+//     offset 1  uint8   flags       (bit 0: keyframe)
+//     offset 2  uint8   slot        (0..5; 0xFF reserved)
+//     offset 3  uint8   temporal id (0 = base; SVC L1T2/L1T3)
+//     offset 4  uint16  sequence    (big endian, per-slot, wraps)
+//     offset 6  uint64  timestamp   (big endian, microseconds)
+//     offset 14 ...     encoded chunk payload (H.264/VP8/Opus bitstream)
 //
 // The relay never parses payloads; it forwards them. Only the header is read
 // (to let the relay drop non-keyframe video when a slow viewer falls behind).

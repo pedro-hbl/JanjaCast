@@ -3,7 +3,7 @@
 all: web server
 
 web:
-	cd web && npm install && npm run build
+	cd web && npm ci && npm run build
 
 server:
 	go build -o janjacast ./cmd/janjacast

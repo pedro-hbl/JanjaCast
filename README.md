@@ -9,33 +9,39 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green.svg" alt="license"></a>
 </p>
 
-**Screen livestreaming as a Discord Activity.** One person shares their
-screen; everyone in the voice call watches live inside the Activity —
-sub-second latency, tab/system audio, 30/60 fps, and a one-click
-"take the stage" model. Open source, self-hosted, one binary.
+**Screen livestreaming as a Discord Activity.** A companion capture tab encodes with WebCodecs and ships media over WebSockets to a Go relay that fans it out to every viewer. Sub-second glass-to-glass (~0.3–0.6 s) with drop-to-live catch-up, tab/system audio, and a stage that anyone can take. Open source, self-hosted, one binary.
 
 ![JanjaCast architecture — capture in a companion Chrome tab, WebCodecs over WSS through a Cloudflare Tunnel into a Go relay in Docker, fanned out through Discord's Activities proxy to every viewer in the call](docs/architecture.svg)
 
 ## Features
 
-- 🖥 **Share screen, window, or tab** at 30 or 60 fps, with tab/system audio
-- ⚡ **Sub-second latency** (~0.3–0.6 s glass-to-glass), held flat by
-  drop-to-live catch-up — it can't drift
-- 🚪 **Instant late-join** — new viewers get a picture immediately (server-side
-  GOP cache)
-- 📉 **Adaptive bitrate** — congestion steps quality down, never latency up
-- 🎚 **Per-viewer volume**, live fps / bitrate / latency readout
-- 🛑 **Stop from anywhere** — the capture tab or remotely from the Activity
-- 🔐 **Authenticated rooms** — every join must present a Discord OAuth token
-  (verified against Discord, application-audience checked) or a short-lived
-  signed share token. Room ids are unguessable activity-instance ids and
-  should be treated as bearer secrets; verifying actual call membership is on
-  the roadmap
-- 🔁 **Self-healing** — automatic reconnect on both ends; the stage re-claims
-  itself
-- 🖍 Hand-drawn **crayon UI** (see the banner) served by the same binary
+- 🖥 Share screen/window/tab at 30/60 fps with tab/system audio
+- ⚡ Sub-second latency (~0.3–0.6 s) with drop-to-live catch-up; it cannot drift
+- 🚪 Instant late-join (server-side GOP cache)
+- 📉 Adaptive bitrate — congestion lowers quality, not latency
+- 🎚 Per-viewer volume, live fps/bitrate/latency readout
+- 🛑 Stop from anywhere — capture tab or remotely from the Activity
+- 🔐 Authenticated rooms — Discord OAuth or short-lived signed share tokens
+- 🔁 Self-healing reconnect on both ends; stage re-claims itself
+- 🖍 Hand-drawn crayon UI (see the lockup), served by the same binary
 
-## Why it's built this way
+### New: Multistream (Palcos)
+
+- Up to 6 simultaneous streamers per room (slots 0..5), opt-in per room
+- Split-screen grid layouts (1, 2, 3, 4, 6 tiles); click a tile to solo focus
+- Solo-on-click audio by default (optional mix with ducking)
+- Subscribe-per-slot egress: the relay only pushes tiles a viewer is watching
+
+### Social Feature Families (live today)
+
+- Stage queue + rodízio (single-stage rooms) feeding slot vacancies in multistream
+- Privacy blank (per-slot), cinema mode, bolão, chama, legendas (captions)
+- Jukebox/vinhetas, fila do próximo, telinha (assist/PiP), quem entrou replay
+- Deixa comigo (takeover), corrente (handoff), atenção, aposta paralela
+- Troféus, lobby, clips (per-slot, shared byte budget)
+
+
+## Why It's Built This Way
 
 Discord Activities are iframes behind a strict CSP: **WebRTC is not
 available**, all traffic must flow through Discord's
@@ -96,6 +102,8 @@ development.
 | `JANJACAST_PUBLIC_ORIGIN` | Pin the public origin for companion links (default: derived per request) |
 | `JANJACAST_ALLOW_ANON` | `1` disables join auth — local development only |
 | `JANJACAST_DEV_WEB_DIR` | Serve the client from disk instead of the embedded build |
+| `JANJACAST_EGRESS_BUDGET_KBPS` | Relay egress budget per room (adaptive split) |
+| `TURN_LEN_MS` | Probe-only override for TURN duration (testing) |
 
 ## Self-hosting notes
 
@@ -127,10 +135,7 @@ plain Go ([`internal`](internal)): `relay` (rooms, fan-out, GOP cache),
 
 ## Status
 
-Works end-to-end inside Discord today: authenticated Activity, companion-tab
-capture, multi-viewer relay, audio, remote stop, volume, live stats. Next up:
-worker-based decode for fully background-proof viewers, participant avatars,
-a take-the-stage confirm dialog, and a v0.1 tag.
+Production-ready core: companion-tab capture, WebCodecs→WS relay fan-out, late-join GOP, ~0.3–0.6 s latency, multistream slots (up to 6), split-grid with solo-on-click audio, stage queue/rodízio, privacy blank, cinema, bolão, chama, legendas, jukebox/vinhetas, fila do próximo, telinha, quem entrou replay, deixa comigo, corrente, atenção, aposta paralela, troféus, lobby, clips. Removed features are not coming back unless re-proposed.
 
 Issues and PRs welcome — the codebase is deliberately small and readable.
 

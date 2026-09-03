@@ -23,13 +23,13 @@ DISCORD_CLIENT_SECRET=<your secret>
 JANJACAST_TOKEN_SECRET=<openssl rand -base64 32>
 JANJACAST_EGRESS_BUDGET_KBPS=0   # unlimited: VPS bandwidth is the real deal
 EOF
-docker compose --profile tunnel up -d
+ docker compose --profile tunnel up -d
 docker compose logs tunnel | grep trycloudflare   # your public URL
 ```
 
 Put the printed URL in the Discord portal's **Activities → URL Mappings**
 (`/` → that host). Done — the image is multi-arch and the client id is
-served at runtime, so no build step.
+served at runtime, so no build step. The Dockerfile runs the web build first and copies `web/dist` into the final image; the binary serves the embedded assets.
 
 ## Make the URL permanent (recommended)
 
