@@ -52,6 +52,8 @@ export type ControlType =
   | "bolao_vote"
   | "bolao_resolve"
   | "bolao_state"
+  | "assist_point"
+  | "assist_show"
   | "chama_start"
   | "chama_ack"
   | "chama_end"
@@ -85,6 +87,7 @@ export type OutboundControlType =
   | "bolao_start"
   | "bolao_vote"
   | "bolao_resolve"
+  | "assist_point"
   | "chama_start"
   | "chama_ack"
   | "chama_end";
@@ -232,6 +235,8 @@ export interface Control<T = unknown> {
 }
 
 export interface Point { x: number; y: number }
+export interface AssistPointData { x: number; y: number }
+export interface AssistShowData { x: number; y: number; userId: string; username: string; ttlMs: number }
 export interface CinemaStrokeData { color: string; points: Point[] }
 export interface StrokeData { userId: string; color: string; points: Point[]; strokeId: string }
 export interface CinemaStateData { paused: boolean; strokes: StrokeData[] }

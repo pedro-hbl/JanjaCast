@@ -448,6 +448,9 @@ type Room struct {
 	captionsEnabled bool
 	captionLast     map[string]int64 // userId -> last submit ms
 
+	// Assist pointers: per-viewer cooldown timestamp. Guarded by mu.
+	assistLast map[string]int64 // base user id -> last assist ms
+
 	// --- jukebox (probe-limited): simple per-room queue of asset URLs ---
 	jukeboxQueue []protocol.JukeboxItem
 	// last request time per user base id
@@ -649,7 +652,36 @@ func (r *Room) ClipsTestInit() *Room {
 	if r.captionLast == nil {
 		r.captionLast = make(map[string]int64)
 	}
+	if r.assistLast == nil {
+		r.assistLast = make(map[string]int64)
+	}
 	return r
+}
+
+// AssistPoint validates a viewer hint and unicasts it to the current
+// publisher only. Bounds: 0..1 for both axes. Cooldown: short per viewer.
+func (r *Room) AssistPoint(c *Client, x, y float64) {
+    r.mu.Lock()
+    defer r.mu.Unlock()
+    if _, ok := r.clients[c]; !ok { return }
+    if r.publisher == nil { return }
+    if x < 0 || x > 1 || y < 0 || y > 1 {
+        c.enqueueControl(protocol.CtrlError, protocol.ErrorData{Code: protocol.ErrAssistBounds})
+        return
+    }
+    if r.assistLast == nil { r.assistLast = make(map[string]int64) }
+    now := time.Now().UnixMilli()
+    last := r.assistLast[baseID(c.UserID)]
+    if now-last < 1000 { // 1s cooldown per viewer
+        c.enqueueControl(protocol.CtrlError, protocol.ErrorData{Code: protocol.ErrAssistCooldown})
+        return
+    }
+    r.assistLast[baseID(c.UserID)] = now
+    // Unicast to publisher only; short TTL so overlays never linger.
+    ttl := 1800 // ms
+    r.publisher.enqueueControl(protocol.CtrlAssistShow, protocol.AssistShowData{
+        X: x, Y: y, UserID: c.UserID, Username: c.Username, TTLms: ttl,
+    })
 }
 
 // ToggleCaptions flips the room captions enabled state. Publisher-only.

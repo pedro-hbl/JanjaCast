@@ -188,7 +188,12 @@ const (
 	// Captions server -> clients.
 	CtrlCaptionBroadcast ControlType = "caption_broadcast"
 	CtrlCaptionState     ControlType = "caption_state"
-	CtrlCaptionClear     ControlType = "caption_clear"
+    CtrlCaptionClear     ControlType = "caption_clear"
+
+    // Assist pointers: viewers send a single normalized point; the server
+    // unicasts a short-lived hint to the current publisher only.
+    CtrlAssistPoint ControlType = "assist_point" // client -> server {x,y}
+    CtrlAssistShow  ControlType = "assist_show"  // server -> publisher {x,y,userId,username,ttlMs}
 )
 
 const (
@@ -334,7 +339,10 @@ const (
 	ErrPassTooSoon = "stage.cooldown" // passing again inside the cooldown
 	// Captions
 	ErrCaptionRate = "caption.rateLimit"
-	ErrCaptionOff  = "caption.off"
+    ErrCaptionOff  = "caption.off"
+    // Assist errors
+    ErrAssistCooldown = "assist.cooldown"
+    ErrAssistBounds   = "assist.bounds"
 )
 
 // Captions wire shapes.
@@ -371,8 +379,23 @@ const (
 
 // Point is one 0..1 normalized point.
 type Point struct {
-	X float64 `json:"x"`
-	Y float64 `json:"y"`
+    X float64 `json:"x"`
+    Y float64 `json:"y"`
+}
+
+// AssistPointData is the payload of CtrlAssistPoint.
+type AssistPointData struct {
+    X float64 `json:"x"`
+    Y float64 `json:"y"`
+}
+
+// AssistShowData is the payload of CtrlAssistShow.
+type AssistShowData struct {
+    X        float64 `json:"x"`
+    Y        float64 `json:"y"`
+    UserID   string  `json:"userId"`
+    Username string  `json:"username"`
+    TTLms    int     `json:"ttlMs"`
 }
 
 // CinemaStrokeData is the client->server payload to add a stroke.

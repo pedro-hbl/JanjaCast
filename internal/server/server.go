@@ -721,6 +721,11 @@ func (s *Server) handleControl(room *relay.Room, client *relay.Client, data []by
 		}
 		_ = sent
 		break
+	case protocol.CtrlAssistPoint:
+		var d protocol.AssistPointData
+		if err := json.Unmarshal(ctrl.Data, &d); err == nil {
+			room.AssistPoint(client, d.X, d.Y)
+		}
 	case protocol.CtrlPlacarVote:
 		var d protocol.PlacarVoteData
 		if err := json.Unmarshal(ctrl.Data, &d); err == nil {
