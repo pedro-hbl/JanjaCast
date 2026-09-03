@@ -2253,6 +2253,11 @@ label.fps-label {
 /* ---- "Deixa comigo" assist pointers ---- */
 .stage--aiming { cursor: crosshair; }
 .fs-btn--armed { outline: 3px solid var(--crayon-blue); }
+/* The stage buttons share one corner but must not share one SPOT: they
+   stack upward from the fullscreen toggle (base .fs-btn at bottom: 14px). */
+.fs-btn--clip { bottom: 66px; }
+.fs-btn--replay { bottom: 118px; }
+.fs-btn--assist { bottom: 170px; }
 .assist-layer { position: absolute; inset: 0; pointer-events: none; z-index: 7; }
 .assist-arrow { position: absolute; transform: translate(-6px, -50%); display: flex; align-items: center; gap: 4px; animation: assist-in 220ms ease-out, assist-out 600ms ease-in 3.2s forwards; }
 .assist-glyph { font-size: 28px; filter: drop-shadow(1px 2px 0 rgba(0,0,0,.35)); }

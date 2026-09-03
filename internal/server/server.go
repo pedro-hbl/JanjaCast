@@ -150,11 +150,14 @@ func New(cfg Config, log *slog.Logger) *Server {
 		}
 		static.ServeHTTP(w, r)
 	}))
-	// SPA route: the companion capture page is client-side routed.
-	s.mux.HandleFunc("GET /share", func(w http.ResponseWriter, r *http.Request) {
+	// SPA routes: the companion capture page and the telinha mirror are
+	// client-side routed off index.html.
+	spa := func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
 		http.ServeFileFS(w, r, dist, "index.html")
-	})
+	}
+	s.mux.HandleFunc("GET /share", spa)
+	s.mux.HandleFunc("GET /telinha", spa)
 	return s
 }
 

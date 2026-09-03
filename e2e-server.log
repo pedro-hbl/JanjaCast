@@ -1,0 +1,13 @@
+time=2026-09-03T18:55:20.171-03:00 level=INFO msg="janjacast listening" addr=:8103
+time=2026-09-03T18:55:43.764-03:00 level=INFO msg=joined room=e2e user="pub1 (sharing)" id=pub1:tab
+time=2026-09-03T18:55:44.064-03:00 level=INFO msg="stage taken" room=e2e user="pub1 (sharing)"
+time=2026-09-03T18:55:57.968-03:00 level=INFO msg=joined room=e2e user=viewer id=7t0wueyd
+time=2026-09-03T18:56:29.980-03:00 level=INFO msg=left room=e2e user=viewer
+time=2026-09-03T18:56:30.024-03:00 level=INFO msg=joined room=e2e user=viewer id=a0h0a9le
+time=2026-09-03T18:56:59.651-03:00 level=INFO msg=left room=e2e user=viewer
+time=2026-09-03T18:56:59.687-03:00 level=INFO msg=joined room=e2e user=viewer id=kucj83lt
+time=2026-09-03T18:59:46.222-03:00 level=INFO msg=left room=e2e user="pub1 (sharing)"
+time=2026-09-03T18:59:46.230-03:00 level=INFO msg=joined room=e2e user="pub1 (sharing)" id=pub1:tab
+time=2026-09-03T18:59:46.539-03:00 level=INFO msg="stage taken" room=e2e user="pub1 (sharing)"
+time=2026-09-03T18:59:48.389-03:00 level=INFO msg=left room=e2e user=viewer
+time=2026-09-03T18:59:48.444-03:00 level=INFO msg=joined room=e2e user=viewer id=1xfa0zpg

@@ -279,10 +279,20 @@ onmessage = (ev: MessageEvent) => {
       break;
     case "blank": {
       // Wipe a tile between publishers (or on privacy blank): sentinel size
-      // 300x150 reads as "never painted" on the front.
+      // 300x150 reads as "never painted" on the front. The decoder SURVIVES
+      // the wipe — the App fires this ghost-wipe the moment publisherId
+      // changes, which lands right AFTER the new stream's config built the
+      // decoder; killing it here left every viewer black at full bitrate
+      // (0 fps, kbps flowing) until the next config. Reset instead: flush
+      // state, keep the configured decoder, resume at the next keyframe.
       const t = tiles.get(m.slot ?? 0);
       if (!t) break;
-      teardownDecoder(t);
+      for (const f of t.pendingFrames) f.close();
+      t.pendingFrames.clear();
+      if (t.decoder && t.decoder.state === "configured" && t.decoderCfg) {
+        t.decoder.reset();
+        t.decoder.configure(t.decoderCfg);
+      }
       t.awaitingKeyframe = true;
       resizeCanvas(t, 300, 150);
       t.ctx2d?.clearRect(0, 0, 300, 150);

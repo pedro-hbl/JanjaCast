@@ -255,6 +255,20 @@ export async function startCapture(
   videoTrack.contentHint =
     hint === "auto" ? (surface === "browser" ? "motion" : "text") : hint;
 
+  // Echo guard: "app" mode promises the Discord call can never ride the
+  // stream, but that promise is only enforceable when the audio is scoped
+  // to a window or tab. If the sharer picked a whole MONITOR and the
+  // browser still handed us an audio track (a Chrome that ignores the
+  // windowAudio/systemAudio extras falls back to system loopback), that
+  // track is the entire desktop mix — call included — so everyone hears
+  // themselves. Drop it: no sound beats echoing the room back at itself.
+  if ((opts.audioMode ?? "app") === "app" && surface === "monitor") {
+    for (const track of stream.getAudioTracks()) {
+      track.stop();
+      stream.removeTrack(track);
+    }
+  }
+
   const chosen = await pickVideoCodec(width, height, framerate);
 
   const targetBitrate = chosen.config.bitrate ?? 4_000_000;
