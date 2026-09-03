@@ -2272,3 +2272,8 @@ label.fps-label {
 .varal-empty { opacity: .65; font-family: var(--font-hand); font-size: var(--step--1); }
 .varal-actions { display: flex; gap: 6px; margin-top: 4px; align-items: center; }
 .varal-input { flex: 1; min-width: 80px; max-width: 260px; border: 3px solid var(--outline); border-radius: var(--wobble-sm); padding: 3px 8px; font-family: var(--font-hand); background: var(--surface-2); }
+
+/* ---- corrente da tela (nomination banner + picker) ---- */
+.corrente-banner { grid-column: 1 / -1; display: flex; align-items: center; gap: 10px; padding: 6px 12px; background: var(--surface-2); border: 3px solid var(--outline); border-radius: var(--wobble-sm); box-shadow: var(--shadow-ink); font-family: var(--font-hand); }
+.corrente-line { flex: 1; }
+.corrente-pick { border: 3px solid var(--outline); border-radius: var(--wobble-sm); background: var(--surface-2); font-family: var(--font-hand); padding: 3px 6px; max-width: 160px; }

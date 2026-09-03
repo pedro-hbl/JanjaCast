@@ -36,7 +36,10 @@ var serverToClientOnly = map[string]bool{
 	"CtrlStageWarmup":      true, // unicast relay->next-in-line only
 	"CtrlStageCancel":      true,
 	"CtrlPlacarState":      true,
-	"CtrlVaralState":       true, // server->clients board broadcast + welcome backlog
+	"CtrlVaralState":       true,
+	"CtrlCorrenteStarted":  true,
+	"CtrlCorrenteTally":    true,
+	"CtrlCorrenteCanceled": true, // server->clients board broadcast + welcome backlog
 	"CtrlBolaoState":       true,
 	"CtrlChamaState":       true,
 	"CtrlCinemaState":      true,
@@ -44,11 +47,11 @@ var serverToClientOnly = map[string]bool{
 	"CtrlRoomPhase":        true,
 	"CtrlAwardsReady":      true,
 	"CtrlClipReady":        true,
-  "CtrlReplayReady":      true,
-  // Assist show is server->publisher only (unicast). Client never sends it.
-  "CtrlAssistShow":       true,
-  "CtrlError":            true,
-	"CtrlJoin":             true, // consumed by handleWS before the switch
+	"CtrlReplayReady":      true,
+	// Assist show is server->publisher only (unicast). Client never sends it.
+	"CtrlAssistShow": true,
+	"CtrlError":      true,
+	"CtrlJoin":       true, // consumed by handleWS before the switch
 	// Jukebox probe messages are server-originated fan-outs only.
 	"CtrlJukeboxQueue": true,
 	"CtrlJukeboxPlay":  true,

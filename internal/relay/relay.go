@@ -463,6 +463,13 @@ type Room struct {
 	// pins is a FIFO of at most 24 items. Author cooldown is 10s per base id.
 	varalPins []protocol.VaralPinData
 	varalLast map[string]time.Time // base user id -> last pin time
+
+	// --- corrente da tela (guarded by mu) --------------------------------
+	// A publisher-nominated handoff with a room-visible countdown. gen
+	// guards the timer exactly like turnGen guards stage turns.
+	correnteTarget string
+	correnteGen    uint64
+	correnteVotes  map[string]string // base user id -> "vai" | "calma"
 }
 
 // rAwardsCallback is installed by the server layer to receive assembled
@@ -2259,6 +2266,96 @@ func (r *Room) broadcastStingerLocked(d *protocol.StingerData) {
 func (r *Room) clearGOPLocked() {
 	r.gop = nil
 	r.gopBytes = 0
+}
+
+// --- corrente da tela API ---------------------------------------------------
+
+const correnteTTL = 7 * time.Second
+
+// CorrenteNominate: the current publisher names who takes over. Opens the
+// room-wide countdown, pre-warms the target, and arms the auto-handoff.
+func (r *Room) CorrenteNominate(c *Client, target string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.clients[c]; !ok {
+		return
+	}
+	if r.publisher == nil || baseID(r.publisher.UserID) != baseID(c.UserID) {
+		c.enqueueControl(protocol.CtrlError, protocol.ErrorData{Code: "corrente.notPublisher"})
+		return
+	}
+	tc := r.clientByIDLocked(target)
+	if tc == nil || baseID(target) == baseID(c.UserID) {
+		c.enqueueControl(protocol.CtrlError, protocol.ErrorData{Code: "corrente.badTarget"})
+		return
+	}
+	if r.correnteTarget != "" {
+		c.enqueueControl(protocol.CtrlError, protocol.ErrorData{Code: "corrente.active"})
+		return
+	}
+	r.correnteGen++
+	gen := r.correnteGen
+	r.correnteTarget = target
+	r.correnteVotes = make(map[string]string)
+	ends := time.Now().Add(correnteTTL)
+	// Quiet pre-warm to the target only, riding the fila's machinery.
+	tc.enqueueControl(protocol.CtrlStageWarmup, protocol.StageWarmupData{UserID: tc.UserID, Username: tc.Username})
+	d := protocol.CorrenteStartedData{Target: target, TargetName: tc.Username, By: c.Username, EndsAtMs: ends.UnixMilli()}
+	for cl := range r.clients {
+		cl.enqueueControl(protocol.CtrlCorrenteStarted, d)
+	}
+	time.AfterFunc(correnteTTL, func() {
+		r.mu.Lock()
+		defer r.mu.Unlock()
+		if r.correnteGen != gen || r.correnteTarget == "" {
+			return
+		}
+		target := r.correnteTarget
+		r.correnteTarget = ""
+		tc := r.clientByIDLocked(target)
+		if tc == nil {
+			for cl := range r.clients {
+				cl.enqueueControl(protocol.CtrlCorrenteCanceled, protocol.CorrenteCanceledData{Reason: "left"})
+			}
+			return
+		}
+		// No veto carried the day: call them to the stage through the same
+		// turn machinery the fila uses — claim window, cue and all.
+		r.grantTurnLocked(protocol.QueueEntry{UserID: tc.UserID, Username: tc.Username}, protocol.MethodQueue)
+	})
+}
+
+// CorrenteVote: one push per person; a "calma" majority (more than half the
+// room excluding the publisher) cancels the nomination on the spot.
+func (r *Room) CorrenteVote(c *Client, choice string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.clients[c]; !ok || r.correnteTarget == "" {
+		return
+	}
+	if choice != "vai" && choice != "calma" {
+		return
+	}
+	r.correnteVotes[baseID(c.UserID)] = choice
+	vai, calma := 0, 0
+	for _, v := range r.correnteVotes {
+		if v == "vai" {
+			vai++
+		} else {
+			calma++
+		}
+	}
+	for cl := range r.clients {
+		cl.enqueueControl(protocol.CtrlCorrenteTally, protocol.CorrenteTallyData{Vai: vai, Calma: calma})
+	}
+	voters := len(r.clients) - 1 // everyone but the publisher gets a say
+	if voters > 0 && calma > voters/2 {
+		r.correnteGen++ // disarm the timer
+		r.correnteTarget = ""
+		for cl := range r.clients {
+			cl.enqueueControl(protocol.CtrlCorrenteCanceled, protocol.CorrenteCanceledData{Reason: "veto"})
+		}
+	}
 }
 
 // baseID strips the companion-tab suffix, yielding the person's identity.
