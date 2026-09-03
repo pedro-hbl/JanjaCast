@@ -17,3 +17,5 @@ web/dist/*
 *.exe
 server.log
 tunnel.log
+e2e-server.log
+server.log
