@@ -19,3 +19,6 @@ server.log
 tunnel.log
 e2e-server.log
 server.log
+server.err.log
+server.out.log
+tunnel.out.log

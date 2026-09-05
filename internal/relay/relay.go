@@ -1548,6 +1548,12 @@ func (r *Room) SetConfig(c *Client, cfg *protocol.ConfigData) {
 	r.clearSlotGOPLocked(sl) // new encoder session invalidates the cache
 	r.gateViewersLocked()
 	r.broadcastStageStateLocked()
+	// gateViewersLocked just told every viewer to hold until a keyframe, and
+	// the cache above is now empty — so without this the room stays black
+	// until the new encoder's NATURAL keyframe, up to four seconds away on
+	// every handoff. Announcing a config is precisely when that encoder
+	// exists, so ask it now. (Debounced per chair, and skipped while blanked.)
+	r.requestKeyframeSlotLocked(sl)
 }
 
 // ForwardControl broadcasts a publisher-originated control message (e.g.
@@ -1892,7 +1898,7 @@ func (r *Room) ForwardMedia(from *Client, msg []byte) {
 					if c.maxTL >= hdr.TemporalID {
 						c.maxTL = hdr.TemporalID - 1
 					}
-				} else if !c.needKF[0] {
+				} else if !c.needKF[hdr.Slot] {
 					// Base-layer chunks are reference frames — a gap here
 					// corrupts decode, so freeze until the next keyframe.
 					c.needKF[hdr.Slot] = true
