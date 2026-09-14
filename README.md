@@ -74,6 +74,8 @@ export DISCORD_CLIENT_SECRET=...
 docker compose up
 ```
 
+Deploying this on a server for real? Follow [docs/deploy-runbook.md](docs/deploy-runbook.md).
+
 Add `--profile tunnel` to also start a Cloudflare quick tunnel (zero-config
 public HTTPS; the URL appears in the tunnel container's logs — set it as the
 URL mapping in the portal). Full portal walkthrough:
@@ -102,8 +104,11 @@ development.
 | `JANJACAST_PUBLIC_ORIGIN` | Pin the public origin for companion links (default: derived per request) |
 | `JANJACAST_ALLOW_ANON` | `1` disables join auth — local development only |
 | `JANJACAST_DEV_WEB_DIR` | Serve the client from disk instead of the embedded build |
-| `JANJACAST_EGRESS_BUDGET_KBPS` | Relay egress budget per room (adaptive split) |
-| `TURN_LEN_MS` | Probe-only override for TURN duration (testing) |
+| `JANJACAST_TOKEN_SECRET` | base64 of **32+ bytes**; signs companion/telinha share tokens. Unset = tokens die on restart. `openssl rand -base64 32` |
+| `JANJACAST_EGRESS_BUDGET_KBPS` | Relay egress budget per room, adaptive split (default `25000`; `0` = unlimited) |
+| `JANJACAST_STINGER_DIR` | Directory of vinheta assets; unset disables stingers ([docs/stingers.md](docs/stingers.md)) |
+| `JANJACAST_LOG_LEVEL` | `debug` / `info` / `warn` / `error` (default `info`) |
+| `JANJACAST_TURN_LEN_MS` | Probe-only override for rodízio turn length (testing) |
 
 ## Self-hosting notes
 

@@ -8,10 +8,13 @@ fans it out, and viewer count stops mattering to you entirely.
 
 ## 10-minute setup (any Docker-capable VPS)
 
-Good picks: a small VPS with generous egress. Oracle Cloud's Always Free
-ARM tier (4 cores / 24 GB / **10 TB egress per month**) runs this for $0;
-Hetzner's smallest instance (20 TB egress) costs a few EUR/month. Streaming
-at 6 Mbps to 10 viewers uses ~27 GB/hour of egress — budget accordingly.
+Streaming at 6 Mbps to 10 viewers uses **~27 GB/hour** of egress, so the
+plan's included traffic matters far more than its CPU. Watch for two traps:
+included traffic is often **region-specific** (Hetzner ships 20 TB in its
+German locations but 1 TB in the US ones), and platforms that bill per GB
+(~$0.05/GB is typical) turn a heavy month into a three-figure bill — this
+workload is pure egress. Put the host near the viewers, too: the media rides
+a persistent WebSocket, so a CDN cannot accelerate it.
 
 ```sh
 # on the VPS
@@ -23,9 +26,13 @@ DISCORD_CLIENT_SECRET=<your secret>
 JANJACAST_TOKEN_SECRET=<openssl rand -base64 32>
 JANJACAST_EGRESS_BUDGET_KBPS=0   # unlimited: VPS bandwidth is the real deal
 EOF
- docker compose --profile tunnel up -d
+docker compose up -d --build
+docker compose --profile tunnel up -d             # optional quick tunnel
 docker compose logs tunnel | grep trycloudflare   # your public URL
 ```
+
+`--build` builds from source; the published `ghcr.io/pedro-hbl/janjacast`
+image only exists once a `v*` tag has been released.
 
 Put the printed URL in the Discord portal's **Activities → URL Mappings**
 (`/` → that host). Done — the image is multi-arch and the client id is
@@ -47,3 +54,9 @@ Quick-tunnel URLs rotate on restart. Two stable options:
 Only the sharing tab — it captures and uploads one stream to the VPS. Your
 household keeps its bandwidth, viewers get full bitrate, and the egress
 budget/guardrail never needs to engage.
+
+---
+
+For the full operator path — secrets, vinhetas, portal configuration, and how
+to verify the whole chain without opening Discord — see
+[docs/deploy-runbook.md](deploy-runbook.md).

@@ -9,7 +9,19 @@ services:
     environment:
       DISCORD_CLIENT_ID: ${DISCORD_CLIENT_ID}
       DISCORD_CLIENT_SECRET: ${DISCORD_CLIENT_SECRET}
+      # Signs the share tokens the companion capture tab and the telinha ride
+      # on. The server runs without it, but then every restart invalidates
+      # every open companion link. Generate: openssl rand -base64 32
+      JANJACAST_TOKEN_SECRET: ${JANJACAST_TOKEN_SECRET:-}
+      # Per-room egress ceiling in kbps (default 25000). On a VPS the real
+      # limit is the host's bandwidth, so 0 (unlimited) is usually right.
+      JANJACAST_EGRESS_BUDGET_KBPS: ${JANJACAST_EGRESS_BUDGET_KBPS:-25000}
+      # Vinhetas. To enable: put the assets in ./stingers, uncomment the
+      # volume below, and set this to /stingers in your .env.
+      JANJACAST_STINGER_DIR: ${JANJACAST_STINGER_DIR:-}
       # JANJACAST_PUBLIC_ORIGIN: https://stream.example.com  # optional pin
+    # volumes:
+    #   - ./stingers:/stingers:ro
     healthcheck:
       test: ["CMD", "/janjacast", "healthcheck"]
       interval: 30s

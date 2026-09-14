@@ -30,9 +30,10 @@ cloudflared tunnel --url http://localhost:8080
 `cloudflared` prints a `https://<random>.trycloudflare.com` URL — that's your
 activity origin for the next step.
 
-> The client bundle needs the application id baked in at build time:
-> `cd web && JANJACAST_DISCORD_CLIENT_ID=<app id> npm run build` (or pass it as a
-> build arg to `docker compose`, see the repo README).
+> Baking the application id into the bundle
+> (`cd web && JANJACAST_DISCORD_CLIENT_ID=<app id> npm run build`) is optional.
+> Without it the client asks the server at runtime via `/api/config`, which is
+> what lets one published image serve any Discord application.
 
 ## 3. Configure URL mappings
 
@@ -43,9 +44,23 @@ mapping:
 | ------ | ------------------------------- |
 | `/`    | `<random>.trycloudflare.com`    |
 
+The target is a **bare hostname** — no scheme, no trailing path.
+
 All requests from the Activity iframe are proxied by Discord through
 `https://<app id>.discordsays.com` to this target. JanjaCast's client prefixes
 its API and WebSocket paths with `/.proxy/` as Discord requires.
+
+Two things worth knowing, both learned the hard way:
+
+- **The first click on "Save changes" frequently does not register** (it lands
+  as a blur on the field you just typed into). Confirm the bottom bar flips
+  from "you have unsaved changes" to "all your edits have been carefully
+  recorded" — and click again if it did not.
+- A wrong or stale mapping fails **silently**: the Activity shows a blank
+  white frame, with no error in any log. You can check the mapping from a
+  terminal, without opening Discord, by curling the proxy origin itself:
+  `curl -s https://<app id>.discordsays.com/api/health` should return the
+  same `instance` value as your own server's `/api/health`.
 
 ## 4. Launch it
 
@@ -75,3 +90,8 @@ permission". **This dialog belongs to Discord, not JanjaCast**, and appears
 because you are launching your own (unverified) developer app: it controls
 Discord's URL-override mechanism for testing. Leave it **unchecked** —
 JanjaCast needs nothing from it, and everything works without it.
+
+## Deploying this for real
+
+For a server deployment — provisioning, secrets, HTTPS, verification and
+troubleshooting — follow [docs/deploy-runbook.md](deploy-runbook.md).
