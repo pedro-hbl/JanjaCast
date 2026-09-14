@@ -1,83 +1,149 @@
 # Deploy runbook: JanjaCast on a server, permanently
 
-A step-by-step an operator (or a coding agent with shell + browser access)
-can execute end to end. It assumes nothing about the host beyond "Linux with
-Docker". Every step ends in a check you can run, because most failures here
-are silent: the Activity shows a blank frame and says nothing.
+A step-by-step an operator — or a coding agent with a shell and a browser —
+can execute end to end, from "empty account" to "people are watching". It
+assumes nothing about the host beyond **Linux with Docker**, and nothing about
+the provider: the same steps work on a VPS, on EC2, or on anything that runs
+a container and can be reached over HTTPS.
 
-Read [docs/discord-setup.md](discord-setup.md) for *why* the Discord pieces
-exist; this file is the *what to type*.
+Every step ends in a command whose output you can check, because the failures
+here are silent by nature: a misconfigured Activity shows a blank frame and
+logs nothing, anywhere.
 
----
-
-## 0. Decide who owns the Discord application
-
-This decision comes first because it determines whose secret lives on the
-server.
-
-- **Reuse an existing app** (the stream keeps the same launcher entry, and
-  existing users see no change): you only repoint one URL mapping. But the
-  server needs that app's `DISCORD_CLIENT_SECRET`, so the app owner has to
-  hand it over. Only do this between people who already trust each other with
-  it, and rotate the secret if that stops being true.
-- **Create a new app** (recommended when someone else hosts): the host owns
-  their own id and secret, nothing is shared, and the two deployments can run
-  side by side. Cost: it is a different entry in Discord's Activities list,
-  and testers must be added to it.
-
-Both paths use this runbook; step 4 says which parts to skip.
+[docs/discord-setup.md](discord-setup.md) explains *why* the Discord pieces
+exist. This file is *what to type*.
 
 ---
 
-## 1. Provision the host
+## 1. Decide who owns the Discord application
 
-The relay does not transcode — it copies bytes from one socket to many. CPU
-and RAM are almost irrelevant (1 vCPU / 1 GB is plenty). Two things do matter:
+First, because it decides whose secret ends up on the server.
 
-- **Egress.** The math is `bitrate × viewers`: 6 Mbps to 10 viewers is
-  **27 GB/hour**. Prefer a host with bandwidth included over one that meters
-  per GB, and put the server geographically near the viewers — the media
-  rides a persistent WebSocket, so no CDN can help it.
-- **Restart policy.** The compose file already sets `restart: unless-stopped`;
-  make sure Docker itself starts at boot (`systemctl enable docker`).
+- **Create a new application** (recommended when someone other than the
+  original owner is hosting). The host owns their own id and secret, nothing
+  is shared, and two deployments can run side by side. Cost: it is a separate
+  entry in Discord's Activities list, and testers must be added to it.
+- **Reuse an existing application** — only one URL mapping changes, and
+  existing users see no difference. But the server needs that app's
+  `DISCORD_CLIENT_SECRET`, so its owner has to hand it over. Do this only
+  where that trust already exists, and rotate the secret if it stops.
+
+Creating a new one? Do step 2. Reusing? Skip to step 3, and get the id and
+secret from the current owner.
+
+---
+
+## 2. Create the Discord application (browser)
+
+The portal renders in the account's language, so headings may be in
+Portuguese ("Atividades", "Mapeamentos de URL", "Salvar alterações"). Rather
+than describing clicks, this runbook uses **direct URLs** — they are stable
+and language-independent. Substitute your application id for `<APP_ID>`.
+
+**2.1 — Create it.** At <https://discord.com/developers/applications>, click
+*New Application*, name it, accept the terms, create.
+
+**2.2 — Application id** (public; this is the "client id"):
+`https://discord.com/developers/applications/<APP_ID>/information`
+Copy *Application ID*. The URL contains it too, once the app exists.
+
+**2.3 — Client secret** (private):
+`https://discord.com/developers/applications/<APP_ID>/oauth2`
+Click *Reset Secret* and copy the value **immediately** — Discord shows it
+once and never again. If it scrolls out of reach, reset it again; resetting
+invalidates the previous one, so do it before the server is live, not after.
+
+> Handle this like a password. It goes into the server's `.env` (step 4,
+> `chmod 600`) and nowhere else — never into the repo, an issue, or a chat
+> log. Anyone holding it can act as your application.
+
+**2.4 — Enable Activities:**
+`https://discord.com/developers/applications/<APP_ID>/embedded/settings`
+- Turn on *Enable Activities*.
+- *Max participants* — raise it if rooms will be bigger than the default.
+- *Supported platforms*: **Web** is checked by default; **iOS** and
+  **Android** are not. Leave mobile off — see the note at the end of this
+  file for why the client is not ready for it yet.
+
+**2.5 — Testers** (so an unpublished app appears in the rocket menu):
+`https://discord.com/developers/applications/<APP_ID>/testers`
+Add the accounts or server that will be testing.
+
+The URL mapping is step 7 — it needs the public address you do not have yet.
+
+---
+
+## 3. Provision the host
+
+The relay does not transcode. It copies bytes from one socket to many, so CPU
+and RAM barely matter — 1 vCPU and 1 GB is plenty, and a bigger box buys you
+nothing here. Two things do matter:
+
+**Bandwidth, and how it is billed.** The math is `bitrate × viewers`: 6 Mbps
+to 10 viewers is **~27 GB/hour**. That single number should drive the choice:
+
+- *Included / flat traffic* (most VPS plans): ideal. Check whether the
+  allowance is region-specific — some providers ship far less traffic in one
+  region than another on the same plan.
+- *Metered per GB* (AWS, GCP, and most PaaS): works, but this workload is
+  pure egress, so the bill scales directly with hours × viewers. At a typical
+  $0.05–0.09/GB, a busy evening is real money. If you go this way, set a
+  **budget alarm at the provider** — see the warning in step 4, because
+  JanjaCast's own egress knob is *not* a spend limit.
+
+**Proximity.** Put the host near the viewers. The media rides a persistent
+WebSocket, so no CDN can cache or accelerate it; only the physical distance
+to the relay matters.
+
+**Restart policy.** `docker-compose.yml` already sets
+`restart: unless-stopped`. Make sure Docker itself starts at boot:
 
 ```sh
-# Docker, if the image isn't there yet
-curl -fsSL https://get.docker.com | sh
+curl -fsSL https://get.docker.com | sh      # if Docker isn't installed
 sudo systemctl enable --now docker
 ```
 
 ---
 
-## 2. Get the code and configure it
+## 4. Get the code and configure it
 
 ```sh
 git clone https://github.com/pedro-hbl/JanjaCast.git janjacast
 cd janjacast
 
 cat > .env <<EOF
-DISCORD_CLIENT_ID=<application id>
-DISCORD_CLIENT_SECRET=<client secret>
+DISCORD_CLIENT_ID=<application id from 2.2>
+DISCORD_CLIENT_SECRET=<client secret from 2.3>
 JANJACAST_TOKEN_SECRET=$(openssl rand -base64 32)
 JANJACAST_EGRESS_BUDGET_KBPS=0
 EOF
 chmod 600 .env
 ```
 
-`JANJACAST_TOKEN_SECRET` is the one people forget. Without it the server
-still boots, but it logs `share tokens will not survive a server restart` and
-every open companion-capture link and telinha link dies on each restart. It
-must be base64 of **at least 32 bytes**, or the process exits at startup.
+**`JANJACAST_TOKEN_SECRET`** is the one people forget. Without it the server
+still boots, but it logs `share tokens will not survive a server restart`,
+and every open companion-capture link and telinha link dies on each restart.
+It must be base64 of **at least 32 bytes** or the process exits at startup.
 
-`JANJACAST_EGRESS_BUDGET_KBPS=0` lifts the per-room ceiling that exists to
-protect a home uplink — on a server the host's own bandwidth is the real
-limit. Leave the default (25000) if the plan meters traffic tightly.
+**`JANJACAST_EGRESS_BUDGET_KBPS=0` means unlimited**, and 0 is the right
+value on a server. Understand what this knob actually is, though:
+
+> It is **not** a spending limit and does not cap total bytes. The server
+> publishes the number to the sharer's browser, which lowers its encoding
+> bitrate to `budget ÷ viewers` **only while congestion is actually being
+> observed**, lifting again after 15 clean seconds. It exists to stop a
+> saturated *home* uplink from oscillating — a condition that does not exist
+> on a server with a real pipe. Hence 0 here.
+>
+> On metered billing, do **not** mistake this for cost control: it reduces
+> quality under congestion, it does not stop egress. Control spend at the
+> provider, with a budget alarm.
 
 Full variable list: [README](../README.md#configuration).
 
 ### Vinhetas (optional)
 
-Stingers are disabled unless a directory is provided. To enable:
+Stingers stay disabled unless a directory is provided:
 
 ```sh
 mkdir -p stingers && cp /path/to/assets/* stingers/    # .webp/.jpg + .mp3
@@ -85,22 +151,27 @@ sed -i 's|# volumes:|volumes:|; s|#   - ./stingers|  - ./stingers|' docker-compo
 echo 'JANJACAST_STINGER_DIR=/stingers' >> .env
 ```
 
-See [docs/stingers.md](stingers.md) for the naming rules.
+Naming rules: [docs/stingers.md](stingers.md).
 
 ---
 
-## 3. Run it
+## 5. Run it
 
 ```sh
-docker compose up -d --build
+docker compose up -d
 docker compose logs -f janjacast     # expect: "janjacast listening" addr=:8080
 ```
 
-Build from source (`--build`) is the reliable path: the published
-`ghcr.io/pedro-hbl/janjacast` image only exists once a `v*` tag has been
-released, so on a fresh fork it may not be there. The Dockerfile is
-multi-stage — it builds the web client and embeds it, so no Node or Go is
-needed on the host.
+This pulls `ghcr.io/pedro-hbl/janjacast:latest`, a public multi-arch image
+(amd64 + arm64) republished by CI on every push to `main`. Nothing is baked
+into it — the Discord client id is served at runtime — so the same image
+serves any application.
+
+- **Pin a version** for a deployment you do not want changing under you:
+  set `image: ghcr.io/pedro-hbl/janjacast:0.1.0` in `docker-compose.yml`.
+- **Build from source instead** (a fork, or local changes):
+  `docker compose up -d --build`. The Dockerfile is multi-stage and builds
+  the web client itself, so the host needs neither Go nor Node.
 
 **Check:**
 
@@ -109,62 +180,52 @@ curl -s localhost:8080/api/health
 # {"ok":true,"instance":"<hex>","rooms":0,"timers":0}
 ```
 
-Note that `instance` value. It identifies this exact process and is the tool
-that makes every later check unambiguous.
+Note that `instance` value — it identifies this exact process, and it is what
+makes the verification in step 8 unambiguous.
 
 ---
 
-## 4. Put it on HTTPS at a fixed address
+## 6. Put it on HTTPS at a fixed address
 
-Discord only loads Activities over HTTPS. Pick one:
+Discord only loads Activities over HTTPS. Any of these works; pick by what
+you already have.
 
-**A. Named Cloudflare tunnel (recommended).** No open ports, no certificate
-to manage, free, and the hostname never changes.
-
-```sh
-cloudflared tunnel login                 # opens a browser; needs a domain on Cloudflare
-cloudflared tunnel create janjacast
-cloudflared tunnel route dns janjacast stream.example.com
-# then replace the compose `tunnel` service command with:
-#   tunnel run --token <token>   (or mount ~/.cloudflared)
-```
-
-**B. Domain + Caddy.** Point an A record at the host, then:
+**A. Domain + reverse proxy with automatic TLS.** Point an A record at the
+host, then:
 
 ```sh
 caddy reverse-proxy --from stream.example.com --to localhost:8080
 ```
 
-Also set `JANJACAST_PUBLIC_ORIGIN=https://stream.example.com` so the
-companion capture tab opens against the right origin.
+Also set `JANJACAST_PUBLIC_ORIGIN=https://stream.example.com` in `.env`, so
+the companion capture tab opens against the right origin.
 
-**C. Quick tunnel (`docker compose --profile tunnel up -d`).** Zero config,
-but **the hostname is regenerated on every restart**, and each rotation means
-editing the Discord portal again. Fine for a first smoke test, wrong for
-anything permanent.
+**B. Named Cloudflare tunnel.** No inbound ports, no certificate management,
+and it works on a host with no public IP. Needs a domain on Cloudflare:
+
+```sh
+cloudflared tunnel login
+cloudflared tunnel create janjacast
+cloudflared tunnel route dns janjacast stream.example.com
+cloudflared tunnel run janjacast          # point it at http://localhost:8080
+```
+
+**C. Quick tunnel** (`docker compose --profile tunnel up -d`) — zero config,
+URL printed in the tunnel container's logs. **The hostname is regenerated on
+every restart**, and each rotation means editing the portal again. Fine for a
+first smoke test; wrong for anything permanent.
 
 **Check:**
 
 ```sh
-curl -s https://stream.example.com/api/health   # same "instance" as step 3
+curl -s https://stream.example.com/api/health   # same "instance" as step 5
 ```
 
 ---
 
-## 5. Configure the Discord portal (browser)
+## 7. Point the Activity at it
 
-At <https://discord.com/developers/applications> → your app. The portal
-follows the account's language, so headings may be in Portuguese
-("Atividades", "Mapeamentos de URL", "Salvar alterações").
-
-**5.1 — Activities → Settings** ("Atividades → Configurações")
-- Enable Activities.
-- *Supported platforms* ("Plataformas compatíveis"): **Web** is checked by
-  default; **iOS** and **Android** are not. Leave mobile off unless the
-  client has been adapted for it — see the mobile caveats at the end.
-- *Max participants* — raise it if the room will be bigger than the default.
-
-**5.2 — Activities → URL Mappings** ("Mapeamentos de URL")
+`https://discord.com/developers/applications/<APP_ID>/embedded/url-mappings`
 
 | Prefix | Target |
 | ------ | ------ |
@@ -172,37 +233,34 @@ follows the account's language, so headings may be in Portuguese
 
 The target is a **bare hostname** — no `https://`, no trailing path.
 
-**Two traps, both of which cost real debugging time:**
+Two traps, both of which have cost real debugging time here:
 
-1. **The first click on "Save Changes" often does not register**, especially
-   right after typing in the field (the click lands as a blur). After
-   clicking, confirm the bottom bar switched from *"you have unsaved
-   changes"* to *"all your edits have been carefully recorded"*. If it still
-   warns, click again. Do not assume it saved.
-2. A stale mapping fails **silently** — the Activity renders a blank white
-   frame with no error anywhere.
-
-**5.3 — Testers.** Add the test server / accounts under App Testers so the
-Activity appears in the rocket menu for an unpublished app.
+1. **The first click on "Save changes" frequently does not register**,
+   especially right after typing in the field, where the click lands as a
+   blur. After clicking, confirm the bottom bar flipped from *"you have
+   unsaved changes"* to *"all your edits have been carefully recorded"* — and
+   click again if it did not. Never assume it saved.
+2. A wrong or stale mapping fails **silently**: blank white frame, no error
+   in any log, on either side.
 
 ---
 
-## 6. Verify without opening Discord
+## 8. Verify the whole chain without opening Discord
 
-This is the highest-value check in the whole runbook, and it is not obvious:
-Discord proxies the Activity through `https://<APP_ID>.discordsays.com`, and
-that origin is reachable with plain `curl`. So the entire chain — mapping,
-tunnel, TLS, server — can be proven from a terminal:
+The highest-value check here, and not an obvious one. Discord proxies the
+Activity through `https://<APP_ID>.discordsays.com`, and that origin answers
+plain `curl` — so mapping, TLS, tunnel and server can all be proven from a
+terminal:
 
 ```sh
 APP_ID=<application id>
 curl -s https://$APP_ID.discordsays.com/api/health
 ```
 
-Compare the `instance` value with step 3. **Identical means the mapping is
-live and traffic is reaching this exact process.** Use `/api/health` rather
-than `/` for this: the HTML can be served from cache and will look fine even
-when the mapping is broken, whereas the health payload cannot.
+**Identical `instance` to step 5 means the mapping is live and traffic is
+reaching this exact process.** Use `/api/health`, not `/`: HTML can come from
+a cache and look perfectly fine while the mapping is broken, whereas the
+health payload cannot.
 
 Then confirm the client bundle is being served:
 
@@ -210,64 +268,67 @@ Then confirm the client bundle is being served:
 curl -s https://$APP_ID.discordsays.com/ | grep -o 'assets/index-[A-Za-z0-9_-]*\.js'
 ```
 
-Finally, the real thing: open the Activity in a voice channel, click
-**Share screen**, approve the companion tab, and have a second account watch.
+Finally the real thing: join a voice channel, open the Activity from the
+rocket menu, click **Share screen**, approve the companion tab that opens,
+and have a second account watch.
 
 ---
 
-## 7. Troubleshooting
+## 9. Troubleshooting
 
 | Symptom | Cause | Fix |
 | --- | --- | --- |
-| **Blank white frame** in the Activity | The URL mapping is stale/empty, or the origin is unreachable. `index.html` paints a dark ground before any JS runs, so *white* means the page never arrived at all. | Re-check step 6; confirm the save in 5.2 actually took. |
-| Dark frame, UI loads, **stage stays black** | Client-side: the viewer's decoder never got a keyframe. | Reload the Activity (Ctrl+R) to pick up the current bundle. Check `docker compose logs` for joins. |
-| `/telinha` or `/share` returns **404** | Server not serving the SPA routes — an old build. | Rebuild: `docker compose up -d --build`. `TestSPARoutesServeIndex` guards this. |
-| Companion/telinha links **die after a restart** | `JANJACAST_TOKEN_SECRET` unset. | Set it in `.env` (step 2), recreate the container. |
-| **No vinhetas** | `JANJACAST_STINGER_DIR` unset, or the volume isn't mounted. | See step 2; the log says `stinger directory unusable` when the path is wrong. |
-| **Everyone hears themselves** | The sharer picked whole-screen sound. | In the share tab's sound selector choose *app sound*, and share a window/tab rather than a whole monitor. |
-| Server logs `every join will be refused` | Client id/secret unset and anonymous access off. | Fill `DISCORD_CLIENT_ID` / `DISCORD_CLIENT_SECRET`. |
+| **Blank white frame** in the Activity | Stale/empty URL mapping, or the origin is unreachable. `index.html` paints a dark ground before any JS runs, so *white* means the page never arrived at all. | Redo step 8; confirm the save in step 7 actually took. |
+| Dark frame, UI loads, **stage stays black** | Viewer's decoder never got a keyframe. | Reload the Activity (Ctrl+R) so it picks up the current bundle; check `docker compose logs` for joins. |
+| `/telinha` or `/share` returns **404** | Server predates those SPA routes. | `docker compose pull && docker compose up -d`. `TestSPARoutesServeIndex` guards this. |
+| Companion/telinha links **die after a restart** | `JANJACAST_TOKEN_SECRET` unset. | Set it (step 4), recreate the container. |
+| **No vinhetas** | Directory unset or volume not mounted. | Step 4. The log says `stinger directory unusable` when the path is wrong. |
+| **Everyone hears themselves** | Sharer chose whole-screen sound. | In the share tab's sound selector pick *app sound*, and share a window or tab rather than a whole monitor. |
+| Log says `every join will be refused` | Client id/secret unset with anonymous access off. | Fill both in `.env`. |
+| Joins refused after changing the app | Client id and secret belong to different applications. | Re-copy both from the same app (steps 2.2 and 2.3). |
 
 ---
 
-## 8. Security checklist before inviting people
+## 10. Before inviting people
 
-- `JANJACAST_ALLOW_ANON` **must stay unset** in production. It disables join
-  auth entirely and exists only for local development and the wire probes.
-- `.env` holds the OAuth secret — `chmod 600`, never commit it.
-- **Room ids are bearer secrets.** Anyone who knows a room id and can reach
-  the server can join it. This is documented, deliberate, and the reason not
-  to paste room ids publicly.
-- Rotate `DISCORD_CLIENT_SECRET` in the portal if it was ever shared with
-  someone who should no longer have it.
+- **`JANJACAST_ALLOW_ANON` must stay unset.** It disables join auth entirely
+  and exists only for local development and the wire probes.
+- `.env` holds the OAuth secret: `chmod 600`, never committed.
+- **Room ids are bearer secrets.** Anyone who knows one and can reach the
+  server can join that room. This is deliberate and documented — it is the
+  reason not to paste room ids publicly.
+- Rotate `DISCORD_CLIENT_SECRET` in the portal if it ever reached someone who
+  should no longer have it.
 
 ---
 
-## 9. Keeping it current
+## 11. Keeping it running
 
 ```sh
-git pull && docker compose up -d --build
+docker compose pull && docker compose up -d     # published image
+git pull && docker compose up -d --build        # building from source
 ```
 
 The compose healthcheck (`/janjacast healthcheck`) plus
-`restart: unless-stopped` mean the container comes back on its own after a
-crash or a host reboot, provided Docker is enabled at boot.
+`restart: unless-stopped` bring the container back on its own after a crash
+or a host reboot, as long as Docker is enabled at boot.
 
 ---
 
 ## Mobile, if it comes up
 
-Watching on a phone is viable but not free work, and the platform checkboxes
-in 5.1 should stay off until it is done:
+Watching on a phone is viable but unfinished work, which is why the platform
+checkboxes in 2.4 should stay off:
 
 - **AV1 is the blocker.** The sharer picks the codec alone and prefers AV1;
   iOS has no software AV1 decoder — only iPhone 15 Pro and newer decode it at
-  all. An AV1 stream is a black screen on most iPhones. The fix is forcing
-  H.264 when a mobile viewer is present.
+  all — so an AV1 stream is a black screen on most iPhones. The fix is
+  forcing H.264 whenever a mobile viewer is in the room.
 - **`AudioDecoder` (Opus)** only reached iOS in Safari 26. On older versions
   constructing it throws, so the player needs a guard to degrade to silent
-  video rather than break.
-- **Safe-area insets** (`--discord-safe-area-inset-*`) are not handled yet,
-  so the UI would sit under the notch.
+  video instead of breaking.
+- **Safe-area insets** (`--discord-safe-area-inset-*`) are unhandled, so the
+  UI would sit under the notch.
 
 Sharing *from* a phone is not possible at all — there is no `getDisplayMedia`
-on iOS — and the client already gates the share button accordingly.
+on iOS — and the client already hides the share button accordingly.
